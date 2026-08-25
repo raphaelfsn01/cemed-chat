@@ -3,56 +3,67 @@
 @tailwind utilities;
 
 /* ─────────────────────────────────────────────────────────────────────────
-   DeskcommCRM — Design System tokens (Sage palette · density Aerada)
-   Source of truth: /app/design/lib/tokens.ts (PALETTES.sage)
+   CEMED Saúde — Design System tokens (paleta da marca · density Aerada)
+   Fork do DeskcommCRM: paleta Sage trocada pela paleta oficial da CEMED
+   (Teal Principal #00909C · Teal Escuro #187878 · Teal Claro #3CCCCC ·
+   Verde Limão #BDD44A — ver --color-cta). Estrutura de variáveis idêntica
+   ao deskcomCRM original, só os valores de cor mudam — nenhum componente
+   precisa ser tocado.
    Light + dark drawn separately (NOT inverted).
    ───────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* Surfaces (light) */
-  --color-bg: #faf9f6;
+  /* Surfaces (light) — Branco / Cinza Suave da marca CEMED */
+  --color-bg: #ffffff;
   --color-surface: #ffffff;
-  --color-surface-elevated: #f5f3ee;
-  --color-overlay: rgba(28, 26, 22, 0.42);
+  --color-surface-elevated: #f5f5f5;
+  --color-overlay: rgba(23, 23, 23, 0.42);
 
-  /* Text (light) */
-  --color-text: #1c1a16;
-  --color-text-muted: #5d594f;
-  --color-text-subtle: #7d786c;
+  /* Text (light) — Texto da marca CEMED */
+  --color-text: #333333;
+  --color-text-muted: #737373;
+  --color-text-subtle: #a3a3a3;
 
   /* Borders (light) */
-  --color-border: #e7e3da;
-  --color-border-strong: #d2cdbf;
+  --color-border: #e8e8e8;
+  --color-border-strong: #d4d4d4;
 
-  /* Accent — Sage (11 stops) */
-  --color-accent-50:  #f3f6f1;
-  --color-accent-100: #e4ebe0;
-  --color-accent-200: #c8d6c1;
-  --color-accent-300: #a4ba9a;
-  --color-accent-400: #82a077;
-  --color-accent-500: #67885d;
-  --color-accent-600: #506d48;
-  --color-accent-700: #41573b;
-  --color-accent-800: #374731;
-  --color-accent-900: #2f3c2b;
-  --color-accent-950: #171f15;
+  /* Accent — Teal CEMED (11 stops). 400 = Teal Claro, 600 = Teal Principal
+     (default), 700 = Teal Escuro (hover/contraste) — valores oficiais da marca. */
+  --color-accent-50:  #eaf7f8;
+  --color-accent-100: #d2eef0;
+  --color-accent-200: #a6dee2;
+  --color-accent-300: #79cdd3;
+  --color-accent-400: #3ccccc;
+  --color-accent-500: #1baeb4;
+  --color-accent-600: #00909c;
+  --color-accent-700: #187878;
+  --color-accent-800: #135f5f;
+  --color-accent-900: #0f4747;
+  --color-accent-950: #082626;
   --color-accent: var(--color-accent-600);
   --color-accent-fg: #ffffff;
   --color-accent-soft: var(--color-accent-100);
   --color-accent-hover: var(--color-accent-700);
 
-  /* Neutrals — greige (11 stops, light) */
-  --color-neutral-50:  #faf9f6;
-  --color-neutral-100: #f3f1ec;
-  --color-neutral-200: #e7e3da;
-  --color-neutral-300: #d2cdbf;
-  --color-neutral-400: #a9a395;
-  --color-neutral-500: #7d786c;
-  --color-neutral-600: #5d594f;
-  --color-neutral-700: #46433b;
-  --color-neutral-800: #2e2c26;
-  --color-neutral-900: #1c1a16;
-  --color-neutral-950: #0e0d0a;
+  /* CTA — Verde Limão da marca CEMED (ex.: botão de WhatsApp), separado do
+     accent teal de propósito: a marca usa as duas cores com papéis distintos. */
+  --color-cta: #bdd44a;
+  --color-cta-fg: #17371a;
+  --color-cta-hover: #a5bd3a;
+
+  /* Neutrals — cinza neutro (11 stops, light) */
+  --color-neutral-50:  #ffffff;
+  --color-neutral-100: #f5f5f5;
+  --color-neutral-200: #e8e8e8;
+  --color-neutral-300: #d4d4d4;
+  --color-neutral-400: #a3a3a3;
+  --color-neutral-500: #737373;
+  --color-neutral-600: #525252;
+  --color-neutral-700: #404040;
+  --color-neutral-800: #333333;
+  --color-neutral-900: #262626;
+  --color-neutral-950: #171717;
 
   /* States (light) */
   --color-success: #5a8a5f;
@@ -145,49 +156,54 @@
 
 [data-theme="dark"] {
   /* Surfaces (dark — drawn) */
-  --color-bg: #161510;
-  --color-surface: #1d1c17;
-  --color-surface-elevated: #272620;
+  --color-bg: #121212;
+  --color-surface: #1a1a1a;
+  --color-surface-elevated: #262626;
   --color-overlay: rgba(0, 0, 0, 0.55);
 
   /* Text (dark) */
-  --color-text: #f5f4ef;
-  --color-text-muted: #8e8b7f;
-  --color-text-subtle: #605e54;
+  --color-text: #f5f5f5;
+  --color-text-muted: #a3a3a3;
+  --color-text-subtle: #737373;
 
   /* Borders (dark) */
-  --color-border: #33312a;
-  --color-border-strong: #444239;
+  --color-border: #404040;
+  --color-border-strong: #525252;
 
   /* Accent stays same hex stops; default shifts up for dark contrast */
-  --color-accent-50:  #f3f6f1;
-  --color-accent-100: #e4ebe0;
-  --color-accent-200: #c8d6c1;
-  --color-accent-300: #a4ba9a;
-  --color-accent-400: #82a077;
-  --color-accent-500: #67885d;
-  --color-accent-600: #506d48;
-  --color-accent-700: #41573b;
-  --color-accent-800: #374731;
-  --color-accent-900: #2f3c2b;
-  --color-accent-950: #171f15;
+  --color-accent-50:  #eaf7f8;
+  --color-accent-100: #d2eef0;
+  --color-accent-200: #a6dee2;
+  --color-accent-300: #79cdd3;
+  --color-accent-400: #3ccccc;
+  --color-accent-500: #1baeb4;
+  --color-accent-600: #00909c;
+  --color-accent-700: #187878;
+  --color-accent-800: #135f5f;
+  --color-accent-900: #0f4747;
+  --color-accent-950: #082626;
   --color-accent: var(--color-accent-400);
-  --color-accent-fg: #161510;
-  --color-accent-soft: rgba(130, 160, 119, 0.16);
+  --color-accent-fg: #121212;
+  --color-accent-soft: rgba(60, 204, 204, 0.16);
   --color-accent-hover: var(--color-accent-300);
 
-  /* Neutrals — greige (11 stops, dark) */
-  --color-neutral-50:  #f5f4ef;
-  --color-neutral-100: #e6e4dc;
-  --color-neutral-200: #bbb8ac;
-  --color-neutral-300: #8e8b7f;
-  --color-neutral-400: #605e54;
-  --color-neutral-500: #444239;
-  --color-neutral-600: #33312a;
-  --color-neutral-700: #272620;
-  --color-neutral-800: #1d1c17;
-  --color-neutral-900: #161510;
-  --color-neutral-950: #0c0b08;
+  /* CTA — Verde Limão, mais alto de luminância no escuro pra manter contraste */
+  --color-cta: #cbe06f;
+  --color-cta-fg: #17371a;
+  --color-cta-hover: #bdd44a;
+
+  /* Neutrals — cinza neutro (11 stops, dark) */
+  --color-neutral-50:  #f5f5f5;
+  --color-neutral-100: #e8e8e8;
+  --color-neutral-200: #d4d4d4;
+  --color-neutral-300: #a3a3a3;
+  --color-neutral-400: #737373;
+  --color-neutral-500: #525252;
+  --color-neutral-600: #404040;
+  --color-neutral-700: #262626;
+  --color-neutral-800: #1a1a1a;
+  --color-neutral-900: #121212;
+  --color-neutral-950: #0a0a0a;
 
   /* States (dark) */
   --color-success: #82a077;
@@ -269,7 +285,7 @@
     color: var(--color-accent-50);
   }
 
-  /* Focus ring: Sage 500/400, 2px with offset */
+  /* Focus ring: Teal 500/400, 2px with offset */
   :focus-visible {
     outline: 2px solid var(--color-accent-500);
     outline-offset: 2px;

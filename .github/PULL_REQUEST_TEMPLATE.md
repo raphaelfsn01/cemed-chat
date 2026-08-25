@@ -14,4 +14,4 @@
 - [ ] Mudança de schema saiu como migration versionada + apêndice no `baseline.sql` + linha no MANIFEST
 - [ ] Doc atualizada se mudou contrato (PRD/spec)
 
-Convenções completas em [`CLAUDE.md`](../CLAUDE.md) · fluxo em [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+Convenções completas em [`CLAUDE.md`](../CLAUDE.md).

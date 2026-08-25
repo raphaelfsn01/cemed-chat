@@ -1,20 +1,25 @@
-# CLAUDE.md — DeskcommCRM
+# CLAUDE.md — CEMED Chat
 
 > Instruções pra futuras sessões Claude trabalhando neste repo. Leitura obrigatória antes de qualquer task de código.
 
 **Este arquivo é a doutrina — a autoridade final sobre convenção e anti-pattern.** Complementos, na ordem em que ajudam:
 
-- [`AGENTS.md`](AGENTS.md) — mesmo contrato em forma portável (para Codex/Cursor/Copilot e afins). É derivado deste arquivo, não o substitui. **Ao mudar doutrina aqui, verifique se `AGENTS.md` desatualizou.**
-- [`docs/index.md`](docs/index.md) — índice dos 123 docs, com regra de precedência quando dois docs discordam. Use antes de sair varrendo `docs/`.
+- [`docs/cemed/`](docs/cemed) — a spec de negócio da CEMED Saúde e a spec funcional do agente de triagem. **Fonte da verdade sobre a clínica** — leia antes de mexer em qualquer regra do agente.
+- [`docs/index.md`](docs/index.md) — índice dos docs técnicos herdados da base do produto, com regra de precedência quando dois docs discordam. Use antes de sair varrendo `docs/`.
 - [`docs/current-state.md`](docs/current-state.md) — o que está pronto, incompleto e quebrado. **Leia antes de estimar ou prometer qualquer coisa.**
 - [`docs/harness-audit.md`](docs/harness-audit.md) — onde a verificação tem buraco. Importante: `pnpm gov:verify` **não** cobre `test:db` nem `test:e2e` — verde ali não é prova para mudança de schema ou de UI.
-- [`docs/threat-model.md`](docs/threat-model.md) — superfície de ataque real do self-host.
+- [`docs/threat-model.md`](docs/threat-model.md) — superfície de ataque real do produto.
 
 ---
 
 ## Visão (1 parágrafo)
 
-DeskcommCRM é um sistema operacional de vendas open source com agentes de IA nativos — multi-nicho (e-commerce, clínicas, imobiliárias, infoprodutos, serviços), com WhatsApp como canal primário (via WAHA). Agentes com RAG por tenant atendem, qualificam e movem o funil junto com humanos; CRM inteiro exposto via MCP. Monetização = self-host em VPS (parceria HostGator), não assinatura. Arquitetura multi-tenant com RLS desde o dia 1; LGPD nativa. Posicionamento completo: `VISION.md`.
+CEMED Chat é o CRM de conversas com agente de IA da **CEMED Saúde** (clínica médica em Rio das
+Ostras/RJ) — instância única, privada, não é produto multi-cliente. WhatsApp como canal primário
+(via WAHA); agente de IA tria, qualifica e transfere para a equipe humana (não agenda sozinho,
+não dá orientação médica, nunca informa preço). Construído sobre a mesma base técnica de um CRM
+multi-tenant com RLS (arquitetura herdada), mas configurado e operado como produto de cliente
+único. Regras de negócio completas: [`docs/cemed/`](docs/cemed).
 
 ---
 
@@ -222,7 +227,7 @@ Ao mexer em schema, RLS, RBAC, atribuição, escopo, roteamento, follow-up, webh
 
 ## QA Visual com Recursos Reais — DOUTRINA (produto self-host)
 
-**O DeskcommCRM é distribuído open-source: a experiência de quem instala numa VPS É o produto.** Toda feature nova (ou fix de comportamento visível) DEVE ser provada como um **usuário leigo a usaria de verdade** — pelo frontend, num ambiente que imita a instalação fresca — antes de "pronto". Não é opcional; é critério de aceite de toda sessão que toca UI ou fluxo de usuário.
+**O CEMED Chat é operado pela equipe da clínica: a experiência de quem atende pelo WhatsApp É o produto.** Toda feature nova (ou fix de comportamento visível) DEVE ser provada como um **usuário leigo a usaria de verdade** — pelo frontend, ou testando o agente pelo WhatsApp de verdade — antes de "pronto". Não é opcional; é critério de aceite de toda sessão que toca UI, agente ou fluxo de usuário.
 
 **O que "recurso real" significa (e o que NÃO conta):**
 - **Conta.** Prova pela tela, dirigindo o browser (Playwright), logando com conta de teste real. `curl`/chamada de API **não** provam UX — validam o backend, mas não o que o usuário vê, clica e entende. Use curl só como diagnóstico.

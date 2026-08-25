@@ -1,4 +1,4 @@
-# Architecture — DeskcommCRM
+# Architecture — CEMED Chat
 
 > Visão de 1 página. Profundidade vive em `docs/specs/` e `docs/stories/epics/MASTER.md`.
 > Mapa de toda a documentação: [`docs/index.md`](docs/index.md).
@@ -92,8 +92,8 @@ pelos 10 endpoints em `app/api/v1/cron/`. Contrato: [`docs/specs/07-spec-events-
 - [`docs/specs/`](docs/specs/) — specs técnicas com schema SQL e payloads.
 - [`docs/business-rules/`](docs/business-rules/) — regras de negócio fora do código.
 - [`docs/stories/epics/MASTER.md`](docs/stories/epics/MASTER.md) — plano de execução por epic/wave.
+- [`docs/cemed/`](docs/cemed) — spec de negócio da CEMED e spec funcional do agente de triagem.
 - [`CLAUDE.md`](CLAUDE.md) — convenções não-negociáveis (multi-tenancy, idempotência, RBAC, LGPD, WAHA, anti-patterns).
-- [`AGENTS.md`](AGENTS.md) — contrato portável para agentes de código (qualquer ferramenta).
 - [`docs/index.md`](docs/index.md) — índice de toda a documentação.
 - [`docs/harness-audit.md`](docs/harness-audit.md) — maturidade do harness e lacunas de verificação.
-- [`docs/threat-model.md`](docs/threat-model.md) — superfície de ataque do self-host.
+- [`docs/threat-model.md`](docs/threat-model.md) — superfície de ataque do produto.
