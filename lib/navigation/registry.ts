@@ -28,7 +28,6 @@ import {
   ScalesSimple,
   ShieldCheck,
   Signpost,
-  Storefront,
   UserCircle,
   Users,
   UsersThree,
@@ -308,18 +307,6 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     minRole: "admin",
     sidebar: true,
     healthDot: true,
-  },
-  {
-    // Não tinha link nenhum no app inteiro: só se chegava digitando a URL.
-    href: "/app/integrations/nuvemshop",
-    label: "Nuvemshop",
-    description: "Conecte a loja para trazer pedidos e clientes para dentro do CRM.",
-    icon: Storefront,
-    group: "canais",
-    // A página não filtra por papel, mas as Server Actions de conectar e
-    // desconectar exigem admin — mostrar a um viewer seria oferecer botão morto.
-    minRole: "admin",
-    sidebar: true,
   },
   {
     href: "/app/webhooks",

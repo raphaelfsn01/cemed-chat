@@ -8,7 +8,6 @@
  *  - process-pending-webhooks (event_log)
  *  - dispatch-webhooks (deliveries / outbound webhooks)
  *  - lgpd-data-request-worker (D+7 SLA)
- *  - nuvemshop-sync-incremental
  *  - audit-log-archive (cold storage)
  *
  * Auth de cron: header `Authorization: Bearer ${INTERNAL_SECRET}` validado em cada handler.

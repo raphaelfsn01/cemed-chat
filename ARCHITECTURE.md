@@ -92,6 +92,8 @@ pelos 10 endpoints em `app/api/v1/cron/`. Contrato: [`docs/specs/07-spec-events-
 - [`docs/specs/`](docs/specs/) — specs técnicas com schema SQL e payloads.
 - [`docs/business-rules/`](docs/business-rules/) — regras de negócio fora do código.
 - [`docs/stories/epics/MASTER.md`](docs/stories/epics/MASTER.md) — plano de execução por epic/wave.
+- [`docs/cemed/arquitetura-sistema.md`](docs/cemed/arquitetura-sistema.md) — tour guiado da arquitetura, mais longo que esta página, pra quem abre o repo pela primeira vez.
+- [`docs/cemed/plano-fora-de-escopo.md`](docs/cemed/plano-fora-de-escopo.md) — catálogo do que foi herdado do produto multi-tenant genérico e não se aplica à CEMED (ex.: Nuvemshop).
 - [`docs/cemed/`](docs/cemed) — spec de negócio da CEMED e spec funcional do agente de triagem.
 - [`CLAUDE.md`](CLAUDE.md) — convenções não-negociáveis (multi-tenancy, idempotência, RBAC, LGPD, WAHA, anti-patterns).
 - [`docs/index.md`](docs/index.md) — índice de toda a documentação.

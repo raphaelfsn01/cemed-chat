@@ -27,6 +27,7 @@ function fakeConfig(agentId: string): PublishedAgentConfig {
     activeKbVersionId: null,
     ragTopK: 5,
     ragSimilarityThreshold: 0.72,
+    emergencyGate: { enabled: false, clinicalMessage: null, selfHarmMessage: null },
     versionCreatedBy: null,
     agentCreatedBy: null,
   };

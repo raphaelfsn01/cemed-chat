@@ -313,40 +313,11 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
-  // Orders (contact_id when available, otherwise external_customer_id).
-  let orders: OrderRow[] = [];
-  {
-    let q = admin
-      .from("orders")
-      .select(
-        "id, external_id, external_provider, status, total_cents, currency, ordered_at, contact_id, customer_external_id",
-      )
-      .eq("organization_id", organizationId)
-      .order("ordered_at", { ascending: false, nullsFirst: false })
-      .limit(500);
-    if (contactId) {
-      q = q.eq("contact_id", contactId);
-    } else if (externalCustomerId) {
-      q = q.eq("customer_external_id", externalCustomerId);
-    }
-    const { data, error } = await q;
-    if (error) {
-      logger.warn("[lgpd-export-worker] orders load failed", {
-        request_id: requestId,
-        error: error.message,
-      });
-    } else if (data) {
-      orders = data.map((o) => ({
-        id: o.id,
-        external_id: o.external_id,
-        external_provider: o.external_provider,
-        status: o.status,
-        total_cents: o.total_cents,
-        currency: o.currency,
-        ordered_at: o.ordered_at,
-      }));
-    }
-  }
+  // Orders — a CEMED não tem integração de e-commerce (tabela `orders` foi
+  // removida do schema junto com o Nuvemshop). Campo mantido vazio no payload
+  // porque o PDF/preview de LGPD já trata lista vazia sem exigir mudança de
+  // contrato.
+  const orders: OrderRow[] = [];
 
   // Activities — direct contact_id on crm_lead_activities.
   let activities: ActivityRow[] = [];

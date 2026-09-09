@@ -78,6 +78,8 @@ Detalham schema SQL e payloads exatos. **Consulte antes de modelar qualquer cois
 |---|---|
 | [`doctrine/sistema-vivo.md`](doctrine/sistema-vivo.md) | **Doutrina do Sistema Vivo** — 5 invariantes + Living System Checklist (item 13 do DoD) |
 | [`architecture/agent-turn.html`](architecture/agent-turn.html) | Diagrama do turno do agente (inbound → guardrails → outbound) |
+| [`cemed/arquitetura-sistema.md`](cemed/arquitetura-sistema.md) | **Tour guiado da arquitetura real do cemed-chat** — mais completo que `ARCHITECTURE.md`, escrito pós-rebrand |
+| [`cemed/plano-fora-de-escopo.md`](cemed/plano-fora-de-escopo.md) | Catálogo do que é herdado do produto multi-tenant genérico e não se aplica à CEMED (Nuvemshop, onboarding self-service, etc.) |
 | [`research/architecture-diagrams.md`](research/architecture-diagrams.md) | Diagramas de arquitetura |
 | [`research/reference-synthesis.md`](research/reference-synthesis.md) | Arquitetura herdada da referência WAHA |
 | [`research/followup-reference-mining.md`](research/followup-reference-mining.md) | Pesquisa do motor de follow-up |

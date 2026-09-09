@@ -13,7 +13,6 @@ interface StepDef {
 const STEPS: StepDef[] = [
   { segment: "welcome", label: "Boas-vindas" },
   { segment: "connect-whatsapp", label: "WhatsApp" },
-  { segment: "connect-nuvemshop", label: "Loja" },
   { segment: "setup-ai", label: "IA" },
   { segment: "invite-team", label: "Time" },
   { segment: "done", label: "Concluído" },

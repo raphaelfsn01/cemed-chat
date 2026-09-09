@@ -23,6 +23,13 @@ export type ProviderRegistry = Record<string, (apiKey: string, modelId: string) 
 const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com';
 const OPENAI_ENDPOINT = 'https://api.openai.com';
 const GOOGLE_ENDPOINT = 'https://generativelanguage.googleapis.com';
+/**
+ * OpenRouter expõe API compatível com a da OpenAI, então o provider é o mesmo
+ * `@ai-sdk/openai` apontado para cá — sem dependência nova. O que muda é o
+ * formato do id do modelo: na OpenRouter ele já vem qualificado por vendor
+ * (`anthropic/claude-sonnet-5`), enquanto no provider `openai` é o id nu.
+ */
+const OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1';
 
 /**
  * Providers reais do lançamento. Sonnet (Anthropic) é o default RECOMENDADO —
@@ -51,6 +58,10 @@ export function createDefaultRegistry(opts?: { allowedHosts?: string[] }): Provi
       createOpenAI({ apiKey, fetch: contain(OPENAI_ENDPOINT) })(modelId),
     google: (apiKey, modelId) =>
       createGoogleGenerativeAI({ apiKey, fetch: contain(GOOGLE_ENDPOINT) })(modelId),
+    openrouter: (apiKey, modelId) =>
+      createOpenAI({ apiKey, baseURL: OPENROUTER_ENDPOINT, fetch: contain(OPENROUTER_ENDPOINT) })(
+        modelId,
+      ),
   };
 }
 

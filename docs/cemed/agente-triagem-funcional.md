@@ -9,6 +9,16 @@ O domínio que ele serve está em [`cemed-negocio.md`](cemed-negocio.md).
 **Estado:** descreve o comportamento implementado em `app/` na data desta spec. Não é
 proposta — é o contrato do que já existe.
 
+> ⚠️ **Aviso adicionado em 2026-08-26:** a afirmação acima está incorreta para este
+> repositório. Este documento descreve um protótipo anterior (Python, rodando em Docker,
+> integrado ao Chatwoot via AgentBot) que **nunca foi implantado neste repositório** — o
+> `cemed-chat` não tem Chatwoot nem código Python; o agente real é TypeScript sobre WAHA
+> (`lib/agent-engine/`). As **regras de negócio de triagem** descritas abaixo continuam
+> valendo como conhecimento acumulado (inclusive bugs já encontrados no protótipo), mas a
+> descrição de arquitetura/infraestrutura (linha 17 em diante) não corresponde ao sistema
+> atual. Para a arquitetura real, ver
+> [`arquitetura-sistema.md`](arquitetura-sistema.md).
+
 ---
 
 ## 1. Propósito

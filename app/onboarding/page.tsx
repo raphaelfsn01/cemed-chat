@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { loadOnboardingState } from "@/app/actions/onboarding/_shared";
-import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +14,6 @@ export default async function OnboardingIndex() {
 
   if (!state.welcome) redirect("/onboarding/welcome");
   if (!state.whatsapp) redirect("/onboarding/connect-whatsapp");
-  // Template genérico: só empurra o passo Nuvemshop quando a integração está ligada.
-  if (env.NUVEMSHOP_ENABLED && !state.nuvemshop) redirect("/onboarding/connect-nuvemshop");
   if (!state.ai) redirect("/onboarding/setup-ai");
   if (!state.team) redirect("/onboarding/invite-team");
   redirect("/onboarding/done");

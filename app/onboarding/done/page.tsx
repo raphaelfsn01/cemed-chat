@@ -17,7 +17,6 @@ export default async function DonePage() {
       recap={{
         welcome: Boolean(state.welcome),
         whatsapp: Boolean(state.whatsapp) && !state.whatsapp?.skipped,
-        nuvemshop: Boolean(state.nuvemshop) && !state.nuvemshop?.skipped,
         ai: Boolean(state.ai) && !state.ai?.skipped,
         team: Boolean(state.team) && !state.team?.skipped,
       }}

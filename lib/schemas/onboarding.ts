@@ -27,7 +27,6 @@ export type AiAgentDefaultInput = z.infer<typeof aiAgentDefaultSchema>;
 export const onboardingStepSchema = z.enum([
   "welcome",
   "whatsapp",
-  "nuvemshop",
   "ai",
   "team",
   "done",
@@ -47,13 +46,6 @@ export const onboardingStateSchema = z.object({
       session_id: z.string().optional(),
       session_name: z.string().optional(),
       status: z.string(),
-      skipped: z.boolean().optional(),
-    })
-    .optional(),
-  nuvemshop: z
-    .object({
-      connected_at: z.string().optional(),
-      store_id: z.string().optional(),
       skipped: z.boolean().optional(),
     })
     .optional(),

@@ -196,6 +196,24 @@ export interface GateContext {
    * fiação nos dois sentidos: presente no `send_message`, ausente no follow-up.
    */
   internalVocabularyEnforced?: boolean;
+  /**
+   * EMERGÊNCIA MÉDICA (spec da clínica §10.1): esta candidata é a orientação de urgência
+   * (192/SAMU, CVV 188), disparada pelo gate determinístico ANTES do modelo.
+   *
+   * Fura APENAS o que é auto-restrição nossa: `pacing` (a janela 7h-22h e os caps de
+   * warm-up/diário — quem escreve "dor no peito" às 3h da manhã é exatamente quem não
+   * pode esperar as 7h) e `spinning` (a cópia é idêntica POR CONSTRUÇÃO: é texto fixo de
+   * conduta, não campanha).
+   *
+   * **NÃO fura, e isso é a parte que importa:** `stop` e `lgpd` seguem valendo. Eles são
+   * irrevogáveis (regra dura nº 2) e existem para proteger a PESSOA — contato que pediu
+   * para não ser contatado, ou cujo dado foi anonimizado, não vira exceção porque o texto
+   * é urgente. Quando eles vetam, o chamador ainda escala para um humano: quem não pode
+   * receber mensagem nossa continua tendo alguém avisado.
+   *
+   * Ausente = false: nenhum chamador existente muda de comportamento.
+   */
+  emergencyOverride?: boolean;
 }
 
 /**
@@ -422,6 +440,11 @@ export const disclosureGate: Gate = {
 export const pacingGate: Gate = {
   name: 'pacing',
   evaluate: (ctx) => {
+    // Emergência médica: a janela horária e os caps são auto-restrição (anti-ban e
+    // cortesia). Quem descreve dor no peito às 3h é precisamente quem não pode esperar
+    // as 7h. `skipped` mantém o trace honesto — passou porque não se aplicava, não
+    // porque a regra deixou de existir.
+    if (ctx.emergencyOverride === true) return { pass: true, skipped: 'not_applicable' };
     const { banRisk } = capabilitiesOf(ctx.provider);
     const decision = decidePacing({
       now: ctx.now,
@@ -483,6 +506,10 @@ export const messagingWindowGate: Gate = {
 const spinningGate: Gate = {
   name: 'spinning',
   evaluate: (ctx) => {
+    // Emergência médica: a orientação de urgência é texto FIXO de conduta — repetir-se
+    // é o comportamento correto, não sinal de campanha em massa. Vetar aqui calaria
+    // justamente a segunda pessoa a passar mal no mesmo dia.
+    if (ctx.emergencyOverride === true) return { pass: true, skipped: 'not_applicable' };
     const decision = decideSpinning({
       candidate: ctx.body,
       window: ctx.spinning.window,
@@ -496,6 +523,13 @@ const spinningGate: Gate = {
  * VERSÃO da ordem da cadeia (F4-08, acceptance 2). Toda mudança na ordem/composição de
  * `BEFORE_SEND_GATES` EXIGE bumpar esta versão, porque a ordem é contrato e não detalhe
  * de implementação. Quem cobra isso é `tests/unit/before-send-chain-shape.test.ts`.
+ *
+ * O que esta versão NÃO cobre, de propósito: comportamento condicional DENTRO de um gate
+ * (hoje, `emergencyOverride` desarmando `pacing`/`spinning`). A cadeia continua com os
+ * mesmos 10 gates na mesma ordem, e o trace já registra a diferença por envio — o gate
+ * desarmado sai como `skipped`, não como `pass`. Bumpar aqui por mudança interna diria
+ * "a ordem mudou" a quem lê, que é justamente o que esta constante significa. Quem pina
+ * aquele comportamento é `tests/unit/gate-emergencia-override.test.ts`.
  *
  * ⚠️ Este comentário citava `before-send.test.ts` como o guarda. **Esse arquivo nunca
  * existiu** (medido 2026-07-28: `find . -name before-send.test.ts` → nada). Era a segunda
@@ -644,6 +678,12 @@ export interface RunBeforeSendArgs {
    */
   enforceInternalVocabulary?: boolean;
   /**
+   * Marca esta chamada como a orientação de EMERGÊNCIA MÉDICA (§10.1 da spec da
+   * clínica). Fura `pacing` e `spinning`; NÃO fura `stop` nem `lgpd`. Ver
+   * `GateContext.emergencyOverride` para o porquê de cada lado dessa linha.
+   */
+  emergencyOverride?: boolean;
+  /**
    * Enviado SÓ se TODOS os gates passarem — ChannelAdapter (própria tx/idempotência). Recebe o
    * corpo FINAL (o disclosureGate F4-05 pode emendá-lo via `amendBody`): quem monta o send DEVE
    * enviar este `body`, não o corpo original capturado antes da cadeia.
@@ -721,6 +761,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       hasOpenCase: args.hasOpenCase ?? false,
       openedCaseThisTurn: args.openedCaseThisTurn ?? false,
       internalVocabularyEnforced: args.enforceInternalVocabulary ?? false,
+      emergencyOverride: args.emergencyOverride ?? false,
     };
 
     const trace: GateTraceEntry[] = [];

@@ -189,9 +189,9 @@ export const env = parsed.data;
 
 // Soft warning for env-gated AI keys (worker degrades gracefully but operators
 // should know when the bot is silent for config reasons).
-if (!env.AI_GATEWAY_API_KEY && !env.ANTHROPIC_API_KEY) {
+if (!env.AI_GATEWAY_API_KEY && !env.ANTHROPIC_API_KEY && !env.OPENROUTER_API_KEY) {
   console.warn(
-    "[env] No AI_GATEWAY_API_KEY or ANTHROPIC_API_KEY set — ai-response-worker will skip with reason='ai_gateway_key_missing'.",
+    "[env] No AI_GATEWAY_API_KEY, ANTHROPIC_API_KEY or OPENROUTER_API_KEY set — ai-response-worker will skip with reason='ai_gateway_key_missing'.",
   );
 }
 if (!env.OPENAI_API_KEY) {

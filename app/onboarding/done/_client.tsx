@@ -9,7 +9,6 @@ import { finishOnboarding } from "@/app/actions/onboarding/finishOnboarding";
 interface Recap {
   welcome: boolean;
   whatsapp: boolean;
-  nuvemshop: boolean;
   ai: boolean;
   team: boolean;
 }
@@ -17,7 +16,6 @@ interface Recap {
 const ITEMS: { key: keyof Recap; label: string }[] = [
   { key: "welcome", label: "Boas-vindas e termos" },
   { key: "whatsapp", label: "Canal WhatsApp" },
-  { key: "nuvemshop", label: "Loja Nuvemshop" },
   { key: "ai", label: "Atendente IA" },
   { key: "team", label: "Convites de time" },
 ];

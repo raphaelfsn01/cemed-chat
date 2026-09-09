@@ -18,9 +18,10 @@ const PROVIDER_LABELS: Record<Provider, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
   google: "Google",
+  openrouter: "OpenRouter",
 };
 
-const PROVIDER_ORDER: Provider[] = ["anthropic", "openai", "google"];
+const PROVIDER_ORDER: Provider[] = ["openrouter", "anthropic", "openai", "google"];
 
 export function CredentialsList({ initialData, canWrite, usageMap }: Props) {
   const { data } = useCredentialsList({ initialData });
@@ -29,6 +30,7 @@ export function CredentialsList({ initialData, canWrite, usageMap }: Props) {
   const credentials = data ?? [];
 
   const grouped: Record<Provider, CredentialRow[]> = {
+    openrouter: [],
     anthropic: [],
     openai: [],
     google: [],

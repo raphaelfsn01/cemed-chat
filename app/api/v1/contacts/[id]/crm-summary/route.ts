@@ -35,7 +35,6 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 const LEAD_COLS = "id, title, status, value_cents, currency, updated_at";
-const ORDER_COLS = "id, external_id, status, total_cents, currency, created_at";
 /** Acompanha o que a timeline mostra — `reason` e `actor_kind` inclusive. */
 const ACTIVITY_COLS = "id, type, source_module, performed_at, payload, reason, actor_kind";
 
@@ -55,18 +54,12 @@ export async function GET(
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
 
-  const [leads, orders, activities] = await Promise.all([
+  const [leads, activities] = await Promise.all([
     supabase
       .from("crm_leads")
       .select(LEAD_COLS)
       .eq("contact_id", contactId)
       .order("updated_at", { ascending: false })
-      .limit(3),
-    supabase
-      .from("orders")
-      .select(ORDER_COLS)
-      .eq("contact_id", contactId)
-      .order("created_at", { ascending: false })
       .limit(3),
     supabase
       .from("crm_lead_activities")
@@ -78,7 +71,7 @@ export async function GET(
 
   // A falha SOBE. Engolir aqui devolveria lista vazia ao cliente e recriaria,
   // do lado do servidor, exatamente a mentira que esta rota veio desfazer.
-  const falha = leads.error ?? orders.error ?? activities.error;
+  const falha = leads.error ?? activities.error;
   if (falha) {
     return fail("internal_error", falha.message, 500, { requestId });
   }
@@ -86,7 +79,10 @@ export async function GET(
   return ok(
     {
       leads: leads.data ?? [],
-      orders: orders.data ?? [],
+      // A CEMED não tem integração de e-commerce (tabela `orders` removida
+      // junto com o Nuvemshop) — mantido no contrato porque `CRMSidePanel`
+      // já trata lista vazia sem exigir mudança de forma.
+      orders: [] as never[],
       activities: activities.data ?? [],
     },
     { requestId },

@@ -41,6 +41,18 @@ export interface PublishedAgentConfig {
   /** knobs de RAG do ai_agents.config (defaults do guardrails-schema: 5 / 0.72). */
   ragTopK: number;
   ragSimilarityThreshold: number;
+  /**
+   * Gate determinístico de emergência médica (`ai_agents.config.medical_emergency_gate`).
+   * DESARMADO por default: este é um produto genérico, e "acidente"/"desmaiou" fora do
+   * contexto de saúde são palavras comuns — armar para todo mundo transformaria conversa
+   * banal em escalação irreversível (`force_human`). Quem opera clínica liga.
+   * As mensagens vivem em código (`medical-emergency.ts`); aqui só o override de redação.
+   */
+  emergencyGate: {
+    enabled: boolean;
+    clinicalMessage: string | null;
+    selfHarmMessage: string | null;
+  };
   /** criadores (p/ mint do token efêmero de audit — padrão do runtime nativo). */
   versionCreatedBy: string | null;
   agentCreatedBy: string | null;
@@ -95,7 +107,11 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.id as agent_id,
 /** Mapeamento Row (snake_case do banco) → PublishedAgentConfig, compartilhado
  * pelas duas variantes de loader (por channel_session e por agent id). */
 function mapAgentConfigRow(r: Row): PublishedAgentConfig {
-  const cfg = (r.config ?? {}) as { rag_top_k?: unknown; rag_similarity_threshold?: unknown };
+  const cfg = (r.config ?? {}) as {
+    rag_top_k?: unknown;
+    rag_similarity_threshold?: unknown;
+    medical_emergency_gate?: unknown;
+  };
   const ragTopK =
     typeof cfg.rag_top_k === 'number' && Number.isInteger(cfg.rag_top_k) && cfg.rag_top_k >= 1 && cfg.rag_top_k <= 20
       ? cfg.rag_top_k
@@ -104,6 +120,15 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     typeof cfg.rag_similarity_threshold === 'number' && cfg.rag_similarity_threshold >= 0 && cfg.rag_similarity_threshold <= 1
       ? cfg.rag_similarity_threshold
       : 0.72;
+
+  // jsonb do banco não é confiável por construção: valida shape em vez de castar.
+  // String vazia/branca conta como ausente — texto em branco viraria uma orientação
+  // de emergência muda, que é pior que o default.
+  const emg = (typeof cfg.medical_emergency_gate === 'object' && cfg.medical_emergency_gate !== null
+    ? cfg.medical_emergency_gate
+    : {}) as { enabled?: unknown; clinical_message?: unknown; self_harm_message?: unknown };
+  const textoOuNull = (v: unknown): string | null =>
+    typeof v === 'string' && v.trim() !== '' ? v.trim() : null;
 
   return {
     agentId: r.agent_id,
@@ -126,6 +151,11 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     activeKbVersionId: r.active_kb_version_id,
     ragTopK,
     ragSimilarityThreshold,
+    emergencyGate: {
+      enabled: emg.enabled === true,
+      clinicalMessage: textoOuNull(emg.clinical_message),
+      selfHarmMessage: textoOuNull(emg.self_harm_message),
+    },
     versionCreatedBy: r.version_created_by,
     agentCreatedBy: r.agent_created_by,
   };

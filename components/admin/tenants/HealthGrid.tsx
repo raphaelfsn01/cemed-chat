@@ -1,12 +1,7 @@
 "use client";
 
 import { HealthCard } from "./HealthCard";
-import {
-  WifiHigh,
-  Storefront,
-  Brain,
-  ClipboardText,
-} from "@/lib/ui/icons";
+import { WifiHigh, Brain, ClipboardText } from "@/lib/ui/icons";
 import type { TenantHealthResponse } from "@/app/api/v1/admin/tenants/[id]/health/route";
 
 // ---------------------------------------------------------------------------
@@ -51,7 +46,7 @@ interface HealthGridProps {
 // ---------------------------------------------------------------------------
 
 export function HealthGrid({ health }: HealthGridProps) {
-  const { waha, nuvemshop, ai, audit } = health;
+  const { waha, ai, audit } = health;
 
   // WAHA card
   // Vocabulário real de channel_sessions.status: STARTING/SCAN_QR_CODE/WORKING/
@@ -66,18 +61,6 @@ export function HealthGrid({ health }: HealthGridProps) {
     label: s.waha_session_name ?? s.id.slice(0, 8),
     value: s.status ?? "—",
   }));
-
-  // Nuvemshop card
-  const nuPrimary = nuvemshop.connected ? "Conectado" : "Não conectado";
-  const nuDetails = [
-    { label: "Última sync", value: formatDate(nuvemshop.last_synced_at) },
-    ...(nuvemshop.days_until_expiry !== null
-      ? [{ label: "Expira em", value: `${nuvemshop.days_until_expiry}d` }]
-      : []),
-    ...(nuvemshop.expires_at
-      ? [{ label: "Token expira", value: formatDate(nuvemshop.expires_at) }]
-      : []),
-  ];
 
   // AI budget card
   const aiPrimary =
@@ -101,21 +84,13 @@ export function HealthGrid({ health }: HealthGridProps) {
   ];
 
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
       <HealthCard
         title="WAHA"
         status={waha.overall_status}
         icon={<WifiHigh size={18} aria-hidden />}
         primaryValue={wahaPrimary}
         details={wahaDetails}
-      />
-
-      <HealthCard
-        title="Nuvemshop"
-        status={nuvemshop.status}
-        icon={<Storefront size={18} aria-hidden />}
-        primaryValue={nuPrimary}
-        details={nuDetails}
       />
 
       <HealthCard

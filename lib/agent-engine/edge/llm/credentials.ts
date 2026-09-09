@@ -28,6 +28,13 @@ export interface LlmEdgeConfig {
    */
   openaiApiKey?: string;
   /**
+   * Mesma ideia para a OpenRouter, que é o provider de chat desta instalação
+   * (CEMED): ela roteia para vários vendors atrás de UMA chave, então o id do
+   * modelo é que escolhe o vendor. Não faz embedding — quem embeda continua
+   * sendo `openaiApiKey`.
+   */
+  openrouterApiKey?: string;
+  /**
    * TTL do prefixo estável de cache (knob LLM_CACHE_TTL). Opcional para quem
    * monta a config na mão (testes) — o seam aplica a doutrina '1h' quando ausente.
    */
@@ -36,6 +43,7 @@ export interface LlmEdgeConfig {
 
 export function llmEdgeConfigFromEnv(env: {
   ANTHROPIC_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
   LLM_CACHE_TTL?: string;
 }): LlmEdgeConfig {
   const ttl = env.LLM_CACHE_TTL ?? '1h';
@@ -44,6 +52,7 @@ export function llmEdgeConfigFromEnv(env: {
   }
   return {
     ...(env.ANTHROPIC_API_KEY ? { anthropicApiKey: env.ANTHROPIC_API_KEY } : {}),
+    ...(env.OPENROUTER_API_KEY ? { openrouterApiKey: env.OPENROUTER_API_KEY } : {}),
     cacheTtl: ttl,
   };
 }
@@ -161,6 +170,8 @@ export async function resolveOrgLlmConfig(
     apiKey = cfg.anthropicApiKey;
   } else if (provider === 'openai' && cfg.openaiApiKey) {
     apiKey = cfg.openaiApiKey;
+  } else if (provider === 'openrouter' && cfg.openrouterApiKey) {
+    apiKey = cfg.openrouterApiKey;
   } else {
     throw new LlmNotConfiguredError();
   }

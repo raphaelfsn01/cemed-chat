@@ -9,7 +9,7 @@
  * Timeout 5s, sem retry. Erros 401 são distintos de erros de rede.
  */
 
-export type Provider = "anthropic" | "openai" | "google";
+export type Provider = "anthropic" | "openai" | "google" | "openrouter";
 
 export interface ValidationOk {
   ok: true;
@@ -103,6 +103,31 @@ export async function validateGoogleKey(apiKey: string): Promise<ValidationResul
   }
 }
 
+/**
+ * OpenRouter fala a API da OpenAI, então o discovery é o mesmo `/models` com
+ * Bearer. A diferença que importa: os ids vêm qualificados por vendor
+ * (`anthropic/claude-sonnet-5`) — é assim que se escolhe o modelo lá.
+ */
+export async function validateOpenRouterKey(apiKey: string): Promise<ValidationResult> {
+  try {
+    const res = await timedFetch("https://openrouter.ai/api/v1/models", {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: "auth_failed_401" };
+    }
+    if (!res.ok) {
+      return { ok: false, error: `provider_status_${res.status}` };
+    }
+    const json = (await res.json()) as { data?: { id: string }[] };
+    const models = (json.data ?? []).map((m) => m.id).filter(Boolean);
+    return { ok: true, models };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.name : "network_error" };
+  }
+}
+
 export function validateProviderKey(
   provider: Provider,
   apiKey: string,
@@ -114,6 +139,8 @@ export function validateProviderKey(
       return validateOpenAIKey(apiKey);
     case "google":
       return validateGoogleKey(apiKey);
+    case "openrouter":
+      return validateOpenRouterKey(apiKey);
     default: {
       const exhaustive: never = provider;
       return Promise.resolve({ ok: false, error: `unknown_provider:${exhaustive}` });

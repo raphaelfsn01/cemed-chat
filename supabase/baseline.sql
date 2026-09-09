@@ -9142,5 +9142,388 @@ comment on column public.ai_invocations.agent_id is
   '(ex.: classificador de sentimento numa org sem agente publicado). O custo '
   'existe e precisa aparecer nas telas de consumo — ver issue #160.';
 
+-- ---- remoção do schema de Nuvemshop/e-commerce (migration 0115) ----
+-- O cemed-chat é instância única de uma clínica médica — não vende produtos,
+-- não tem pedidos, não integra com loja nenhuma (Nuvemshop/VTEX/Shopify, os
+-- três providers que estas tabelas já suportaram). Todo código de aplicação
+-- que lia/escrevia aqui foi removido antes desta migration. Nenhuma FK de
+-- outra tabela aponta PARA estas três (só o contrário), então o drop não
+-- arrasta histórico de mais nada. Idempotente: no-op num clone que já rodou
+-- esta migration ou que nunca teve as tabelas.
+
+drop table if exists public.nuvemshop_products;
+drop table if exists public.orders;
+drop table if exists public.tenant_integrations;
+
+-- ---- pipeline default "Atendimento" para a CEMED (migration 0116) ----
+-- fn_seed_default_pipeline_for_org() semeava "Pedidos" com 8 estágios de
+-- e-commerce em toda organização nova. Funil real em
+-- docs/cemed/spec-crm-cemed.md §12: novo → em_triagem → qualificado →
+-- transferido → agendado → compareceu (perdido sai de em_triagem/
+-- qualificado; nao_compareceu sai de agendado). Também corrige o
+-- vocabulary (default de e-commerce) e settings.canonical_tags (linhas de
+-- serviço da clínica, aparecem como o ponto colorido do card no Kanban).
+-- Só afeta organizações criadas depois de aplicado; a org da CEMED já
+-- existe e não é tocada.
+-- `uniq_crm_stages_pipeline_lost`/`_won` só permitem UM estágio is_lost e
+-- UM is_won por pipeline — "Não compareceu" não é terminal (equipe decide:
+-- remarca, volta pra Agendado; ou desiste, move pra Perdido). Só "Perdido"
+-- carrega is_lost = true. Idempotente: CREATE OR REPLACE FUNCTION.
+
+CREATE OR REPLACE FUNCTION "public"."fn_seed_default_pipeline_for_org"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_pipeline_id uuid;
+  v_position numeric := 1000;
+  r record;
+begin
+  insert into public.crm_pipelines (
+    organization_id, name, slug, is_default, position, vocabulary, settings
+  )
+  values (
+    new.id,
+    'Atendimento',
+    'atendimento',
+    true,
+    1000,
+    jsonb_build_object(
+      'lead', 'Lead', 'lead_plural', 'Leads',
+      'deal', 'Atendimento', 'deal_plural', 'Atendimentos',
+      'won', 'Compareceu', 'lost', 'Perdido',
+      'stage', 'Etapa', 'stage_plural', 'Etapas'
+    ),
+    jsonb_build_object(
+      'fields', '[]'::jsonb,
+      'canonical_tags', jsonb_build_array(
+        'medicina_trabalho', 'especialidades', 'exames',
+        'espaco_integrar', 'estetica', 'generico', 'outros'
+      ),
+      'lost_reasons', '[]'::jsonb,
+      'identity_resolution', jsonb_build_object(
+        'fields_in_priority_order', jsonb_build_array('cpf', 'phone_e164', 'email')
+      )
+    )
+  )
+  returning id into v_pipeline_id;
+
+  for r in
+    select * from (values
+      ('Novo',            'novo',            false, false),
+      ('Em triagem',      'em_triagem',      false, false),
+      ('Qualificado',     'qualificado',     false, false),
+      ('Perdido',         'perdido',         false, true),
+      ('Transferido',     'transferido',     false, false),
+      ('Agendado',        'agendado',        false, false),
+      ('Não compareceu', 'nao_compareceu',  false, false),
+      ('Compareceu',      'compareceu',      true,  false)
+    ) as t(stage_name, stage_slug, won, lost)
+  loop
+    insert into public.crm_stages (organization_id, pipeline_id, name, slug, position, is_won, is_lost)
+    values (new.id, v_pipeline_id, r.stage_name, r.stage_slug, v_position, r.won, r.lost);
+    v_position := v_position + 1000;
+  end loop;
+
+  return new;
+end$$;
+
+-- ---- fn_lgpd_cascade_redact_contact() sem orders (migration 0117) ----
+-- Achado validando a 0116: a 0115 (remoção do Nuvemshop/e-commerce) dropou
+-- `orders` mas não atualizou esta função de compliance (redact LGPD, SLA
+-- D+15). O passo 6 fazia `update orders set ...` e quebrava em runtime com
+-- `relation "orders" does not exist` — todo redact real falharia. Passo
+-- removido; os demais (contacts, conversations, messages,
+-- crm_lead_activities, crm_leads, fila de mídia, audit log) não mudam.
+-- Idempotente: CREATE OR REPLACE FUNCTION.
+
+CREATE OR REPLACE FUNCTION "public"."fn_lgpd_cascade_redact_contact"("p_organization_id" "uuid", "p_contact_id" "uuid", "p_request_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+declare
+  v_already bool;
+  v_counts jsonb := '{}'::jsonb;
+  v_media_paths text[] := '{}';
+  v_anon_label text;
+  v_count int;
+begin
+  select is_anonymized into v_already
+    from contacts
+    where id = p_contact_id and organization_id = p_organization_id;
+
+  if not found then
+    raise exception 'contact not found' using errcode = 'P0002';
+  end if;
+
+  if v_already then
+    return jsonb_build_object('already_anonymized', true, 'counts', v_counts, 'media_paths', v_media_paths);
+  end if;
+
+  v_anon_label := 'Cliente Anonimizado #' || substring(p_contact_id::text from 1 for 8);
+
+  -- Collect media storage paths (we only delete what we own — media_storage_path)
+  select coalesce(array_agg(distinct media_storage_path) filter (where media_storage_path is not null), '{}')
+    into v_media_paths
+    from messages
+    where organization_id = p_organization_id
+      and conversation_id in (
+        select id from conversations
+          where contact_id = p_contact_id and organization_id = p_organization_id
+      );
+
+  -- 1. contacts (irreversible)
+  update contacts set
+    name = v_anon_label,
+    display_name = v_anon_label,
+    email = null,
+    -- email_normalized NÃO entra: é GENERATED ALWAYS AS (lower(trim(email)))
+    -- e o Postgres recusa escrita nela — a linha acima já a zera por derivação.
+    -- Com a atribuição, o cascade INTEIRO abortava e nada era anonimizado.
+    phone_number = null,
+    cpf_encrypted = null,
+    cpf_hash = null,
+    birthdate = null,
+    is_anonymized = true,
+    anonymized_at = now(),
+    consent = '{}'::jsonb,
+    source_metadata = '{}'::jsonb,
+    tags = '{}'::text[],
+    updated_at = now()
+  where id = p_contact_id and organization_id = p_organization_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('contacts', v_count);
+
+  -- 2. conversations metadata + preview strip
+  update conversations set
+    metadata = '{}'::jsonb,
+    last_message_preview = null,
+    updated_at = now()
+  where contact_id = p_contact_id and organization_id = p_organization_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('conversations', v_count);
+
+  -- 3. messages: redact body + null media + strip metadata (preserve status/timestamps/conversation_id)
+  update messages set
+    body = '[mensagem anonimizada]',
+    media_url = null,
+    media_mime = null,
+    media_size_bytes = null,
+    media_storage_path = null,
+    metadata = '{}'::jsonb,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and conversation_id in (
+      select id from conversations
+        where contact_id = p_contact_id and organization_id = p_organization_id
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('messages', v_count);
+
+  -- 4. crm_lead_activities — strip payload, metadata E reason (migration 0071).
+  --    `reason` é texto livre escrito por LLM sobre a conversa do lead: supor que
+  --    nunca conterá um nome é a suposição que falha. `evidence` NÃO é limpa —
+  --    guarda só ids, e as linhas apontadas são redigidas por conta própria.
+  update crm_lead_activities set
+    payload = '{}'::jsonb,
+    metadata = '{}'::jsonb,
+    reason = null
+  where organization_id = p_organization_id
+    and (
+      contact_id = p_contact_id
+      or lead_id in (
+        select lead_id from crm_lead_links
+          where target_kind = 'contact'
+            and target_id = p_contact_id
+            and organization_id = p_organization_id
+      )
+      or lead_id in (
+        select id from crm_leads
+          where contact_id = p_contact_id and organization_id = p_organization_id
+      )
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('activities', v_count);
+
+  -- 5. crm_leads — strip title/description/custom_fields/source_metadata/tags but PRESERVE pipeline/stage/value
+  update crm_leads set
+    title = v_anon_label,
+    description = null,
+    custom_fields = '{}'::jsonb,
+    source_metadata = '{}'::jsonb,
+    tags = '{}'::text[],
+    updated_at = now()
+  where organization_id = p_organization_id
+    and (
+      contact_id = p_contact_id
+      or id in (
+        select lead_id from crm_lead_links
+          where target_kind = 'contact'
+            and target_id = p_contact_id
+            and organization_id = p_organization_id
+      )
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('leads', v_count);
+
+  -- 6. enqueue media for async deletion (idempotent via unique (bucket, object_path))
+  if array_length(v_media_paths, 1) > 0 then
+    insert into storage_redaction_queue (organization_id, request_id, bucket, object_path)
+    select p_organization_id, p_request_id, 'whatsapp-media', path
+      from unnest(v_media_paths) as path
+      where path is not null and length(path) > 0
+    on conflict (bucket, object_path) do nothing;
+  end if;
+
+  -- 7. dense audit row
+  insert into api_audit_log (organization_id, action, actor_user_id, resource_type, resource_id, metadata, bypassed_rls)
+  values (
+    p_organization_id,
+    'lgpd.redact_executed',
+    null,
+    'contact',
+    p_contact_id,
+    jsonb_build_object(
+      'cascaded_to', v_counts,
+      'media_queued', coalesce(array_length(v_media_paths, 1), 0),
+      'request_id', p_request_id
+    ),
+    true
+  );
+
+  return jsonb_build_object(
+    'already_anonymized', false,
+    'counts', v_counts,
+    'media_paths', v_media_paths
+  );
+end;
+$$;
+
+-- ---- migra pipeline "Pedidos" existente da CEMED (migration 0118) ----
+-- fn_seed_default_pipeline_for_org() (0116) só roda em INSERT em
+-- organizations — não retroage na CEMED, que já existia. Escopado pelo
+-- organization_id fixo da CEMED (não `where slug = 'pedidos'` genérico: o
+-- banco de dev é compartilhado com o deskcomCRM, outras organizações têm
+-- "Pedidos" de e-commerce legítimo). Zero leads no pipeline (confirmado
+-- antes de escrever) — delete+insert de estágios é seguro. Idempotente;
+-- em reinstalação fresca (org nova) é no-op.
+
+update public.crm_pipelines
+set
+  name = 'Atendimento',
+  slug = 'atendimento',
+  vocabulary = jsonb_build_object(
+    'lead', 'Lead', 'lead_plural', 'Leads',
+    'deal', 'Atendimento', 'deal_plural', 'Atendimentos',
+    'won', 'Compareceu', 'lost', 'Perdido',
+    'stage', 'Etapa', 'stage_plural', 'Etapas'
+  ),
+  settings = jsonb_set(
+    settings,
+    '{canonical_tags}',
+    '["medicina_trabalho", "especialidades", "exames", "espaco_integrar", "estetica", "generico"]'::jsonb
+  ),
+  updated_at = now()
+where organization_id = 'ec189eb9-434d-4428-904b-3567d98bced3'
+  and slug = 'pedidos';
+
+delete from public.crm_stages
+where organization_id = 'ec189eb9-434d-4428-904b-3567d98bced3'
+  and pipeline_id in (
+    select id from public.crm_pipelines
+    where organization_id = 'ec189eb9-434d-4428-904b-3567d98bced3' and slug = 'atendimento'
+  )
+  and slug in (
+    'carrinho_abandonado', 'aguardando_pagamento', 'pago', 'em_separacao',
+    'enviado', 'entregue', 'pos_venda', 'cancelado'
+  );
+
+insert into public.crm_stages (organization_id, pipeline_id, name, slug, position, is_won, is_lost)
+select
+  'ec189eb9-434d-4428-904b-3567d98bced3', p.id, v.name, v.slug, v.position, v.is_won, v.is_lost
+from public.crm_pipelines p,
+  (values
+    ('Novo',            'novo',            1000::numeric, false, false),
+    ('Em triagem',      'em_triagem',      2000::numeric, false, false),
+    ('Qualificado',     'qualificado',     3000::numeric, false, false),
+    ('Perdido',         'perdido',         4000::numeric, false, true),
+    ('Transferido',     'transferido',     5000::numeric, false, false),
+    ('Agendado',        'agendado',        6000::numeric, false, false),
+    ('Não compareceu', 'nao_compareceu',  7000::numeric, false, false),
+    ('Compareceu',      'compareceu',      8000::numeric, true,  false)
+  ) as v(name, slug, position, is_won, is_lost)
+where p.organization_id = 'ec189eb9-434d-4428-904b-3567d98bced3'
+  and p.slug = 'atendimento'
+  and not exists (
+    select 1 from public.crm_stages s where s.pipeline_id = p.id and s.slug = v.slug
+  );
+
+-- ---- provider openrouter (migration 0119) ----
+-- O agent-engine (único consumidor de turno) só conhecia anthropic|openai|
+-- google. A CEMED usa OpenRouter como provider de chat do agente: uma chave
+-- alcança vários vendors e trocar de modelo vira troca de campo. OpenRouter
+-- fala a API da OpenAI, então o código reaproveita `@ai-sdk/openai` apontado
+-- ao endpoint dela. `openai` NÃO sai do vocabulário: é quem faz embedding do
+-- RAG, e OpenRouter não faz embedding. Ids da OpenRouter são qualificados por
+-- vendor (`anthropic/claude-sonnet-5`), então não colidem com os ids nus das
+-- linhas `anthropic`. Idempotente: drop-if-exists antes de recriar o CHECK,
+-- `on conflict do nothing` nos inserts.
+
+alter table public.ai_agent_versions
+  drop constraint if exists ai_agent_versions_provider_check;
+alter table public.ai_agent_versions
+  add constraint ai_agent_versions_provider_check
+  check (provider = any (array['anthropic'::text, 'openai'::text, 'google'::text, 'openrouter'::text]));
+
+alter table public.ai_models
+  drop constraint if exists ai_models_provider_check;
+alter table public.ai_models
+  add constraint ai_models_provider_check
+  check (provider = any (array['anthropic'::text, 'openai'::text, 'google'::text, 'openrouter'::text]));
+
+alter table public.ai_provider_credentials
+  drop constraint if exists ai_provider_credentials_provider_check;
+alter table public.ai_provider_credentials
+  add constraint ai_provider_credentials_provider_check
+  check (provider = any (array['anthropic'::text, 'openai'::text, 'google'::text, 'openrouter'::text]));
+
+insert into public.ai_models
+  (provider, model_id, display_name, description,
+   input_price_per_million_cents, output_price_per_million_cents,
+   supports_tools, is_default_for_provider)
+values
+  ('openrouter', 'anthropic/claude-sonnet-5', 'Claude Sonnet 5 (OpenRouter)',
+   'Alto desempenho para atendimento e agentes. Roteado pela OpenRouter.',
+   200, 1000, true, true),
+  ('openrouter', 'anthropic/claude-opus-5', 'Claude Opus 5 (OpenRouter)',
+   'Mais capaz da família, para casos que exigem raciocínio mais longo. Roteado pela OpenRouter.',
+   500, 2500, true, false),
+  ('openrouter', 'anthropic/claude-haiku-4.5', 'Claude Haiku 4.5 (OpenRouter)',
+   'Rápido e barato, para classificação e tarefas auxiliares. Roteado pela OpenRouter.',
+   100, 500, true, false)
+on conflict (provider, model_id) do nothing;
+
+
+-- ---- tag `outros` no vocabulário do funil (migration 0120) ----
+-- O agente grava o resultado da triagem como tag no card (tool nativa
+-- `set_lead_tags`, que valida contra `canonical_tags` — vocabulário fechado
+-- evita deriva "exame"/"exames"). Faltava o balde do que NÃO é assunto da
+-- clínica (currículo, fornecedor, engano de número). `outros` NÃO substitui
+-- `generico`: generico = paciente da CEMED ainda não identificado; outros =
+-- não tem a ver com a clínica. Fundi-los apagaria a fronteira entre lead por
+-- identificar e ruído, que é justamente o que se quer medir.
+-- Duas frentes: a org que já existe (UPDATE com guarda de estado) e as futuras
+-- (a função de seed). Idempotente nas duas.
+
+update public.crm_pipelines
+set settings = jsonb_set(
+      settings,
+      '{canonical_tags}',
+      coalesce(settings->'canonical_tags', '[]'::jsonb) || '["outros"]'::jsonb
+    ),
+    updated_at = now()
+where organization_id = 'ec189eb9-434d-4428-904b-3567d98bced3'
+  and not (coalesce(settings->'canonical_tags', '[]'::jsonb) @> '["outros"]'::jsonb);
+
 
 notify pgrst, 'reload schema';

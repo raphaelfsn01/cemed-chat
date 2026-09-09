@@ -101,6 +101,14 @@ beforeAll(() => {
   // isoladamente é uma viagem no tempo que não volta sozinha — e o teste
   // seguinte mede o passado sem saber.
   psql(readFileSync("supabase/migrations/20260725020000_0072_activity_evidence_llm_call_ids.sql", "utf8"));
+  // Mesma viagem no tempo, achada pela migration 0117: a 0071 TAMBÉM redefine
+  // fn_lgpd_cascade_redact_contact() (é onde o passo de strip de `reason` de
+  // crm_lead_activities foi adicionado a ela) — e a versão da 0071 ainda tem
+  // o passo 6 (`update orders set ...`), de antes da 0115 remover a tabela
+  // `orders`. Reaplicar só a 0071 reintroduzia esse passo morto e quebrava
+  // `tests/invariants/lgpd-avatar-anonimizacao.test.ts`, que roda depois
+  // deste arquivo na mesma suíte (fileParallelism: false, ordem alfabética).
+  psql(readFileSync("supabase/migrations/20260828030918_0117_lgpd_redact_sem_orders.sql", "utf8"));
 });
 
 describe("0071 — o backfill não apaga o que já se sabia", () => {

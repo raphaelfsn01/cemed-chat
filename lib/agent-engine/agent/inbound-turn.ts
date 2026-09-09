@@ -63,6 +63,9 @@ import {
   isLeadInHandoff,
   performHumanHandoff,
 } from './human-handoff';
+import { detectMedicalEmergency, EMERGENCY_MESSAGES } from './medical-emergency';
+import { etiquetaNegocioDoAgente } from '@/lib/leads/agent-tag-sync';
+import { garanteNegocioDoContato } from '@/lib/leads/ensure-active-lead';
 import { maybeCompact, renderCompactedSummary, trimTranscriptToBudget, type CompactionKnobs } from './compaction';
 import { pruneToolResults, type PruneToolResultsKnobs } from './prune-tool-results';
 import {
@@ -151,6 +154,21 @@ export const AGENT_TOOL_DEFS = {
       next_action: z.string().nullable().optional().describe('próxima ação concreta combinada com o lead'),
       reason: z.string().optional().describe('evidência curta do avanço (vai ao audit do CRM)'),
     }).passthrough(),
+  },
+  set_lead_tags: {
+    description:
+      'Registra no CRM a LINHA DE SERVIÇO que você identificou nesta conversa (o resultado da ' +
+      'triagem). Use assim que souber do que se trata — uma vez por conversa basta. ' +
+      'Passe apenas os valores listados no seu prompt; valor fora da lista é recusado com a ' +
+      'lista correta na resposta. As tags SOMAM: o que já estava no card é preservado, então ' +
+      'você nunca apaga o que um humano marcou. Você não precisa saber qual é o card — o ' +
+      'sistema identifica sozinho pelo contato desta conversa.',
+    inputSchema: z.object({
+      tags: z
+        .array(z.string())
+        .min(1)
+        .describe('linha(s) de serviço identificada(s), ex.: ["exames"]'),
+    }),
   },
   schedule_followup: {
     description:
@@ -815,11 +833,130 @@ export async function runAgentTurn(
     throw new Error(`abertura do turno falhou em get_lead_context (${openingContext.error.code})`);
   }
 
+  const inboundSignal = latestInboundSignal(openingContext.context.messages);
+
+  // Seam de canal (F2-25) + relógio + sinais do turno. Içados para cá (do bloco original
+  // logo após os gates) porque o gate de EMERGÊNCIA abaixo precisa ENVIAR — e ele roda
+  // antes de tudo. Nenhuma destas linhas faz I/O, então subir é inerte para o resto.
+  const turnCrmCfg =
+    agentConfig !== null ? { ...deps.crmCfg, agentActorId: agentConfig.agentId } : deps.crmCfg;
+  const channel = (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, turnCrmCfg)))(pool);
+  const clock = deps.clock ?? ((): Date => new Date());
+  // STOP lido no turno (fonte: CRM via get_lead_context) — combinado com o cache
+  // durável leads.is_opted_out no gate 1 da cadeia (F2-13).
+  const optedOutThisTurn = openingContext.context.contact.is_blocked;
+  // LGPD (F4-09): base legal/anonimização do CRM lidas na abertura do turno (fonte confiável,
+  // regra dura nº 1) — o gate LGPD da cadeia veta anonimizado (sempre) e 1º toque de prospecção
+  // sem base legal. Resposta a inbound (isProspecting=false) não dispara o veto de base legal.
+  const lgpd = openingContext.lgpd;
+
+  // Toda conversa atendida vira card no funil — a condição para a triagem do agente
+  // (`set_lead_tags`) ter onde pousar, e para o humano receber o atendimento
+  // organizado em vez de só uma conversa solta na fila.
+  //
+  // Roda ANTES dos gates determinísticos de propósito: quem pede atendente logo na
+  // primeira mensagem é exatamente um caso de triagem, e sem o card ele chegaria ao
+  // humano sem registro nenhum no funil.
+  //
+  // Não é feito pela regra de automação `create_or_move_lead` (que existe) por dois
+  // motivos medidos: ela MOVE o card de volta ao estágio inicial quando o lead já
+  // existe, e o dispatcher do event_log que a dispara não roda neste ambiente — os
+  // eventos ficam `pending`. Detalhes em `lib/leads/ensure-active-lead.ts`.
+  //
+  // Falha NUNCA derruba o turno: sem card o atendimento segue, só não fica
+  // organizado — e o log diz por quê.
+  if (agentConfig !== null) {
+    const garantia = await garanteNegocioDoContato(deps.crmCfg.supabase, {
+      organizationId: tenantId,
+      contactId: leadId,
+      requestId: `turn:${job.id}`,
+      agentId: agentConfig.agentId,
+    });
+    if (garantia.leadId === null) {
+      runLog.warn('card do funil não garantido para o contato', {
+        motivo: garantia.motivo,
+        detalhe: garantia.detalhe,
+      });
+    }
+  }
+
+  // EMERGÊNCIA MÉDICA (spec da clínica §10.1) — PRIMEIRO gate do turno, antes do handoff
+  // e do opt-out ambíguo, e a ordem é o ponto: "socorro, dor no peito, quero falar com
+  // alguém" casaria com o handoff logo abaixo, que silencia o bot SEM ENVIAR NADA. Quem
+  // descreve dor no peito precisa receber a orientação do SAMU, não silêncio.
+  //
+  // Por isso este gate é o inverso do handoff: RESPONDE e SÓ ENTÃO escala. A ordem
+  // (envio → escalação) também é obrigatória por um motivo mecânico: `performHumanHandoff`
+  // seta `contacts.force_human`, e o `stopGate` da cadeia lê exatamente
+  // `(is_blocked or force_human)` — escalar antes faria o guardrail vetar a própria
+  // mensagem do SAMU.
+  //
+  // Desarmado por default (`ai_agents.config.medical_emergency_gate.enabled`): produto
+  // genérico, e falso positivo aqui é caro (force_human não volta pelo agente).
+  const emergency =
+    agentConfig !== null && agentConfig.emergencyGate.enabled
+      ? detectMedicalEmergency(inboundSignal)
+      : null;
+  if (emergency !== null && agentConfig !== null) {
+    const override =
+      emergency === 'self_harm'
+        ? agentConfig.emergencyGate.selfHarmMessage
+        : agentConfig.emergencyGate.clinicalMessage;
+    const chain = await runBeforeSend({
+      pool,
+      log: runLog,
+      tenantId,
+      leadId,
+      jobId: job.id,
+      channelSessionId: input.channelSessionId,
+      body: override ?? EMERGENCY_MESSAGES[emergency],
+      optedOutThisTurn,
+      crmDailyLimit: null,
+      now: clock(),
+      sleep: deps.sleep,
+      lgpd,
+      // Fura pacing/spinning (janela das 3h, cópia idêntica por construção); NÃO fura
+      // stop nem lgpd — ver GateContext.emergencyOverride.
+      emergencyOverride: true,
+      // seq = 1: uma orientação por disparo; identidade (job_id, 1) no ledger dá
+      // idempotência se a fila re-tentar.
+      send: (finalBody) =>
+        channel.send({
+          tenantId,
+          leadId,
+          jobId: job.id,
+          seq: 1,
+          conversationId: input.conversationId,
+          body: finalBody,
+        }),
+    });
+
+    // Escala MESMO se a cadeia vetou (contato bloqueado/anonimizado): quem não pode
+    // receber mensagem nossa continua tendo um humano avisado. Silêncio dos dois lados
+    // seria o único desfecho inaceitável.
+    await performHumanHandoff(
+      pool,
+      { tenantId, leadId, conversationId: input.conversationId },
+      {
+        reason: 'medical_emergency',
+        inboxTitle: 'EMERGÊNCIA MÉDICA — paciente orientado a procurar urgência, assumir agora',
+        conversationSummary: buildHandoffSummary(previous),
+        log: runLog,
+      },
+    );
+    runLog.warn('emergência médica detectada — orientação enviada e conversa escalada', {
+      kind: job.kind,
+      emergency_kind: emergency,
+      // o corpo NUNCA entra em log (PII fora de log, regra 8) — só o veredito da cadeia.
+      chain_status: chain.status,
+    });
+    return; // não retoma qualificação comercial (spec §10.1)
+  }
+
   // F4-06 (acceptance 1): detecção DETERMINÍSTICA (regex PT-BR, sem LLM) de pedido explícito
   // de atendimento humano na última mensagem do lead. Handoff é cidadão de 1ª classe (exigência
   // Meta fiscalizada, blueprint 5.5) — dispara ANTES do modelo: o bot silencia sem gastar LLM,
   // sem enviar. A ação (CRM force_human + cache + cancela crons + inbox) é idempotente.
-  const inboundSignal = latestInboundSignal(openingContext.context.messages);
   if (
     detectHumanHandoffRequest(inboundSignal) ||
     (agentConfig !== null && matchesHandoffKeyword(inboundSignal, agentConfig.handoffKeywords))
@@ -928,22 +1065,8 @@ export async function runAgentTurn(
     });
   }
 
-  // Seam de canal (F2-25): o envio vai SÓ pela interface ChannelAdapter — o
-  // default WAHA-via-CRM envolve o sink F2-06. Instanciado por job (o pool é
-  // per-job neste codebase); trocar o adapter não muda nada abaixo.
-  // Fase 2B: o envio carrega o ai_agents.id REAL como ator (audit/metadata do
-  // CRM apontam o agente publicado, não um id genérico).
-  const turnCrmCfg =
-    agentConfig !== null ? { ...deps.crmCfg, agentActorId: agentConfig.agentId } : deps.crmCfg;
-  const channel = (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, turnCrmCfg)))(pool);
-  const clock = deps.clock ?? ((): Date => new Date());
-  // STOP lido no turno (fonte: CRM via get_lead_context) — combinado com o cache
-  // durável leads.is_opted_out no gate 1 da cadeia (F2-13).
-  const optedOutThisTurn = openingContext.context.contact.is_blocked;
-  // LGPD (F4-09): base legal/anonimização do CRM lidas na abertura do turno (fonte confiável,
-  // regra dura nº 1) — o gate LGPD da cadeia veta anonimizado (sempre) e 1º toque de prospecção
-  // sem base legal. Resposta a inbound (isProspecting=false) não dispara o veto de base legal.
-  const lgpd = openingContext.lgpd;
+  // (turnCrmCfg, channel, clock, optedOutThisTurn e lgpd foram içados para antes do gate
+  // de emergência médica — ele precisa enviar, e roda como primeiro gate do turno.)
 
   // F4-07: STOP no CRM detectado no turno → cancela TODOS os follow-ups agendados do lead
   // (não só o job atual). O stopGate já veta ESTE turno; o cancel garante que nenhum cron
@@ -1454,6 +1577,51 @@ export async function runAgentTurn(
               code: 'internal_error',
               message: 'erro interno ao atualizar o estado do lead — encerre o turno agora.',
             },
+          };
+        }
+      },
+    }),
+    // Etiquetagem da triagem. O modelo diz só QUAL linha de serviço é; identificar
+    // o card do contato e preservar as tags que já existem é do servidor
+    // (`etiquetaNegocioDoAgente`). Falha NUNCA derruba o turno: vira erro de
+    // ensino com o vocabulário correto, ou aviso — a conversa do paciente não pode
+    // morrer porque a etiqueta não colou.
+    set_lead_tags: tool({
+      ...AGENT_TOOL_DEFS.set_lead_tags,
+      execute: async ({ tags }) => {
+        try {
+          const r = await etiquetaNegocioDoAgente(deps.crmCfg.supabase, {
+            organizationId: tenantId,
+            contactId: leadId,
+            tags,
+          });
+          if (r.etiquetou || r.motivo === 'ja_tem') {
+            return { ok: true as const, tags: r.tags ?? tags };
+          }
+          // `fora_do_vocabulario` volta ao modelo como ENSINO (a lista aceita vem
+          // no detalhe) — é o único caso em que ele consegue corrigir sozinho.
+          if (r.motivo === 'fora_do_vocabulario') {
+            return {
+              ok: false as const,
+              error: { code: 'tag_invalida', message: r.detalhe ?? 'tag fora do vocabulário do funil' },
+            };
+          }
+          // Os demais não são culpa do modelo e ele não tem como resolver: não
+          // adianta mandá-lo tentar de novo. Registra e segue — o log diz a causa
+          // real (contato sem card, dois cards abertos, banco fora).
+          runLog.warn('etiqueta da triagem não aplicada', { motivo: r.motivo, detalhe: r.detalhe });
+          return {
+            ok: false as const,
+            error: {
+              code: r.motivo,
+              message: 'não consegui registrar a etiqueta agora; siga o atendimento normalmente.',
+            },
+          };
+        } catch (err) {
+          noteRunError(err instanceof Error ? err : new Error(String(err)));
+          return {
+            ok: false as const,
+            error: { code: 'internal_error', message: 'erro interno ao etiquetar — siga o atendimento.' },
           };
         }
       },

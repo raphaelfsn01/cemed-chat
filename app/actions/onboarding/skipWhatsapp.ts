@@ -39,25 +39,4 @@ export async function markWhatsappConfigured(
   redirect("/onboarding");
 }
 
-export async function skipNuvemshop(): Promise<void> {
-  const ctx = await requireOnboardingCtx();
-  await patchOnboardingState(ctx.orgId, {
-    nuvemshop: { skipped: true },
-  });
-  await audit({
-    action: "onboarding.nuvemshop_skipped",
-    actorUserId: ctx.userId,
-    organizationId: ctx.orgId,
-  });
-  redirect("/onboarding/setup-ai");
-}
-
-export async function markNuvemshopConfigured(): Promise<void> {
-  const ctx = await requireOnboardingCtx();
-  await patchOnboardingState(ctx.orgId, {
-    nuvemshop: { connected_at: new Date().toISOString() },
-  });
-  redirect("/onboarding/setup-ai");
-}
-
 export { OnboardingError };

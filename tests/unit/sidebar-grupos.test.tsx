@@ -66,14 +66,20 @@ describe("Sidebar agrupado", () => {
     expect(funis).toHaveAttribute("href", "/app/settings/tenant/pipelines");
   });
 
-  it("desenterra Nuvemshop e Audit Log", () => {
+  it("desenterra Audit Log", () => {
     comoPapel("admin");
     render(<Sidebar collapsed={false} />);
-    // Nuvemshop não tinha link nenhum no app; Audit Log só existia via card em
-    // Configurações. Canal oficial não está aqui de propósito: virou aba de
-    // Conexões no PR #105, e Conexões é a porta.
-    expect(screen.getByRole("link", { name: /Nuvemshop/ })).toBeTruthy();
+    // Audit Log só existia via card em Configurações. Canal oficial não está
+    // aqui de propósito: virou aba de Conexões no PR #105, e Conexões é a
+    // porta. Nuvemshop foi removido do produto (instância única da CEMED,
+    // sem e-commerce) — não há mais link a desenterrar.
     expect(screen.getByRole("link", { name: /Audit Log/ })).toBeTruthy();
+  });
+
+  it("não tem mais link de Nuvemshop (removido — sem escopo de e-commerce)", () => {
+    comoPapel("admin");
+    render(<Sidebar collapsed={false} />);
+    expect(screen.queryByRole("link", { name: /Nuvemshop/ })).toBeNull();
   });
 
   it("Configurações fica no rodapé, nunca dependendo de scroll", () => {

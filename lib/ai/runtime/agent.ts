@@ -139,6 +139,12 @@ function buildModel(provider: string, apiKey: string, modelId: string): Language
       return createOpenAI({ apiKey })(modelId);
     case "google":
       return createGoogleGenerativeAI({ apiKey })(modelId);
+    case "openrouter":
+      // API compatível com a da OpenAI — mesmo módulo, outro endpoint. Sem esta
+      // entrada a tela "testar versão do agente" quebrava com unsupported_provider
+      // para agentes migrados à OpenRouter (migration 0119), enquanto o turno
+      // real de WhatsApp funcionava — divergência que só apareceria ao clicar.
+      return createOpenAI({ apiKey, baseURL: "https://openrouter.ai/api/v1" })(modelId);
     default:
       throw new Error(`unsupported_provider: ${provider}`);
   }
