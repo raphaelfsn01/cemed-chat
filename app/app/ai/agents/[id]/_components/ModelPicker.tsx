@@ -20,6 +20,13 @@ export interface ModelOption {
   display_name: string;
   context_window: number | null;
   is_default_for_provider: boolean;
+  /**
+   * Preço por MILHÃO de tokens, em centavos de DÓLAR (US$2,00 → 200) — a
+   * cobrança da OpenRouter é em dólar, então formatar como real mentiria sobre
+   * o valor. Nulável: modelo sem preço no catálogo simplesmente não o exibe.
+   */
+  input_price_per_million_cents: number | null;
+  output_price_per_million_cents: number | null;
 }
 
 interface Props {
@@ -44,6 +51,27 @@ interface Props {
 
 interface ApiResponse {
   data: { models: ModelOption[] };
+}
+
+/**
+ * Preço de um modelo, pronto para exibir — ou `null` quando o catálogo não
+ * informa nenhum dos dois lados.
+ *
+ * Em DÓLAR de propósito: é a moeda em que a OpenRouter cobra. Usar o
+ * `formatCentsBRL` de `lib/money.ts` aqui mostraria "R$ 2,00" para um preço que
+ * é US$ 2,00 — erro silencioso justo no número que orienta a escolha.
+ */
+export function formatarPreco(m: ModelOption): string | null {
+  const usd = (cents: number): string =>
+    (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "USD" });
+  const partes: string[] = [];
+  if (m.input_price_per_million_cents !== null) {
+    partes.push(`${usd(m.input_price_per_million_cents)} entrada`);
+  }
+  if (m.output_price_per_million_cents !== null) {
+    partes.push(`${usd(m.output_price_per_million_cents)} saída`);
+  }
+  return partes.length > 0 ? partes.join(" · ") : null;
 }
 
 /** Modelos do fabricante pedido. Sem fabricante, devolve tudo. */
@@ -91,12 +119,22 @@ export function ModelPicker({ provider, vendor, value, onChange, disabled, id }:
           <SelectValue placeholder={query.isLoading ? "Carregando…" : "Selecione um modelo"} />
         </SelectTrigger>
         <SelectContent>
-          {models.map((m) => (
-            <SelectItem key={m.model_id} value={m.model_id}>
-              {m.display_name}
-              {m.is_default_for_provider ? " · default" : ""}
-            </SelectItem>
-          ))}
+          {models.map((m) => {
+            const preco = formatarPreco(m);
+            return (
+              <SelectItem key={m.model_id} value={m.model_id}>
+                <span className="flex flex-col gap-0.5">
+                  <span>
+                    {m.display_name}
+                    {m.is_default_for_provider ? " · default" : ""}
+                  </span>
+                  {preco ? (
+                    <span className="text-xs text-muted-foreground">{preco}</span>
+                  ) : null}
+                </span>
+              </SelectItem>
+            );
+          })}
           {models.length === 0 && !query.isLoading ? (
             <SelectItem value="__none__" disabled>
               Nenhum modelo disponível
@@ -104,6 +142,9 @@ export function ModelPicker({ provider, vendor, value, onChange, disabled, id }:
           ) : null}
         </SelectContent>
       </Select>
+      {/* A unidade fica aqui, uma vez, em vez de repetida em cada linha: sem ela
+          "US$ 2,00" parece o preço de uma conversa, e não de um milhão de tokens. */}
+      <p className="text-xs text-muted-foreground">Preços por milhão de tokens.</p>
     </div>
   );
 }

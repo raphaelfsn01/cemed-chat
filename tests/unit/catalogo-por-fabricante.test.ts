@@ -16,16 +16,19 @@ import { describe, expect, it } from "vitest";
 import {
   fabricantesDoCatalogo,
   filtrarPorFabricante,
+  formatarPreco,
   type ModelOption,
 } from "@/app/app/ai/agents/[id]/_components/ModelPicker";
 
-function modelo(model_id: string): ModelOption {
+function modelo(model_id: string, precos?: [number | null, number | null]): ModelOption {
   return {
     provider: "openrouter",
     model_id,
     display_name: model_id,
     context_window: null,
     is_default_for_provider: false,
+    input_price_per_million_cents: precos?.[0] ?? null,
+    output_price_per_million_cents: precos?.[1] ?? null,
   };
 }
 
@@ -88,5 +91,43 @@ describe("filtrarPorFabricante", () => {
     // usuário escolheu uma empresa, e mostrar os modelos das outras seria pior
     // que mostrar nenhum.
     expect(filtrarPorFabricante(CATALOGO, "mistralai")).toEqual([]);
+  });
+});
+
+describe("formatarPreco", () => {
+  it("mostra entrada e saída em DÓLAR — não em real", () => {
+    // A OpenRouter cobra em dólar. Formatar com o `formatCentsBRL` de
+    // lib/money.ts diria "R$ 2,00" para um preço que é US$ 2,00 — erro
+    // silencioso justo no número que orienta a escolha do modelo.
+    const r = formatarPreco(modelo("anthropic/claude-sonnet-5", [200, 1000]));
+    expect(r).toContain("US$");
+    expect(r).not.toContain("R$ 2");
+    expect(r).toContain("entrada");
+    expect(r).toContain("saída");
+  });
+
+  it("converte centavos para a unidade correta", () => {
+    // 200 centavos de dólar por milhão = US$ 2,00 por milhão.
+    expect(formatarPreco(modelo("x/y", [200, 1000]))).toMatch(/2,00.*10,00/);
+  });
+
+  it("lida com centavos quebrados", () => {
+    expect(formatarPreco(modelo("deepseek/deepseek-v4-pro", [96, 191]))).toMatch(/0,96.*1,91/);
+  });
+
+  it("mostra só o lado que existe quando um preço falta", () => {
+    const r = formatarPreco(modelo("x/y", [200, null]));
+    expect(r).toContain("entrada");
+    expect(r).not.toContain("saída");
+  });
+
+  it("sem preço nenhum devolve null — a linha some em vez de mostrar vazio", () => {
+    expect(formatarPreco(modelo("x/y"))).toBeNull();
+  });
+
+  it("preço zero é exibido, não tratado como ausente", () => {
+    // Modelo gratuito existe na OpenRouter; `0` cair no ramo de "sem preço"
+    // esconderia justamente a informação mais interessante.
+    expect(formatarPreco(modelo("x/y", [0, 0]))).toContain("0,00");
   });
 });
