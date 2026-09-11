@@ -9526,4 +9526,74 @@ where organization_id = 'ec189eb9-434d-4428-904b-3567d98bced3'
   and not (coalesce(settings->'canonical_tags', '[]'::jsonb) @> '["outros"]'::jsonb);
 
 
+-- ---- catálogo curado da OpenRouter (migration 0121) ----
+-- A caixa "Empresa" da tela do agente passa a ser o FABRICANTE do modelo dentro
+-- do catálogo da OpenRouter (o provider gravado é sempre `openrouter`, e o
+-- fabricante é o prefixo do model_id). A lista de fabricantes da tela é DERIVADA
+-- destas linhas, não fixa em código — foi uma lista fixa que deixou `openrouter`
+-- de fora na 0119. Curadoria curta de propósito: a OpenRouter tem 437 modelos e
+-- 371 aceitam `tools`, mas aceitar o parâmetro não é usar ferramenta de forma
+-- confiável, e o agente roda POR ferramentas — modelo fraco não dá erro, só
+-- nunca cria o lead. Ids/janelas/preços medidos na API deles em 2026-09-11.
+-- Idempotente: on conflict do nothing + update com guarda de estado.
+
+-- As 3 linhas semeadas na 0119 traziam o sufixo "(OpenRouter)" no nome porque
+-- não havia campo separado de fabricante. Agora há — o sufixo virou ruído.
+-- Aproveita e preenche a janela de contexto, que ficou nula lá.
+update public.ai_models set
+  display_name = case model_id
+    when 'anthropic/claude-sonnet-5'  then 'Claude Sonnet 5'
+    when 'anthropic/claude-opus-5'    then 'Claude Opus 5'
+    when 'anthropic/claude-haiku-4.5' then 'Claude Haiku 4.5'
+    else display_name end,
+  context_window = case model_id
+    when 'anthropic/claude-sonnet-5'  then 1000000
+    when 'anthropic/claude-opus-5'    then 1000000
+    when 'anthropic/claude-haiku-4.5' then 200000
+    else context_window end
+where provider = 'openrouter'
+  and model_id in ('anthropic/claude-sonnet-5', 'anthropic/claude-opus-5', 'anthropic/claude-haiku-4.5')
+  and display_name like '%(OpenRouter)%';
+
+insert into public.ai_models
+  (provider, model_id, display_name, description, context_window,
+   input_price_per_million_cents, output_price_per_million_cents,
+   supports_tools, is_default_for_provider)
+values
+  -- OpenAI
+  ('openrouter', 'openai/gpt-5.6-terra', 'GPT-5.6 Terra',
+   'Equilíbrio entre capacidade e custo na linha da OpenAI.', 1050000, 200, 1200, true, false),
+  ('openrouter', 'openai/gpt-5.5', 'GPT-5.5',
+   'Topo de linha da OpenAI; caro, para casos que exigem mais raciocínio.', 1050000, 500, 3000, true, false),
+  ('openrouter', 'openai/gpt-5.4-mini', 'GPT-5.4 Mini',
+   'Rápido e barato, para triagem e tarefas auxiliares.', 400000, 75, 450, true, false),
+  -- Google
+  ('openrouter', 'google/gemini-3.5-flash', 'Gemini 3.5 Flash',
+   'Janela de contexto muito grande com custo moderado.', 1048576, 150, 900, true, false),
+  ('openrouter', 'google/gemini-2.5-flash', 'Gemini 2.5 Flash',
+   'Dos mais baratos com janela grande.', 1048576, 30, 250, true, false),
+  -- DeepSeek
+  ('openrouter', 'deepseek/deepseek-v4-pro', 'DeepSeek V4 Pro',
+   'Custo-benefício agressivo: saída ~5x mais barata que a dos topos de linha.', 1048576, 96, 191, true, false),
+  ('openrouter', 'deepseek/deepseek-chat-v3-0324', 'DeepSeek V3 Chat',
+   'Bem barato, para volume alto de conversa simples.', 163840, 29, 114, true, false),
+  -- Moonshot (Kimi)
+  ('openrouter', 'moonshotai/kimi-k3', 'Kimi K3',
+   'Carro-chefe da Moonshot, janela de 1M.', 1048576, 260, 1300, true, false),
+  ('openrouter', 'moonshotai/kimi-k2-thinking', 'Kimi K2 Thinking',
+   'Variante com raciocínio explícito, custo baixo.', 262144, 60, 250, true, false),
+  -- Qwen
+  ('openrouter', 'qwen/qwen3.8-max-0902', 'Qwen3.8 Max',
+   'Topo da linha Qwen, janela de 1M e saída barata.', 1000000, 200, 600, true, false),
+  ('openrouter', 'qwen/qwen3-max-thinking', 'Qwen3 Max Thinking',
+   'Variante com raciocínio explícito.', 262144, 78, 390, true, false),
+  -- Z.ai (GLM)
+  ('openrouter', 'z-ai/glm-5.3', 'GLM 5.3',
+   'Maior janela de contexto do catálogo (1.3M), custo moderado.', 1310720, 140, 440, true, false),
+  -- MiniMax
+  ('openrouter', 'minimax/minimax-m3', 'MiniMax M3',
+   'O mais barato do catálogo com janela de 1M.', 1048576, 30, 120, true, false)
+on conflict (provider, model_id) do nothing;
+
+
 notify pgrst, 'reload schema';

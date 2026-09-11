@@ -36,7 +36,7 @@ import Link from "next/link";
 
 import { TETO_TOOLS_POR_AGENTE } from "@/lib/mcp/tools/selecao-por-pacote";
 
-import { ModelPicker, useModelMeta } from "./ModelPicker";
+import { ModelPicker, useFabricantes, useModelMeta } from "./ModelPicker";
 import { CredentialPicker, findCredential } from "./CredentialPicker";
 import { ToolPicker } from "./ToolPicker";
 import { TriggerEditor, type TriggerValue } from "./TriggerEditor";
@@ -134,7 +134,10 @@ function buildState(args: {
     name: agent?.name ?? "",
     description: agent?.description ?? "",
     priority: agent?.priority ?? 0,
-    provider: (version?.provider as Provider) ?? "anthropic",
+    // Sempre `openrouter`: quem o sistema chama é ela, e o fabricante do modelo
+    // (Anthropic, DeepSeek, …) vive no prefixo do `model`. Versões antigas
+    // gravadas com provider direto continuam sendo respeitadas.
+    provider: (version?.provider as Provider) ?? "openrouter",
     model: version?.model ?? "",
     credential_id: version?.credential_id ?? "",
     channel_session_id: version?.channel_session_id ?? "",
@@ -159,6 +162,35 @@ function buildState(args: {
     split_max_chars: version?.split_max_chars ?? 600,
     followup: version?.followup ?? DEFAULT_FOLLOWUP,
   };
+}
+
+/**
+ * Fabricante a partir do id do modelo. Na OpenRouter o id é sempre
+ * `fabricante/modelo`; id sem barra é de provider direto (versão antiga) e não
+ * tem fabricante a mostrar.
+ */
+function vendorDoModelo(modelId: string): string {
+  const [v, ...resto] = modelId.split("/");
+  return resto.length > 0 && v ? v : "";
+}
+
+/**
+ * Rótulo de exibição do fabricante. Só entram aqui os que ficam ruins
+ * capitalizando o id; qualquer outro cai no fallback — assim um fabricante novo
+ * no catálogo aparece legível SEM precisar de código, que é o ponto desta tela
+ * ter deixado de ter lista fixa.
+ */
+const ROTULO_FABRICANTE: Record<string, string> = {
+  openai: "OpenAI",
+  deepseek: "DeepSeek",
+  moonshotai: "Kimi (Moonshot)",
+  "z-ai": "GLM (Z.ai)",
+  minimax: "MiniMax",
+  qwen: "Qwen",
+};
+
+function rotuloFabricante(v: string): string {
+  return ROTULO_FABRICANTE[v] ?? v.charAt(0).toUpperCase() + v.slice(1);
 }
 
 function toVersionPayload(s: FormState) {
@@ -208,15 +240,29 @@ export function AgentForm(props: Props) {
     setForm((prev) => ({ ...prev, ...p }));
   }
 
-  // Quando provider muda, limpa credential e modelo (eles dependem do provider).
-  function changeProvider(p: Provider) {
-    patch({ provider: p, credential_id: "", model: "" });
+  /**
+   * FABRICANTE em exibição (Anthropic, DeepSeek, …) — derivado do prefixo do
+   * modelo, porque é ali que ele vive de verdade (`anthropic/claude-sonnet-5`).
+   *
+   * Fica FORA do `FormState` de propósito: `dirty` é
+   * `JSON.stringify(form) !== JSON.stringify(baseline)`, e um campo só de
+   * exibição ali marcaria o formulário como alterado sem nada ter mudado.
+   */
+  const [vendor, setVendor] = React.useState<string>(() => vendorDoModelo(baseline.model));
+
+  // Trocar de fabricante limpa SÓ o modelo — o anterior pertence a outro
+  // fabricante e não existe na lista nova. A credencial NÃO é limpa: é sempre a
+  // mesma (OpenRouter), diferente de quando cada empresa exigia a sua.
+  function changeVendor(v: string) {
+    setVendor(v);
+    patch({ model: "" });
   }
 
   const cred = findCredential(props.credentials, form.credential_id);
   const credSt = cred ? credentialStatus(cred) : null;
   const channelSession = props.channelSessions.find((c) => c.id === form.channel_session_id);
   const modelMeta = useModelMeta(form.provider, form.model);
+  const fabricantes = useFabricantes(form.provider);
 
   // ---------------------------------------------------------------------
   // Validação (espelha versionCreateSchema, no client; server revalida).
@@ -333,6 +379,11 @@ export function AgentForm(props: Props) {
 
   function handleReset() {
     setForm(baseline);
+    // O fabricante vive fora do FormState, então `setForm` sozinho o deixaria
+    // apontando para o que o usuário tinha escolhido — e a lista de modelos
+    // filtraria por um fabricante enquanto o modelo restaurado é de outro,
+    // deixando o campo Modelo visualmente vazio.
+    setVendor(vendorDoModelo(baseline.model));
   }
 
   const disabled = readOnly || saving || publishing;
@@ -458,23 +509,33 @@ export function AgentForm(props: Props) {
             <div className="space-y-1">
               <Label htmlFor="provider">Empresa de inteligência artificial</Label>
               <Select
-                value={form.provider}
-                onValueChange={(v) => changeProvider(v as Provider)}
-                disabled={disabled}
+                value={vendor || undefined}
+                onValueChange={changeVendor}
+                disabled={disabled || fabricantes.isLoading}
               >
                 <SelectTrigger id="provider">
-                  <SelectValue />
+                  <SelectValue
+                    placeholder={fabricantes.isLoading ? "Carregando…" : "Selecione uma empresa"}
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="anthropic">Anthropic</SelectItem>
-                  <SelectItem value="openai">OpenAI</SelectItem>
-                  <SelectItem value="google">Google (Gemini)</SelectItem>
+                  {fabricantes.vendors.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {rotuloFabricante(v)}
+                    </SelectItem>
+                  ))}
+                  {fabricantes.vendors.length === 0 && !fabricantes.isLoading ? (
+                    <SelectItem value="__none__" disabled>
+                      Nenhuma empresa no catálogo
+                    </SelectItem>
+                  ) : null}
                 </SelectContent>
               </Select>
             </div>
 
             <ModelPicker
               provider={form.provider}
+              vendor={vendor}
               value={form.model}
               onChange={(modelId) => patch({ model: modelId })}
               disabled={disabled}

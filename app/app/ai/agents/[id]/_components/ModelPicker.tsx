@@ -24,6 +24,18 @@ export interface ModelOption {
 
 interface Props {
   provider: Provider;
+  /**
+   * FABRICANTE do modelo (prefixo do `model_id`: "anthropic", "deepseek", …).
+   *
+   * Existe porque, na OpenRouter, um único provider reúne modelos de vários
+   * fabricantes — e a tela mantém a experiência de "escolhe a empresa, depois o
+   * modelo". Filtrar aqui (em memória) em vez de na rota é de propósito: o
+   * catálogo é curado e pequeno, e uma busca por fabricante faria a lista
+   * piscar a cada troca sem ganho nenhum.
+   *
+   * Ausente = não filtra, que é o comportamento de quem não conhece este campo.
+   */
+  vendor?: string;
   value: string;
   onChange: (modelId: string, ctx?: { contextWindow: number | null }) => void;
   disabled?: boolean;
@@ -34,7 +46,25 @@ interface ApiResponse {
   data: { models: ModelOption[] };
 }
 
-export function ModelPicker({ provider, value, onChange, disabled, id }: Props) {
+/** Modelos do fabricante pedido. Sem fabricante, devolve tudo. */
+export function filtrarPorFabricante(models: ModelOption[], vendor?: string): ModelOption[] {
+  if (!vendor) return models;
+  return models.filter((m) => m.model_id.startsWith(`${vendor}/`));
+}
+
+/** Fabricantes presentes no catálogo, em ordem alfabética, sem repetição. */
+export function fabricantesDoCatalogo(models: ModelOption[]): string[] {
+  const vistos = new Set<string>();
+  for (const m of models) {
+    const v = m.model_id.split("/")[0];
+    // Id sem barra não tem fabricante (é o formato dos providers diretos, não o
+    // da OpenRouter) — fica de fora em vez de virar uma opção vazia na tela.
+    if (v && v !== m.model_id) vistos.add(v);
+  }
+  return [...vistos].sort();
+}
+
+export function ModelPicker({ provider, vendor, value, onChange, disabled, id }: Props) {
   const query = useQuery({
     queryKey: ["ai", "providers", provider, "models"],
     queryFn: async () => {
@@ -44,7 +74,7 @@ export function ModelPicker({ provider, value, onChange, disabled, id }: Props) 
     staleTime: 60_000,
   });
 
-  const models = query.data ?? [];
+  const models = filtrarPorFabricante(query.data ?? [], vendor);
 
   return (
     <div className="space-y-1">
@@ -76,6 +106,25 @@ export function ModelPicker({ provider, value, onChange, disabled, id }: Props) 
       </Select>
     </div>
   );
+}
+
+/**
+ * Fabricantes disponíveis no catálogo deste provider.
+ *
+ * Usa a MESMA queryKey do ModelPicker de propósito: o react-query devolve do
+ * cache em vez de buscar de novo, então a tela não faz duas chamadas para a
+ * mesma lista.
+ */
+export function useFabricantes(provider: Provider): { vendors: string[]; isLoading: boolean } {
+  const query = useQuery({
+    queryKey: ["ai", "providers", provider, "models"],
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse>(`/api/v1/ai/providers/${provider}/models`);
+      return res.data.models;
+    },
+    staleTime: 60_000,
+  });
+  return { vendors: fabricantesDoCatalogo(query.data ?? []), isLoading: query.isLoading };
 }
 
 export function useModelMeta(provider: Provider, modelId: string): ModelOption | null {
