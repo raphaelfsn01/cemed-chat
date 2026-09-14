@@ -28,7 +28,12 @@
  *   pnpm exec tsx --env-file=.env scripts/bench-modelos.ts --fase c --modelos v/m1,v/m2,v/m3
  *
  * Knobs: BENCH_OUT (jsonl de saída), BENCH_MAX_USD (teto de gasto, default 30),
- * BENCH_CONCORRENCIA (modelos em paralelo, default 4), BENCH_ORG, BENCH_AGENTE.
+ * BENCH_CONCORRENCIA (modelos em paralelo, default 4), BENCH_REPS (repetições por
+ * cenário na fase B, default 3), BENCH_ORG, BENCH_AGENTE.
+ *
+ * O saldo da OpenRouter é o MESMO que mantém o agente respondendo em produção. A
+ * OpenRouter recusa a chamada quando o custo MÁXIMO possível passa do saldo — com saldo
+ * baixo, gastar no benchmark pode derrubar o atendimento. Confira o saldo antes.
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -59,6 +64,8 @@ const AGENTE = process.env.BENCH_AGENTE ?? 'f8ba9bad-eafb-48ff-89c9-1fb541d5ca3f
 const MAX_CENTS = Number(process.env.BENCH_MAX_USD ?? '30') * 100;
 const CONCORRENCIA = Number(process.env.BENCH_CONCORRENCIA ?? '4');
 const TIMEOUT_MS = 120_000;
+/** Repetições por cenário na fase B (default 3) — menos repetições, menos crédito. */
+const REPS_B = Number(process.env.BENCH_REPS ?? '3');
 
 function arg(nome: string): string | undefined {
   const i = process.argv.indexOf(`--${nome}`);
@@ -458,7 +465,7 @@ function planejar(modelos: string[]): Grupo[] {
     if (FASE === 'a') {
       grupos.push({ modelo, roteamento: 'padrao', tarefas: repetir(todos(CENARIOS_FASE_A), 2) });
     } else if (FASE === 'b') {
-      grupos.push({ modelo, roteamento: 'padrao', tarefas: repetir(CENARIOS, 3) });
+      grupos.push({ modelo, roteamento: 'padrao', tarefas: repetir(CENARIOS, REPS_B) });
     } else if (FASE === 'c') {
       for (const r of ['padrao', 'latency', 'throughput'] as const) {
         grupos.push({ modelo, roteamento: r, tarefas: repetir(CENARIOS, 1) });
