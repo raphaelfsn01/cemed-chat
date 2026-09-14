@@ -29,7 +29,8 @@
  *
  * Knobs: BENCH_OUT (jsonl de saída), BENCH_MAX_USD (teto de gasto, default 30),
  * BENCH_CONCORRENCIA (modelos em paralelo, default 4), BENCH_REPS (repetições por
- * cenário na fase B, default 3), BENCH_ORG, BENCH_AGENTE.
+ * cenário na fase B, default 3), BENCH_CENARIOS (ids, só nas fases B e C), BENCH_ORG,
+ * BENCH_AGENTE.
  *
  * O saldo da OpenRouter é o MESMO que mantém o agente respondendo em produção. A
  * OpenRouter recusa a chamada quando o custo MÁXIMO possível passa do saldo — com saldo
@@ -66,6 +67,8 @@ const CONCORRENCIA = Number(process.env.BENCH_CONCORRENCIA ?? '4');
 const TIMEOUT_MS = 120_000;
 /** Repetições por cenário na fase B (default 3) — menos repetições, menos crédito. */
 const REPS_B = Number(process.env.BENCH_REPS ?? '3');
+/** Só estes cenários nas fases B e C (ids separados por vírgula) — para remedir um ponto. */
+const SO_CENARIOS = (process.env.BENCH_CENARIOS ?? '').split(',').filter(Boolean);
 
 function arg(nome: string): string | undefined {
   const i = process.argv.indexOf(`--${nome}`);
@@ -160,6 +163,8 @@ interface Execucao {
   transferiu: boolean;
   /** skills cujo corpo foi anexado à abertura neste cenário */
   skillsCasadas: string[];
+  /** mensagens tentadas DEPOIS da transferência — o gate de produção as recusa */
+  enviosBloqueados: number;
   duras: Record<string, boolean>;
   moles: Record<string, boolean>;
 }
@@ -253,6 +258,7 @@ function montarTools(
 ): ToolSet {
   const d = AGENT_TOOL_DEFS;
   let seq = 0;
+  let transferido = false;
   const tools: ToolSet = {
     get_lead_context: tool({
       ...d.get_lead_context,
@@ -264,6 +270,20 @@ function montarTools(
     send_message: tool({
       ...d.send_message,
       execute: (input) => {
+        // Igual a produção: a transferência marca force_human, e o gate de envio (stop, em
+        // before-send.ts) recusa QUALQUER mensagem depois dela — inclusive o "aviso" que o
+        // texto da própria tool de transferência convida a mandar. Não conta como enviada.
+        if (transferido) {
+          registrar('send_message_bloqueada', input);
+          return {
+            ok: false,
+            error: {
+              code: 'contato_bloqueado',
+              message:
+                'o contato optou por não receber mensagens (bloqueio irrevogável) — não envie mais nada e encerre o turno.',
+            },
+          };
+        }
         registrar('send_message', input);
         seq += 1;
         return { ok: true, status: 'enviada', message_id: `bench-${seq}` };
@@ -313,10 +333,16 @@ function montarTools(
       ...d.request_human_handoff,
       execute: (input) => {
         registrar('request_human_handoff', input);
+        transferido = true;
+        // Texto de produção (human-handoff.ts), com a frase de disponibilidade de um
+        // expediente com gente livre (lib/escalacao/disponibilidade.ts).
         return {
           ok: true,
-          status: 'handoff_acionado',
-          message: 'conversa passada para a equipe humana — encerre o turno sem enviar mais mensagens',
+          status: 'handoff_solicitado',
+          message:
+            'Handoff humano acionado; a conversa saiu do atendimento automático. ' +
+            'Há 2 pessoas da equipe podendo assumir agora — pode dizer ao cliente que alguém continua o atendimento em seguida. ' +
+            'Encerre o turno AGORA, sem enviar mais mensagens ao lead além do aviso.',
         };
       },
     }),
@@ -424,6 +450,7 @@ async function executar(
       mensagens,
       tags: [...new Set(tags)],
       transferiu,
+      enviosBloqueados: eventos.filter((e) => e.nome === 'send_message_bloqueada').length,
       ...avaliar(c, mensagens, tags, transferiu),
     };
   } catch (err) {
@@ -445,6 +472,7 @@ async function executar(
       mensagens: [],
       tags: [],
       transferiu: false,
+      enviosBloqueados: 0,
       duras: { executou: false },
       moles: {},
     };
@@ -460,15 +488,16 @@ interface Grupo {
 function planejar(modelos: string[]): Grupo[] {
   const porId = new Map(CENARIOS.map((c) => [c.id, c]));
   const todos = (ids: string[]) => ids.map((id) => porId.get(id)).filter((c): c is Cenario => c !== undefined);
+  const filtrados = SO_CENARIOS.length === 0 ? CENARIOS : todos(SO_CENARIOS);
   const grupos: Grupo[] = [];
   for (const modelo of modelos) {
     if (FASE === 'a') {
       grupos.push({ modelo, roteamento: 'padrao', tarefas: repetir(todos(CENARIOS_FASE_A), 2) });
     } else if (FASE === 'b') {
-      grupos.push({ modelo, roteamento: 'padrao', tarefas: repetir(CENARIOS, REPS_B) });
+      grupos.push({ modelo, roteamento: 'padrao', tarefas: repetir(filtrados, REPS_B) });
     } else if (FASE === 'c') {
       for (const r of ['padrao', 'latency', 'throughput'] as const) {
-        grupos.push({ modelo, roteamento: r, tarefas: repetir(CENARIOS, 1) });
+        grupos.push({ modelo, roteamento: r, tarefas: repetir(filtrados, 1) });
       }
     } else {
       throw new Error(`fase desconhecida: ${FASE} (use a, b ou c)`);
