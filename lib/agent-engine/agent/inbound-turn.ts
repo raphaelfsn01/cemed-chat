@@ -568,8 +568,12 @@ export function ritualBlocks(
   ];
 }
 
-/** Abertura determinística do run inbound — o ritual em texto (pt-br). */
-function buildOpeningMessage(
+/**
+ * Abertura determinística do run inbound — o ritual em texto (pt-br).
+ * Exportada para `scripts/bench-modelos.ts` medir modelos com a MESMA abertura de
+ * produção, em vez de uma cópia do texto que divergiria em silêncio.
+ */
+export function buildOpeningMessage(
   previous: LeadCheckpointRow | null,
   leadState: LeadStateRow | null,
   context: LeadContext,
