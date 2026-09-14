@@ -6,6 +6,7 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
+import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import type { LanguageModel } from 'ai';
 import { MockLanguageModelV3 } from 'ai/test';
 
@@ -24,10 +25,19 @@ const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com';
 const OPENAI_ENDPOINT = 'https://api.openai.com';
 const GOOGLE_ENDPOINT = 'https://generativelanguage.googleapis.com';
 /**
- * OpenRouter expõe API compatível com a da OpenAI, então o provider é o mesmo
- * `@ai-sdk/openai` apontado para cá — sem dependência nova. O que muda é o
- * formato do id do modelo: na OpenRouter ele já vem qualificado por vendor
- * (`anthropic/claude-sonnet-5`), enquanto no provider `openai` é o id nu.
+ * OpenRouter pelo provider OFICIAL dela (`@openrouter/ai-sdk-provider`), não pelo
+ * `@ai-sdk/openai` apontado para cá — que foi como começou, e custou o cache.
+ *
+ * A API deles é compatível com a da OpenAI, então o cliente da OpenAI "funciona":
+ * responde, chama tool, cobra. Só que ignora `providerOptions.anthropic.cacheControl`,
+ * e o prefixo estável (stable-prefix.ts) nunca virava `cache_control` no request. Em
+ * produção (14/09) toda chamada saía com `cacheReadTokens: 0` — 32 mil tokens
+ * reenviados do zero a cada turno, mais lentos e mais caros, sem erro nenhum.
+ *
+ * O provider oficial lê a MESMA marcação (`anthropic.cacheControl`), então a
+ * disciplina de cache não muda; e devolve o custo real por passo em
+ * `providerMetadata.openrouter.usage.cost`. O id do modelo já vem qualificado por
+ * vendor (`anthropic/claude-sonnet-5`), enquanto no provider `openai` é o id nu.
  */
 const OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1';
 
@@ -59,9 +69,11 @@ export function createDefaultRegistry(opts?: { allowedHosts?: string[] }): Provi
     google: (apiKey, modelId) =>
       createGoogleGenerativeAI({ apiKey, fetch: contain(GOOGLE_ENDPOINT) })(modelId),
     openrouter: (apiKey, modelId) =>
-      createOpenAI({ apiKey, baseURL: OPENROUTER_ENDPOINT, fetch: contain(OPENROUTER_ENDPOINT) })(
-        modelId,
-      ),
+      createOpenRouter({ apiKey, baseURL: OPENROUTER_ENDPOINT, fetch: contain(OPENROUTER_ENDPOINT) })(modelId, {
+        // A OpenRouter já devolve o uso sempre; o provider só o expõe na
+        // metadata com isto ligado — e é dali que sai o custo real.
+        usage: { include: true },
+      }),
   };
 }
 

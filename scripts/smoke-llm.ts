@@ -14,7 +14,9 @@
  *   5. llm_calls persistiu tokens/custo (custo > 0);
  *   6. budget da org bloqueia ANTES do provider (LlmBudgetExceededError).
  *
- * Requer ANTHROPIC_API_KEY real no env. Custo: ~2 chamadas curtas de Haiku.
+ * Requer a chave real do provider (SMOKE_PROVIDER): `anthropic` (default) usa
+ * ANTHROPIC_API_KEY; `openrouter` usa OPENROUTER_API_KEY. Custo: ~2 chamadas
+ * curtas de Haiku.
  */
 import pg from 'pg';
 import { z } from 'zod';
@@ -28,9 +30,19 @@ import {
 import { stablePrefixHash } from '@/lib/agent-engine/edge/llm/stable-prefix';
 
 const DB_URL = process.env.SMOKE_DB_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54329/postgres';
-const MODEL = process.env.SMOKE_MODEL ?? 'claude-haiku-4-5';
+/**
+ * `openrouter` existe porque é o provider de chat desta instalação — e foi por ele
+ * que o cache morreu sem ninguém ver: em 14/09 toda chamada de produção saía com
+ * `cacheReadTokens: 0`, porque a fábrica usava o cliente da OpenAI, que ignora a
+ * marcação de cache. Este smoke é o que teria pego isso.
+ */
+const PROVIDER = process.env.SMOKE_PROVIDER === 'openrouter' ? 'openrouter' : 'anthropic';
+const MODEL =
+  process.env.SMOKE_MODEL ?? (PROVIDER === 'openrouter' ? 'anthropic/claude-haiku-4.5' : 'claude-haiku-4-5');
+const KEY_VAR = PROVIDER === 'openrouter' ? 'OPENROUTER_API_KEY' : 'ANTHROPIC_API_KEY';
 /** Mínimo cacheável POR MODELO (regra 15) — o smoke falha se o prefixo não cobre. */
 const MIN_CACHEABLE: Record<string, number> = {
+  'anthropic/claude-haiku-4.5': 4096,
   'claude-haiku-4-5': 4096,
   'claude-opus-4-8': 4096,
   'claude-sonnet-4-6': 2048,
@@ -71,7 +83,7 @@ function bigSystem(): string {
 }
 
 async function main(): Promise<void> {
-  if (!process.env.ANTHROPIC_API_KEY) fail('ANTHROPIC_API_KEY ausente no env — o smoke exige o modelo real');
+  if (!process.env[KEY_VAR]) fail(`${KEY_VAR} ausente no env — o smoke exige o modelo real`);
   const min = MIN_CACHEABLE[MODEL];
   if (min === undefined) fail(`modelo ${MODEL} sem entrada em MIN_CACHEABLE — adicione o mínimo cacheável dele`);
 
@@ -79,12 +91,16 @@ async function main(): Promise<void> {
   await db.query(
     `insert into organizations (id, slug, legal_name, display_name, settings)
      values ($1, 'smoke-llm', 'Smoke LLM', 'Smoke LLM',
-             jsonb_build_object('llm', jsonb_build_object('provider', 'anthropic', 'default_model', $2::text)))
+             jsonb_build_object('llm', jsonb_build_object('provider', $3::text, 'default_model', $2::text)))
      on conflict (id) do update set settings = excluded.settings`,
-    [ORG, MODEL],
+    [ORG, MODEL, PROVIDER],
   );
 
-  const cfg = llmEdgeConfigFromEnv({ ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY, LLM_CACHE_TTL: '1h' });
+  const cfg = llmEdgeConfigFromEnv({
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+    LLM_CACHE_TTL: '1h',
+  });
   const system = bigSystem();
   const tools = {
     consultar_catalogo: tool({

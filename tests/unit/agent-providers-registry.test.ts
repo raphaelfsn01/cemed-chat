@@ -20,4 +20,12 @@ describe("createDefaultRegistry", () => {
     // para `ai_models.model_id` sob provider `openrouter`.
     expect(() => reg.openrouter!("k", "anthropic/claude-sonnet-5")).not.toThrow();
   });
+  it("openrouter usa o provider OFICIAL dela, não o cliente da OpenAI", () => {
+    // O cliente da OpenAI apontado para a OpenRouter "funciona" — responde, chama
+    // tool, cobra — mas ignora a marcação de cache. Em produção (14/09) toda
+    // chamada saiu com cacheReadTokens: 0 e ninguém viu. "Não lança" não pega
+    // isso; a identidade do provider pega.
+    const m = createDefaultRegistry().openrouter!("k", "anthropic/claude-sonnet-5");
+    expect(typeof m === "string" ? m : m.provider).toMatch(/^openrouter/);
+  });
 });

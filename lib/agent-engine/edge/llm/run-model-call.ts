@@ -21,7 +21,7 @@ import { z } from 'zod';
 
 import type { Logger } from '../../obs/logger';
 import { resolveOrgLlmConfig, type LlmEdgeConfig } from './credentials';
-import { costCents } from './pricing';
+import { costCents, custoInformadoCents } from './pricing';
 import { createDefaultRegistry, type ProviderRegistry } from './providers';
 import { buildStablePrefix } from './stable-prefix';
 
@@ -195,7 +195,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     cacheReadTokens: result.usage.inputTokenDetails.cacheReadTokens ?? 0,
     cacheWriteTokens: result.usage.inputTokenDetails.cacheWriteTokens ?? 0,
   };
-  const cost = costCents(model, usage);
+  // Custo informado pelo provider (OpenRouter) vence a tabela: é o que de fato se
+  // cobra, com cache e roteamento aplicados. Sem ele, a tabela — ver pricing.ts.
+  const cost = custoInformadoCents(result.steps) ?? costCents(model, usage);
 
   const { rows } = await db.query<{ id: string }>(
     `insert into llm_calls

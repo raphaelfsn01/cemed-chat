@@ -48,3 +48,32 @@ export function costCents(model: string, usage: TokenUsage): number | null {
     1_000_000;
   return usd * 100;
 }
+
+/**
+ * Custo que o PROVIDER informou, somado por passo, em cents — ou `null` quando
+ * nenhum passo trouxe custo (aí vale a tabela acima).
+ *
+ * Existe por causa da OpenRouter: ela serve modelos de dezenas de vendors, e a
+ * tabela acima casa por prefixo `claude-…` — `anthropic/claude-sonnet-5` nunca
+ * casava, o custo saía NULL e o teto mensal (que soma `coalesce(cost_cents, 0)`)
+ * ficava cego. O custo que ela informa é o que de fato cobra, com cache e
+ * roteamento já aplicados — mais fiel que qualquer tabela mantida aqui.
+ *
+ * Soma POR PASSO de propósito: num turno com tools, o `providerMetadata` do topo
+ * do resultado é só o do ÚLTIMO passo (e está deprecado no ai@7 em favor de
+ * `finalStep.providerMetadata`). Custo `0` é devolvido como 0, não como ausente.
+ */
+export function custoInformadoCents(
+  steps: ReadonlyArray<{ providerMetadata?: Record<string, unknown> | undefined }>,
+): number | null {
+  let usd = 0;
+  let informou = false;
+  for (const s of steps) {
+    const usage = (s.providerMetadata?.['openrouter'] as { usage?: { cost?: unknown } } | undefined)?.usage;
+    if (typeof usage?.cost === 'number' && Number.isFinite(usage.cost)) {
+      usd += usage.cost;
+      informou = true;
+    }
+  }
+  return informou ? usd * 100 : null;
+}

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Gate de release / upgrade de major do AI SDK (regra dura 16): sobe um Postgres
 # efêmero (mesma receita do test-db.sh: pgvector + prelude + baseline install) e
-# roda scripts/smoke-llm.ts contra o MODELO REAL. Exige ANTHROPIC_API_KEY no env.
+# roda scripts/smoke-llm.ts contra o MODELO REAL. Exige a chave do provider
+# escolhido: SMOKE_PROVIDER=anthropic (default) → ANTHROPIC_API_KEY;
+# SMOKE_PROVIDER=openrouter (o provider de chat da CEMED) → OPENROUTER_API_KEY.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -9,7 +11,9 @@ PORT="${SMOKE_DB_PORT:-54331}"
 CONTAINER="deskcomm-smoke-db-$$"
 IMAGE="pgvector/pgvector:pg17"
 
-[ -n "${ANTHROPIC_API_KEY:-}" ] || { echo "FATAL: exporte ANTHROPIC_API_KEY (o smoke usa o modelo real)" >&2; exit 1; }
+KEY_VAR="ANTHROPIC_API_KEY"
+[ "${SMOKE_PROVIDER:-anthropic}" = "openrouter" ] && KEY_VAR="OPENROUTER_API_KEY"
+[ -n "${!KEY_VAR:-}" ] || { echo "FATAL: exporte $KEY_VAR (o smoke usa o modelo real)" >&2; exit 1; }
 
 cleanup() { docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
