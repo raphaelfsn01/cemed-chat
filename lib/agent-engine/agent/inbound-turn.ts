@@ -1919,49 +1919,50 @@ export async function runAgentTurn(
   // do agente decide e confirma via update_lead_state (a máquina F2-10 é a única porta). A
   // sugestão fica guardada para comparar com o que o modelo confirmou (divergência, no fim).
   const currentStage: LeadStage = leadState?.stage ?? 'new';
-  let stageSuggestion: LeadStage | null = null;
-  let stageHintBlock = '';
-  if (deps.knobs.stageClassifier !== undefined) {
-    stageSuggestion = await classifyStage(
-      pool,
-      deps.llmCfg,
-      { tenantId, leadId, jobId: job.id },
-      {
-        context: effectiveContext,
-        currentStage,
-        ...argsAux(deps.knobs.stageClassifier.model),
-      },
-      { registry: deps.registry, log: runLog },
-    );
-    if (stageSuggestion !== null) {
-      stageHintBlock = renderStageHint(stageSuggestion, currentStage);
-    }
-  }
 
   // F4-04: classifier ADVISÓRIO anti-jailbreak sobre a mensagem INBOUND do lead (o
   // skillSignal já é a última inbound). Roda pelo seam agnóstico (modelo BARATO, budget
   // checado nele). NÃO veta o inbound — só FLAGRA o turno no trace; flag/level não são PII
   // (a mensagem/reason nunca vão a log). A correlação com promessa fora de tabela escala no fim.
-  let jailbreakLevel: JailbreakLevel = 'none';
-  if (deps.knobs.jailbreak !== undefined) {
-    const verdict = await classifyJailbreak(
-      pool,
-      deps.llmCfg,
-      { tenantId, leadId, jobId: job.id },
-      {
-        message: skillSignal,
-        ...argsAux(deps.knobs.jailbreak.model),
-      },
-      { registry: deps.registry, log: runLog },
-    );
-    jailbreakLevel = verdict.level;
-    if (verdict.flag) {
-      // trace do turno: só flag/level (não PII) — a mensagem e o reason nunca são logados.
-      runLog.warn('jailbreak: sinal detectado na mensagem do lead', {
-        jailbreak_flag: true,
-        jailbreak_level: verdict.level,
-      });
-    }
+  //
+  // Os dois classificadores rodam EM PARALELO: são independentes (o de estágio lê o
+  // contexto, o de jailbreak só a última inbound, e nenhum consome a saída do outro), e em
+  // série somavam ~5 s antes de o turno começar — medido em produção em 14/09 (2,9 s + 2,1 s).
+  const [stageSuggestion, jailbreakVerdict] = await Promise.all([
+    deps.knobs.stageClassifier !== undefined
+      ? classifyStage(
+          pool,
+          deps.llmCfg,
+          { tenantId, leadId, jobId: job.id },
+          {
+            context: effectiveContext,
+            currentStage,
+            ...argsAux(deps.knobs.stageClassifier.model),
+          },
+          { registry: deps.registry, log: runLog },
+        )
+      : Promise.resolve(null),
+    deps.knobs.jailbreak !== undefined
+      ? classifyJailbreak(
+          pool,
+          deps.llmCfg,
+          { tenantId, leadId, jobId: job.id },
+          {
+            message: skillSignal,
+            ...argsAux(deps.knobs.jailbreak.model),
+          },
+          { registry: deps.registry, log: runLog },
+        )
+      : Promise.resolve(null),
+  ]);
+  const stageHintBlock = stageSuggestion !== null ? renderStageHint(stageSuggestion, currentStage) : '';
+  const jailbreakLevel: JailbreakLevel = jailbreakVerdict?.level ?? 'none';
+  if (jailbreakVerdict?.flag) {
+    // trace do turno: só flag/level (não PII) — a mensagem e o reason nunca são logados.
+    runLog.warn('jailbreak: sinal detectado na mensagem do lead', {
+      jailbreak_flag: true,
+      jailbreak_level: jailbreakVerdict.level,
+    });
   }
 
   const openingBase = input.buildOpening({
