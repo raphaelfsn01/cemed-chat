@@ -236,6 +236,59 @@ export async function performHumanHandoff(
   });
 }
 
+/**
+ * Transferência pedida pelo modelo antes de avisar o paciente — o defeito que isto fecha.
+ *
+ * A transferência marca `contacts.force_human`, e o gate de envio (stop, before-send.ts)
+ * lê isso a cada mensagem: depois de transferir, NADA mais sai. É a regra dura nº 2, e
+ * está certa. Só que a resposta desta tool (ACH-03) mandava o modelo avisar o cliente
+ * DEPOIS de transferir ("sem mensagens além do aviso") — e esse aviso era sempre barrado.
+ * Medido no benchmark de modelos (set/2026), com tool e gate iguais aos de produção: na
+ * urgência ("dor no peito"), o Gemini 2.5 Flash transferiu primeiro e tentou avisar depois
+ * em 5 de 5 execuções — o paciente não recebeu mensagem nenhuma.
+ *
+ * A regra: sem tentativa de aviso no turno, a PRIMEIRA chamada é recusada com uma
+ * instrução e com a disponibilidade real da equipe — que é o que o aviso precisa dizer (a
+ * intenção da ACH-03, agora no momento em que ainda dá para usar). A SEGUNDA chamada nunca
+ * é recusada: chegar a um humano não pode depender de o modelo acertar a ordem. Tentou
+ * avisar e o envio falhou (canal fora, gate)? Transfere direto, pelo mesmo motivo.
+ */
+export interface EstadoDoAviso {
+  /** houve send_message neste turno — enviado ou não, o que conta é a tentativa */
+  tentou: boolean;
+  /** esta tool já recusou uma vez neste turno */
+  jaRecusou: boolean;
+}
+
+export function transferenciaPrecisaDeAviso(estado: EstadoDoAviso): boolean {
+  return !estado.tentou && !estado.jaRecusou;
+}
+
+/**
+ * A transferência foi recusada por falta de aviso e o modelo NÃO a refez — o runtime a
+ * conclui no fim do turno. Medido no benchmark (set/2026): o modelo obedece à recusa,
+ * avisa "vou passar para a equipe"... e às vezes para aí — o paciente ouve a promessa e
+ * ninguém da equipe é acionado. Quando o runtime conclui, o aviso já saiu: a ordem
+ * aviso → transferência continua garantida.
+ */
+export function transferenciaPendente(estado: { jaRecusou: boolean; transferiu: boolean }): boolean {
+  return estado.jaRecusou && !estado.transferiu;
+}
+
+export function mensagemAviseAntes(fraseDaEquipe: string): string {
+  return (
+    'Transferência NÃO feita ainda: avise o paciente primeiro. Envie UMA mensagem curta com ' +
+    'send_message dizendo que vai passar a conversa para a equipe e, depois, chame ' +
+    'request_human_handoff de novo — depois da transferência nenhuma mensagem chega a ele. ' +
+    `Situação da equipe agora, para o aviso ser verdadeiro: ${fraseDaEquipe}`
+  );
+}
+
+/** Resposta da transferência feita. Sem convite a "avisar depois": o gate o barraria. */
+export const MENSAGEM_HANDOFF_ACIONADO =
+  'Handoff humano acionado; a conversa saiu do atendimento automático. ' +
+  'Encerre o turno AGORA — a partir daqui nenhuma mensagem chega ao paciente.';
+
 /** Whitelist EXATA do payload da tool (mesmo padrão .strict() da F2-10/F3-02). */
 export const requestHumanHandoffInputSchema = z.strictObject({
   reason: z.string().min(1).max(500).optional(),
@@ -247,7 +300,7 @@ const PAYLOAD_TEACHING =
 
 export type RequestHumanHandoffResult =
   | { ok: true; status: 'handoff_solicitado'; message: string }
-  | { ok: false; error: { code: 'invalid_payload'; message: string } };
+  | { ok: false; error: { code: 'invalid_payload' | 'avise_antes'; message: string } };
 
 /**
  * Wrapper da tool request_human_handoff exposta ao modelo. Valida o payload e delega a
@@ -257,7 +310,7 @@ export type RequestHumanHandoffResult =
 export async function applyRequestHumanHandoff(
   db: pg.Pool,
   ids: HandoffIds,
-  opts: { conversationSummary: string; log: Logger },
+  opts: { conversationSummary: string; log: Logger; aviso: EstadoDoAviso },
   rawInput: unknown,
 ): Promise<RequestHumanHandoffResult> {
   const forbidden = findForbiddenKey(rawInput);
@@ -269,25 +322,23 @@ export async function applyRequestHumanHandoff(
     return { ok: false, error: { code: 'invalid_payload', message: `payload inválido em request_human_handoff (${zodIssuesSummary(parsed.error)}). ${PAYLOAD_TEACHING}` } };
   }
 
+  // O aviso ao paciente tem de sair ANTES: a transferência marca force_human e o gate de
+  // envio recusa qualquer mensagem depois dela. Ver transferenciaPrecisaDeAviso.
+  if (transferenciaPrecisaDeAviso(opts.aviso)) {
+    const { frase } = await expectativaDeAtendimento(db, ids.tenantId, new Date());
+    return { ok: false, error: { code: 'avise_antes', message: mensagemAviseAntes(frase) } };
+  }
+
   await performHumanHandoff(db, ids, {
     reason: parsed.data.reason ?? 'requested_human',
     conversationSummary: opts.conversationSummary,
     log: opts.log,
   });
 
-  // ACH-03: a expectativa vai JUNTO com a confirmação. Antes, a mensagem afirmava
-  // que "um atendente vai assumir" sem que ninguém tivesse olhado se havia
-  // alguém — e o agente repassava essa promessa ao cliente. Agora a resposta
-  // carrega o estado real da equipe, e o modelo não precisa lembrar de perguntar.
-  const { frase } = await expectativaDeAtendimento(db, ids.tenantId, new Date());
-
-  return {
-    ok: true,
-    status: 'handoff_solicitado',
-    message:
-      `Handoff humano acionado; a conversa saiu do atendimento automático. ${frase} ` +
-      'Encerre o turno AGORA, sem enviar mais mensagens ao lead além do aviso.',
-  };
+  // ACH-03: a expectativa real da equipe continua chegando ao modelo — mas na RECUSA
+  // acima, antes do aviso, que é quando ele ainda consegue repassá-la. Aqui, depois de
+  // transferir, nenhuma mensagem sai; a resposta não convida a tentar.
+  return { ok: true, status: 'handoff_solicitado', message: MENSAGEM_HANDOFF_ACIONADO };
 }
 
 /**

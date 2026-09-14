@@ -43,6 +43,12 @@ import * as path from 'node:path';
 import { generateText, stepCountIs, tool, type ToolSet } from 'ai';
 import pg from 'pg';
 
+import {
+  MENSAGEM_HANDOFF_ACIONADO,
+  mensagemAviseAntes,
+  transferenciaPendente,
+  transferenciaPrecisaDeAviso,
+} from '@/lib/agent-engine/agent/human-handoff';
 import { AGENT_TOOL_DEFS, buildOpeningMessage } from '@/lib/agent-engine/agent/inbound-turn';
 import { renderNotesIndex } from '@/lib/agent-engine/agent/lead-notes';
 import { composeSystemPrompt, loadOrgMemory, renderOrgMemory } from '@/lib/agent-engine/agent/org-memory';
@@ -65,6 +71,9 @@ const AGENTE = process.env.BENCH_AGENTE ?? 'f8ba9bad-eafb-48ff-89c9-1fb541d5ca3f
 const MAX_CENTS = Number(process.env.BENCH_MAX_USD ?? '30') * 100;
 const CONCORRENCIA = Number(process.env.BENCH_CONCORRENCIA ?? '4');
 const TIMEOUT_MS = 120_000;
+/** Frase de disponibilidade de um expediente com gente livre (lib/escalacao/disponibilidade.ts). */
+const FRASE_EQUIPE =
+  'Há 2 pessoas da equipe podendo assumir agora — pode dizer ao cliente que alguém continua o atendimento em seguida.';
 /** Repetições por cenário na fase B (default 3) — menos repetições, menos crédito. */
 const REPS_B = Number(process.env.BENCH_REPS ?? '3');
 /** Só estes cenários nas fases B e C (ids separados por vírgula) — para remedir um ponto. */
@@ -165,6 +174,8 @@ interface Execucao {
   skillsCasadas: string[];
   /** mensagens tentadas DEPOIS da transferência — o gate de produção as recusa */
   enviosBloqueados: number;
+  /** o modelo avisou mas não refez a transferência recusada — o runtime concluiu */
+  transferenciaPeloRuntime: boolean;
   duras: Record<string, boolean>;
   moles: Record<string, boolean>;
 }
@@ -259,6 +270,7 @@ function montarTools(
   const d = AGENT_TOOL_DEFS;
   let seq = 0;
   let transferido = false;
+  const aviso = { tentou: false, jaRecusou: false };
   const tools: ToolSet = {
     get_lead_context: tool({
       ...d.get_lead_context,
@@ -270,6 +282,7 @@ function montarTools(
     send_message: tool({
       ...d.send_message,
       execute: (input) => {
+        aviso.tentou = true;
         // Igual a produção: a transferência marca force_human, e o gate de envio (stop, em
         // before-send.ts) recusa QUALQUER mensagem depois dela — inclusive o "aviso" que o
         // texto da própria tool de transferência convida a mandar. Não conta como enviada.
@@ -332,18 +345,16 @@ function montarTools(
     request_human_handoff: tool({
       ...d.request_human_handoff,
       execute: (input) => {
+        // A MESMA regra e os MESMOS textos de produção (human-handoff.ts), importados — o
+        // stub não pode divergir de novo: foi assim que o benchmark aprovou uma urgência muda.
+        if (transferenciaPrecisaDeAviso(aviso)) {
+          aviso.jaRecusou = true;
+          registrar('request_human_handoff_recusada', input);
+          return { ok: false, error: { code: 'avise_antes', message: mensagemAviseAntes(FRASE_EQUIPE) } };
+        }
         registrar('request_human_handoff', input);
         transferido = true;
-        // Texto de produção (human-handoff.ts), com a frase de disponibilidade de um
-        // expediente com gente livre (lib/escalacao/disponibilidade.ts).
-        return {
-          ok: true,
-          status: 'handoff_solicitado',
-          message:
-            'Handoff humano acionado; a conversa saiu do atendimento automático. ' +
-            'Há 2 pessoas da equipe podendo assumir agora — pode dizer ao cliente que alguém continua o atendimento em seguida. ' +
-            'Encerre o turno AGORA, sem enviar mais mensagens ao lead além do aviso.',
-        };
+        return { ok: true, status: 'handoff_solicitado', message: MENSAGEM_HANDOFF_ACIONADO };
       },
     }),
   };
@@ -428,6 +439,12 @@ async function executar(
         ? {}
         : { providerOptions: { openrouter: { extraBody: { provider: { sort: roteamento } } } } }),
     });
+    // Igual a produção (inbound-turn.ts): transferência recusada por falta de aviso e não
+    // refeita pelo modelo é concluída pelo runtime no fim do turno.
+    const peloRuntime = transferenciaPendente({
+      jaRecusou: eventos.some((e) => e.nome === 'request_human_handoff_recusada'),
+      transferiu: eventos.some((e) => e.nome === 'request_human_handoff'),
+    });
     const msTotal = performance.now() - t0;
     const envios = eventos.filter((e) => e.nome === 'send_message');
     const mensagens = envios.map((e) => String((e.input as { body?: unknown }).body ?? ''));
@@ -435,7 +452,7 @@ async function executar(
       .filter((e) => e.nome === 'set_lead_tags')
       .flatMap((e) => ((e.input as { tags?: unknown }).tags as string[] | undefined) ?? [])
       .filter((t) => amb.tagsValidas.includes(t));
-    const transferiu = eventos.some((e) => e.nome === 'request_human_handoff');
+    const transferiu = peloRuntime || eventos.some((e) => e.nome === 'request_human_handoff');
     return {
       ...base,
       executou: true,
@@ -451,6 +468,7 @@ async function executar(
       tags: [...new Set(tags)],
       transferiu,
       enviosBloqueados: eventos.filter((e) => e.nome === 'send_message_bloqueada').length,
+      transferenciaPeloRuntime: peloRuntime,
       ...avaliar(c, mensagens, tags, transferiu),
     };
   } catch (err) {
@@ -473,6 +491,7 @@ async function executar(
       tags: [],
       transferiu: false,
       enviosBloqueados: 0,
+      transferenciaPeloRuntime: false,
       duras: { executou: false },
       moles: {},
     };

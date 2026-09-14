@@ -62,6 +62,7 @@ import {
   detectHumanHandoffRequest,
   isLeadInHandoff,
   performHumanHandoff,
+  transferenciaPendente,
 } from './human-handoff';
 import { detectMedicalEmergency, EMERGENCY_MESSAGES } from './medical-emergency';
 import { etiquetaNegocioDoAgente } from '@/lib/leads/agent-tag-sync';
@@ -229,7 +230,8 @@ export const AGENT_TOOL_DEFS = {
       'Passa a conversa para um ATENDENTE HUMANO imediatamente. Use quando o lead pedir para falar com ' +
       'uma pessoa, quando a situação exigir alguém humano (reclamação séria, questão jurídica/financeira ' +
       'sensível) ou quando você atingir o limite do que pode resolver. Depois de acionar, o bot silencia ' +
-      'para este lead — encerre o turno sem enviar mais mensagens.',
+      'para este lead e NENHUMA mensagem chega a ele — por isso avise o lead com send_message ANTES de ' +
+      'chamar esta tool, e depois encerre o turno.',
     // Schema LARGO para o SDK (o modelo vê o campo); a validação REAL é a whitelist .strict()
     // + guard de prototype pollution dentro de applyRequestHumanHandoff — campo extra/forjado
     // vira erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
@@ -1111,6 +1113,12 @@ export async function runAgentTurn(
           )
       : undefined;
   let outOfTablePromiseAttempted = false;
+  // Aviso ao paciente antes de uma transferência (ver transferenciaPrecisaDeAviso, em
+  // human-handoff.ts): a transferência bloqueia todo envio seguinte, então o aviso tem de
+  // ser tentado ANTES — e a tool recusa uma vez quando não foi.
+  // `pedido` guarda o payload da chamada recusada (o motivo) para o runtime concluir a
+  // transferência com ele se o modelo não a refizer — ver transferenciaPendente.
+  const avisoAoPaciente = { tentou: false, jaRecusou: false, transferiu: false, pedido: undefined as unknown };
   // Spec 15 (Wave 4 lê este flag): true quando open_human_case abriu um caso NESTE
   // turno — aqui só declara e seta; o consumo (ex.: guardrail de promessa) é da Wave 4.
   let openedCaseThisTurn = false;
@@ -1321,6 +1329,8 @@ export async function runAgentTurn(
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
       execute: async ({ body }) => {
+        // Tentativa conta, enviada ou não: é o que libera a transferência (human-handoff.ts).
+        avisoAoPaciente.tentou = true;
         // F4-04: sinaliza (independente do gate F4-01/F4-08) se ESTA candidata é uma
         // promessa fora de tabela — usado só para correlacionar com o jailbreak no fim do
         // turno. A detecção é determinística (decidePromise); sem tabela do tenant = no-op.
@@ -1695,10 +1705,18 @@ export async function runAgentTurn(
           const res = await applyRequestHumanHandoff(
             pool,
             { tenantId, leadId, conversationId: input.conversationId },
-            { conversationSummary: buildHandoffSummary(previous), log: runLog },
+            { conversationSummary: buildHandoffSummary(previous), log: runLog, aviso: avisoAoPaciente },
             raw,
           );
-          if (!res.ok) return res; // erro de ensino (payload fora da whitelist)
+          if (!res.ok) {
+            // erro de ensino: payload fora da whitelist, ou "avise o paciente antes".
+            if (res.error.code === 'avise_antes') {
+              avisoAoPaciente.jaRecusou = true;
+              avisoAoPaciente.pedido = raw;
+            }
+            return res;
+          }
+          avisoAoPaciente.transferiu = true;
           return { ok: true, status: res.status, message: res.message };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
@@ -2068,6 +2086,28 @@ export async function runAgentTurn(
     deps.knobs.prune !== undefined
       ? pruneToolResults(turn.result.response.messages, deps.knobs.prune)
       : turn.result.response.messages;
+
+  // Transferência recusada por falta de aviso e NÃO refeita pelo modelo: o runtime conclui
+  // (ver transferenciaPendente). O aviso já saiu a esta altura, então a ordem continua certa.
+  // A 2ª chamada nunca é recusada, e o payload já passou pela validação na 1ª.
+  if (transferenciaPendente(avisoAoPaciente)) {
+    try {
+      const res = await applyRequestHumanHandoff(
+        pool,
+        { tenantId, leadId, conversationId: input.conversationId },
+        { conversationSummary: buildHandoffSummary(previous), log: runLog, aviso: avisoAoPaciente },
+        avisoAoPaciente.pedido ?? {},
+      );
+      if (res.ok) {
+        avisoAoPaciente.transferiu = true;
+        runLog.warn('handoff concluído pelo runtime: o modelo avisou o paciente mas não refez a transferência');
+      } else {
+        noteRunError(new Error(`handoff pendente não concluído pelo runtime (${res.error.code})`));
+      }
+    } catch (err) {
+      noteRunError(err instanceof Error ? err : new Error(String(err)));
+    }
+  }
 
   // Fechamento imposto pelo runtime: 2ª chamada, mesma conversa, só o checkpoint.
   // Até 2 tentativas AQUI; esgotou, o turno conclui sem checkpoint novo — ver
