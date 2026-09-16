@@ -43,7 +43,9 @@ histórico de quem fez o quê — e o Audit Log deixa de valer.
 3. Escolha o papel **Atendente**.
 4. Envie. Cada pessoa recebe um e-mail e cria a própria senha.
 
-Na mesma tela você define, por pessoa:
+A tela tem duas abas. **Membros** lista quem tem acesso, com o papel, o status do convite
+(**Aceito** quando a pessoa já entrou) e a última atividade. Em **Atendimento** você define,
+por pessoa:
 
 - **Capacidade** — quantas conversas ela aguenta ao mesmo tempo. A distribuição automática
   respeita esse número.
@@ -65,9 +67,14 @@ paciente e mexe no WhatsApp da clínica.
 
 **O que fazer:**
 
-1. Em **MFA (TOTP)**, ative e leia o QR com o app autenticador do celular.
-2. Guarde os **Códigos de recuperação** fora do celular. São a saída se o aparelho sumir.
-3. Em **Sessões ativas**, encerre o que você não reconhecer.
+1. Em **MFA (TOTP)**, ative e leia o QR com o app autenticador do celular. A tela mostra
+   **Ativado** quando está valendo.
+2. Guarde os **Códigos de recuperação** fora do celular. São a saída se o aparelho sumir, e cada
+   código serve uma vez só. O botão **Regenerar códigos de recuperação** cria outros e invalida
+   os antigos.
+3. Em **Sessões ativas** existe apenas **Sair de todos os dispositivos** — a listagem de sessões
+   ainda não foi construída. Use o botão se perder um aparelho: ele desconecta tudo, inclusive
+   você, e é só entrar de novo.
 
 `[print: Organização → Segurança]`
 
@@ -81,8 +88,10 @@ paciente e mexe no WhatsApp da clínica.
 
 **O que fazer:**
 
-- Em **Perfil**: nome que aparece para o time, idioma, **fuso horário** e foto. O fuso errado
-  faz o horário das mensagens parecer deslocado.
+- Em **Perfil**: **Nome completo**, **Idioma**, **Fuso horário** e **Avatar URL**. O fuso errado
+  faz o horário das mensagens parecer deslocado. Duas coisas ainda não dá para fazer por aqui:
+  **trocar o e-mail** e **subir uma foto** — o avatar aceita apenas o endereço de uma imagem que
+  já esteja na internet.
 - Em **Notificações**: por onde e sobre o quê você quer ser avisado. Quem atende deve manter o
   aviso de conversa nova ligado.
 
