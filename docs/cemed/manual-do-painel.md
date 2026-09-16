@@ -184,7 +184,7 @@ Esta é a parte que a equipe usa o tempo todo. Se alguém só ler isto, já trab
 
 - Responder sem **Assumir**: a IA pode responder junto e o paciente recebe duas vozes.
 - Usar **Nota interna** achando que está falando com o paciente. Olhe a cor antes de enviar.
-- **Fechar** conversa que só está esperando retorno. Para isso existe **Adiar**.
+- **Fechar** conversa que só está esperando retorno. Para isso existe **Lembrar**.
 
 ## 1.2 Radar — o que está esfriando
 
@@ -227,7 +227,8 @@ aparece ali, já passou do ponto.
 
 `[print: tela de Respostas rápidas com o formulário aberto]`
 
-**Erros comuns:** guardar preço em resposta rápida. A clínica não informa valor por WhatsApp.
+**Erros comuns:** guardar tabela de preço em resposta rápida. O valor muda conforme o procedimento e
+a forma de atendimento — texto pronto vira promessa errada.
 
 ## 1.4 Contatos
 
@@ -365,22 +366,27 @@ o worker, que é a parte que faz o agente responder. Esse ainda passa por mim (v
 
 ---
 
-# Parte 4 — As regras da CEMED
+# Parte 4 — As regras do agente
 
-Valem para o agente **e** para a equipe. Elas estão escritas nas instruções do agente e devem
-guiar quem atende.
+Estas regras estão escritas nas **instruções do agente** e descrevem o que **ele** não faz. Elas
+não são proibições para a equipe: são o motivo pelo qual a conversa chega em uma pessoa. Fonte:
+`docs/cemed/spec-crm-cemed.md`, §4 e §9.
 
-1. **Nunca informe preço por WhatsApp.** Quem informa valor é a equipe, no atendimento.
-2. **Não agende nem confirme horário.** A clínica atende por ordem de chegada; só quem vê a fila
-   sabe a disponibilidade.
-3. **Urgência vai para uma pessoa, na hora.** Dor no peito, falta de ar, desmaio: acolha em uma
-   linha e transfira. Ninguém orienta conduta por WhatsApp.
-4. **Não peça documento.** Nem CPF, nem carteirinha, nem foto. Nome e telefone bastam.
-5. **Unimed não é atendida.** Avise antes de a conversa avançar. Aceitos: particular, BRASEG,
-   Cartão da Família e PAF SERRA-MAR.
-6. **Queda de cabelo é escopo.** É Tricologia, com a Dra. Ana Prado — nunca trate como fora de escopo.
-7. **Uma unidade só**, em Rio das Ostras. Não existe unidade em Macaé.
-8. **Zero emoji** com paciente.
+| O agente nunca | Porque isso é da equipe |
+|---|---|
+| informa preço, valor ou faixa | o valor muda por procedimento e forma de atendimento; quem informa é a equipe, caso a caso |
+| agenda nem confirma horário | o sistema não tem agenda. Marcar é da recepção, na agenda da clínica |
+| conduz uma urgência | ele orienta SAMU 192 ou pronto-socorro e transfere na hora; responder é da equipe, na frente de tudo |
+| pede CPF, carteirinha ou foto de documento | se for necessário, a equipe pede pelo canal apropriado e só o que precisa |
+| dá orientação de saúde | conduta não se passa por WhatsApp — nem por ele, nem por ninguém |
+| usa emoji com paciente | é o tom da clínica; vale manter o mesmo tom no atendimento humano |
+
+**Fatos da clínica — esses valem para todo mundo:**
+
+1. **Unimed não é atendida.** É a pergunta mais comum no WhatsApp. Avise antes de a conversa
+   avançar e ofereça particular. Aceitos: particular, BRASEG, Cartão da Família e PAF SERRA-MAR.
+2. **Uma unidade só**, em Rio das Ostras. Não existe unidade em Macaé.
+3. **Queda de cabelo é escopo.** É Tricologia, com a Dra. Ana Prado — nunca trate como fora de escopo.
 
 ---
 
