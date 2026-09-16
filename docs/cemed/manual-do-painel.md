@@ -27,6 +27,19 @@ Comece todo mundo como **Atendente**. Papel a mais é risco a mais, e subir depo
 
 Hoje existe **uma conta só** no sistema: a sua. Sem contas para a equipe não há o que treinar.
 
+## 0.0 Onde fica tudo: a tela de Configurações
+
+**Para que serve:** é o índice do painel. Tudo que este manual chama de "Organização → alguma
+coisa" está aqui, em três blocos: **Sua conta** (Perfil, Segurança, Notificações), **Sua empresa**
+(Equipe, Distribuição de atendimento, Organização, Billing) e **Dados e acesso** (LGPD, API
+Tokens). Quando não souber onde está um ajuste, comece por aqui.
+
+**Quem acessa:** todos veem a tela; cada cartão exige o papel da sua própria seção.
+
+**Como chegar:** menu **Configurações**, no rodapé da barra lateral.
+
+`[print: Configurações, com os blocos Sua conta, Sua empresa e Dados e acesso]`
+
 ## 0.1 Criar as contas da equipe
 
 **Para que serve:** dar acesso a cada pessoa, com nome próprio. Conta compartilhada apaga o
@@ -191,7 +204,7 @@ Os três níveis:
 
 Quando está tudo certo, a tela diz *"Nenhuma demanda em risco"*. É o estado que você quer ver.
 
-`[print: Radar de risco com linhas em Crítico e Em risco]`
+`[print: Radar de risco vazio — "Nenhuma demanda em risco"]`
 
 **Erros comuns:** tratar o Radar como lista de tarefas do dia. Ele é rede de segurança: se algo
 aparece ali, já passou do ponto.

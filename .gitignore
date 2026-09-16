@@ -99,3 +99,6 @@ evidence/.sonda-score-residuo.json
 
 # sessão reusada pelas jornadas (contém tokens)
 .auth/
+
+# Prints do manual (entram na página publicada, não no repositório)
+prints-manual/
