@@ -687,7 +687,7 @@ test.describe("followup flow selector no editor do agente (Task 7.2)", () => {
 
     // --- 4. salva o rascunho ---
     await page.getByRole("button", { name: "Salvar rascunho" }).click();
-    await expect(page.getByText(/Rascunho v\d+ salvo\./)).toBeVisible();
+    await expect(page.getByText(/Rascunho [\d.]+ salvo\./)).toBeVisible();
     await page.screenshot({
       path: path.join(ARTIFACTS_DIR, "followup-7.2-02-saved.png"),
       fullPage: true,

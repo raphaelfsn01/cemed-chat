@@ -49,7 +49,7 @@ async function main(): Promise<void> {
   await page.screenshot({ path: "evidence/split-toggle-ligado.png", fullPage: false });
 
   await page.getByRole("button", { name: /Salvar rascunho/i }).click();
-  await page.getByText(/Rascunho v\d+ salvo/i).waitFor({ timeout: 15_000 });
+  await page.getByText(/Rascunho [\d.]+ salvo/i).waitFor({ timeout: 15_000 });
   console.log("[2] save aceito pelo servidor (toast de rascunho salvo)");
 
   await page.reload({ waitUntil: "networkidle" });

@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 
+import { rotuloVersao } from "@/lib/ai/agents/rotulo-versao";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 import { agentRunsKey } from "@/hooks/ai/useAgentRuns";
@@ -67,8 +68,8 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
 
   const versionLabel =
     target.status === "published"
-      ? `v${target.version_number} (publicada)`
-      : `v${target.version_number} (rascunho)`;
+      ? `${rotuloVersao(target.version_number)} (publicada)`
+      : `${rotuloVersao(target.version_number)} (rascunho)`;
 
   async function handleRun() {
     if (!message.trim()) {

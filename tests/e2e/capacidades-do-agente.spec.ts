@@ -115,7 +115,7 @@ async function consumo(page: Page): Promise<string> {
  */
 async function salvarRascunho(page: Page): Promise<void> {
   await page.getByRole("button", { name: /salvar rascunho/i }).click();
-  await expect(page.getByText(/Rascunho v\d+ salvo/)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/Rascunho [\d.]+ salvo/)).toBeVisible({ timeout: 20_000 });
 }
 
 test.beforeEach(() => {

@@ -363,7 +363,7 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
         fullPage: true,
       });
       await page.getByRole("button", { name: "Salvar rascunho" }).click();
-      await expect(page.getByText(/Rascunho v\d+ salvo\./)).toBeVisible();
+      await expect(page.getByText(/Rascunho [\d.]+ salvo\./)).toBeVisible();
 
       // Publica a version — sem isso o gate (Task 7.2) nunca libera o gatilho
       // automático (só conta agente com version status='published'). É AQUI

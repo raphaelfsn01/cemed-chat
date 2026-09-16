@@ -12,6 +12,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+import { rotuloVersao } from "@/lib/ai/agents/rotulo-versao";
 import type { AgentVersionRow } from "@/hooks/ai/useAgentVersions";
 
 interface Props {
@@ -47,10 +48,10 @@ export function PublishConfirmDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="max-w-lg">
         <AlertDialogHeader>
-          <AlertDialogTitle>Publicar v{draft.version_number}?</AlertDialogTitle>
+          <AlertDialogTitle>Publicar {rotuloVersao(draft.version_number)}?</AlertDialogTitle>
           <AlertDialogDescription>
             Esta versão se tornará a ativa no atendimento. A versão atual ({" "}
-            {published ? `v${published.version_number}` : "nenhuma"}) será marcada como superseded.
+            {published ? rotuloVersao(published.version_number) : "nenhuma"}) será marcada como superseded.
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -90,7 +91,7 @@ export function PublishConfirmDialog({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isPending}>Cancelar</AlertDialogCancel>
           <AlertDialogAction onClick={onConfirm} disabled={isPending}>
-            {isPending ? "Publicando…" : `Publicar v${draft.version_number}`}
+            {isPending ? "Publicando…" : `Publicar ${rotuloVersao(draft.version_number)}`}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

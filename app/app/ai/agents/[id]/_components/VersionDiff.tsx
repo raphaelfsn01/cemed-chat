@@ -11,6 +11,7 @@
 import * as React from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { rotuloVersao } from "@/lib/ai/agents/rotulo-versao";
 import type { AgentVersionRow } from "@/hooks/ai/useAgentVersions";
 
 interface Props {
@@ -110,9 +111,9 @@ export function VersionDiff({ versionA, versionB }: Props) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2 text-sm">
-        <Badge variant="outline">v{versionA.version_number}</Badge>
+        <Badge variant="outline">{rotuloVersao(versionA.version_number)}</Badge>
         <span className="text-muted-foreground">→</span>
-        <Badge variant="outline">v{versionB.version_number}</Badge>
+        <Badge variant="outline">{rotuloVersao(versionB.version_number)}</Badge>
       </div>
 
       <Section title="Configuração">
@@ -123,8 +124,8 @@ export function VersionDiff({ versionA, versionB }: Props) {
             <thead>
               <tr className="text-left text-muted-foreground">
                 <th className="py-1">Campo</th>
-                <th className="py-1">v{versionA.version_number}</th>
-                <th className="py-1">v{versionB.version_number}</th>
+                <th className="py-1">{rotuloVersao(versionA.version_number)}</th>
+                <th className="py-1">{rotuloVersao(versionB.version_number)}</th>
               </tr>
             </thead>
             <tbody>

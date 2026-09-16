@@ -15,6 +15,7 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { rotuloVersao } from "@/lib/ai/agents/rotulo-versao";
 import {
   Dialog,
   DialogContent,
@@ -114,7 +115,7 @@ export function VersionHistory({ agentId, versions, readOnly }: Props) {
         return;
       }
       toast.success(
-        `Revertido para versão equivalente a v${targetNum} (publicada como v${res.data!.new_version_number}).`,
+        `Revertido para versão equivalente a ${rotuloVersao(targetNum)} (publicada como ${rotuloVersao(res.data!.new_version_number)}).`,
       );
       setRevertTarget(null);
       router.refresh();
@@ -137,7 +138,7 @@ export function VersionHistory({ agentId, versions, readOnly }: Props) {
               <Badge variant={STATUS_VARIANT[v.status] ?? "outline"} className="text-xs">
                 {v.status}
               </Badge>
-              <span className="font-mono">v{v.version_number}</span>
+              <span className="font-mono">{rotuloVersao(v.version_number)}</span>
               <span className="text-xs text-muted-foreground">
                 {new Date(v.created_at).toLocaleString()}
               </span>
@@ -173,7 +174,7 @@ export function VersionHistory({ agentId, versions, readOnly }: Props) {
           <DialogHeader>
             <DialogTitle>
               {diffPair
-                ? `Diff v${diffPair.a.version_number} ↔ v${diffPair.b.version_number}`
+                ? `Diff ${rotuloVersao(diffPair.a.version_number)} ↔ ${rotuloVersao(diffPair.b.version_number)}`
                 : "Diff"}
             </DialogTitle>
           </DialogHeader>
@@ -188,10 +189,10 @@ export function VersionHistory({ agentId, versions, readOnly }: Props) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Reverter para v{revertTarget?.version_number}?
+              Reverter para {revertTarget ? rotuloVersao(revertTarget.version_number) : ""}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Uma nova versão idêntica a v{revertTarget?.version_number} será criada e
+              Uma nova versão idêntica a {revertTarget ? rotuloVersao(revertTarget.version_number) : ""} será criada e
               publicada imediatamente. A versão atualmente publicada vira superseded.
             </AlertDialogDescription>
           </AlertDialogHeader>
