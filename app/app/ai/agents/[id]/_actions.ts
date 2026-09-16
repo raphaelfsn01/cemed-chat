@@ -53,6 +53,66 @@ async function ensureAdmin() {
 }
 
 // ---------------------------------------------------------------------------
+// salvarDadosDoAgenteAction
+//
+// Nome, descrição e prioridade vivem no AGENTE, não na versão — e o salvar da tela
+// mandava só a versão. O efeito não era "o campo não grava": era o botão PUBLICAR
+// morto. O formulário guarda os três no mesmo estado que alimenta o cálculo de
+// "alterado"; sem gravá-los, o estado nunca voltava a bater com o servidor, "alterado"
+// ficava preso em true e a regra `if (dirty) return "Salve o rascunho antes de publicar"`
+// desabilitava o Publicar para sempre. Foi o que travou a CEMED ao preencher a descrição.
+// ---------------------------------------------------------------------------
+
+export async function salvarDadosDoAgenteAction(
+  agentId: string,
+  dados: { name: string; description: string; priority: number },
+): Promise<ActionResult<{ agent_id: string }>> {
+  if (!UUID_RX.test(agentId)) return { ok: false, error: "invalid_request" };
+  const guard = await ensureAdmin();
+  if (!guard.ok) return guard;
+  const { authUser, activeOrg } = guard;
+
+  // Mesmos limites do agentPatchSchema (lib/ai/guardrails-schema.ts) e da coluna
+  // priority (0..1000) — a tela valida antes, isto é a rede.
+  const name = dados.name.trim();
+  const description = dados.description.trim();
+  if (name.length < 2 || name.length > 120) {
+    return { ok: false, error: "validation_failed", message: "O nome precisa ter de 2 a 120 caracteres." };
+  }
+  if (description.length > 500) {
+    return { ok: false, error: "validation_failed", message: "A descrição precisa ter no máximo 500 caracteres." };
+  }
+  if (!Number.isInteger(dados.priority) || dados.priority < 0 || dados.priority > 1000) {
+    return { ok: false, error: "validation_failed", message: "A ordem de preferência vai de 0 a 1000." };
+  }
+
+  const requestId = randomUUID();
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("ai_agents")
+    .update({ name, description: description === "" ? null : description, priority: dados.priority })
+    .eq("id", agentId)
+    .eq("organization_id", activeOrg.orgId);
+
+  if (error) {
+    return { ok: false, error: "internal_error", message: error.message };
+  }
+
+  void audit({
+    action: "ai_agent.updated",
+    actorUserId: authUser.id,
+    organizationId: activeOrg.orgId,
+    resourceType: "ai_agent",
+    resourceId: agentId,
+    requestId,
+    metadata: { fields: ["name", "description", "priority"] },
+  });
+
+  revalidatePath(`/app/ai/agents/${agentId}`);
+  return { ok: true, data: { agent_id: agentId } };
+}
+
+// ---------------------------------------------------------------------------
 // saveAgentDraftAction
 // ---------------------------------------------------------------------------
 

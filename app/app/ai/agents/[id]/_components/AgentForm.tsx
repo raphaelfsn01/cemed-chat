@@ -8,9 +8,12 @@
  *   - `publishAgentAction` (versão draft → published; flip atômico via fn)
  *
  * Estados visíveis ao usuário:
- *   - "Publicado vN" (sem draft, valores espelham published)
- *   - "Rascunho vN+1" (sem published)
- *   - "Publicado vN + Rascunho vM" (formulário mostra a draft)
+ *   - "Publicado 0.N" (sem draft, valores espelham published)
+ *   - "Rascunho 0.N+1" (sem published)
+ *   - "Publicado 0.N + Rascunho 0.M" (formulário mostra a draft)
+ *
+ * O rótulo sai de `rotuloVersao` (lib/ai/agents/rotulo-versao.ts): a sequência no banco
+ * continua inteira, a leitura é em décimos.
  */
 import * as React from "react";
 import { useRouter } from "next/navigation";
@@ -23,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { rotuloVersao } from "@/lib/ai/agents/rotulo-versao";
 import {
   Select,
   SelectContent,
@@ -45,6 +49,7 @@ import { FollowupFlowPicker } from "./FollowupFlowPicker";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
 import {
   saveAgentDraftAction,
+  salvarDadosDoAgenteAction,
   publishAgentAction,
   createMcpAgentAction,
 } from "../_actions";
@@ -328,12 +333,30 @@ export function AgentForm(props: Props) {
     setSaving(true);
     try {
       if (isEdit) {
+        // Nome, descrição e prioridade ficam no AGENTE, não na versão — e precisam ser
+        // gravados no MESMO "Salvar", senão o formulário nunca volta a bater com o
+        // servidor, `dirty` fica preso em true e o botão Publicar não habilita mais.
+        if (
+          form.name !== baseline.name ||
+          form.description !== baseline.description ||
+          form.priority !== baseline.priority
+        ) {
+          const resAgente = await salvarDadosDoAgenteAction(props.agent.id, {
+            name: form.name,
+            description: form.description,
+            priority: form.priority,
+          });
+          if (!resAgente.ok) {
+            toast.error(resAgente.message ?? `Erro: ${resAgente.error}`);
+            return;
+          }
+        }
         const res = await saveAgentDraftAction(props.agent.id, toVersionPayload(form));
         if (!res.ok) {
           toast.error(res.message ?? `Erro: ${res.error}`);
           return;
         }
-        toast.success(`Rascunho v${res.data!.version_number} salvo.`);
+        toast.success(`Rascunho ${rotuloVersao(res.data!.version_number)} salvo.`);
         router.refresh();
       } else {
         const payload = {
@@ -369,7 +392,7 @@ export function AgentForm(props: Props) {
         toast.error(`Falha ao publicar: ${res.error}`);
         return;
       }
-      toast.success(`v${props.draft.version_number} publicada e ativa.`);
+      toast.success(`${rotuloVersao(props.draft.version_number)} publicada e ativa.`);
       setConfirmOpen(false);
       router.refresh();
     } finally {
@@ -396,12 +419,12 @@ export function AgentForm(props: Props) {
     if (pubN && draftN) {
       return (
         <Badge variant="secondary">
-          Publicado v{pubN} + Rascunho v{draftN}
+          Publicado {rotuloVersao(pubN)} + Rascunho {rotuloVersao(draftN)}
         </Badge>
       );
     }
-    if (pubN) return <Badge variant="default">Publicado v{pubN}</Badge>;
-    if (draftN) return <Badge variant="outline">Rascunho v{draftN}</Badge>;
+    if (pubN) return <Badge variant="default">Publicado {rotuloVersao(pubN)}</Badge>;
+    if (draftN) return <Badge variant="outline">Rascunho {rotuloVersao(draftN)}</Badge>;
     return <Badge variant="outline">Sem versão</Badge>;
   })();
 
@@ -444,7 +467,7 @@ export function AgentForm(props: Props) {
                 {publishing
                   ? "Publicando…"
                   : props.draft
-                    ? `Publicar v${props.draft.version_number}`
+                    ? `Publicar ${rotuloVersao(props.draft.version_number)}`
                     : "Publicar"}
               </Button>
             </span>
