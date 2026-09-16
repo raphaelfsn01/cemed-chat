@@ -71,6 +71,23 @@ paciente e mexe no WhatsApp da clínica.
 
 `[print: Organização → Segurança]`
 
+## 0.3 Sua conta: perfil e avisos
+
+**Para que serve:** cada pessoa ajusta o que é dela. Leva um minuto e evita confusão depois.
+
+**Quem acessa:** cada um na própria conta.
+
+**Como chegar:** menu **Organização → Perfil** e **Organização → Notificações**.
+
+**O que fazer:**
+
+- Em **Perfil**: nome que aparece para o time, idioma, **fuso horário** e foto. O fuso errado
+  faz o horário das mensagens parecer deslocado.
+- Em **Notificações**: por onde e sobre o quê você quer ser avisado. Quem atende deve manter o
+  aviso de conversa nova ligado.
+
+`[print: Organização → Perfil]`
+
 ---
 
 # Parte 1 — Recepção: o dia a dia
@@ -296,6 +313,7 @@ versão no ar aparece no selo do topo. Só o que está publicado vale para o pac
 | **LGPD** | pedidos de exportação e exclusão feitos por pacientes |
 | **API Tokens** | chaves para outro sistema conversar com o CRM. O token aparece **uma vez só** |
 | **Webhooks** | avisar outro sistema quando algo acontece aqui |
+| **Billing** | plano e cobrança. Não há cobrança ativa nesta instalação |
 | **Atualização do sistema** | instalar a versão nova do painel |
 
 **Sobre atualizar:** a tela mostra **O que muda** e o botão de atualizar; quando não há versão
