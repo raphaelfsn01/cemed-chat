@@ -134,12 +134,21 @@ Esta é a parte que a equipe usa o tempo todo. Se alguém só ler isto, já trab
 3. **Nota interna** — o botão ao lado de *Responder*. O texto fica amarelo e **só o time vê**.
    Use para "paciente já ligou ontem", nunca para falar com o paciente.
 4. **Transferir** — manda a conversa para outra pessoa da equipe.
-5. **Adiar** — some da sua lista por **1 hora**, **3 horas** ou **24 horas** e volta sozinha.
+5. **Lembrar** — some da sua lista por **1 hora**, **3 horas** ou **24 horas** e volta sozinha.
 6. **Fechar** — encerra. O sistema pede confirmação.
 7. **Devolver ao automático** — aparece quando um humano assumiu e devolve a conversa para a IA.
 8. **Ver contato** — abre a ficha da pessoa, com histórico.
 
 `[print: Inbox com uma conversa aberta, mostrando o cabeçalho e os botões]`
+
+### O que mais tem na tela
+
+- **Apenas não lidos** — chave no topo da lista, para enxergar só o que ainda não foi visto.
+- **Buscar mensagens** — procura dentro das conversas, não só pelo nome.
+- Cada mensagem do agente vem marcada com **IA**. Quando você responde, a sua vai sem marca.
+- **Painel direito** — dados do **Contato**, **Tags da conversa** (campo *Nova tag…*), **Leads
+  recentes** e a **Atividade**, que é o histórico do que o sistema e o agente fizeram.
+- **Microfone** no canto do campo de escrita grava áudio.
 
 ### Ferramentas do campo de escrita
 
@@ -172,9 +181,15 @@ Esta é a parte que a equipe usa o tempo todo. Se alguém só ler isto, já trab
 
 **Como chegar:** menu **Atendimento → Radar**.
 
-**O que fazer:** olhe uma vez de manhã e uma no fim do dia. Cada linha traz o nível — **Crítico**,
-**Em risco** ou **Em voo** — e há quanto tempo está parada ("parado há 6h"). O botão **Assumir**
-puxa a conversa para você.
+**O que fazer:** olhe uma vez de manhã e uma no fim do dia. Cada linha traz o nível e há quanto
+tempo está parada ("parado há 6h"). O botão **Assumir** puxa a conversa para você.
+
+Os três níveis:
+
+- **Em voo** — o assistente já agendou um retorno. Está sob controle.
+- **Em risco** e **Crítico** — não há próximo passo marcado. É risco de perder o paciente.
+
+Quando está tudo certo, a tela diz *"Nenhuma demanda em risco"*. É o estado que você quer ver.
 
 `[print: Radar de risco com linhas em Crítico e Em risco]`
 
@@ -191,10 +206,11 @@ aparece ali, já passou do ponto.
 
 **O que fazer:**
 
-1. Crie com **Título**, **Mensagem** e, se quiser, um **Atalho**.
-2. Marque **Compartilhar com a equipe** para todos usarem.
-3. Use `{{primeiro_nome}}` dentro do texto: o sistema troca pelo nome da pessoa.
-4. Na conversa, digite `/` e escolha.
+1. Clique em **Novo template** e preencha **Título**, **Mensagem** e, se quiser, um **Atalho**.
+2. Use `{{primeiro_nome}}` ou `{{nome}}` no texto: o sistema troca pelo nome da pessoa.
+3. Ligue **Compartilhar com a equipe** para todos usarem. Desligado, o template é só seu.
+4. Clique em **Criar template**.
+5. Na conversa, digite `/` e escolha.
 
 `[print: tela de Respostas rápidas com o formulário aberto]`
 
@@ -235,6 +251,11 @@ aparece ali, já passou do ponto.
 - No card: **Etapa**, **Responsável**, **Tags**, **Fechamento previsto**, **Descrição**.
 - **Marcar como perdido** pede o **Motivo** — é ele que vira relatório depois.
 - Selecione vários cards para **Mover para…**, **Atribuir a…**, **Tag…** ou **Excluir**.
+- No topo há filtros: busca por título, **Responsável**, **Status**, **Tag** e **Apenas atrasados**.
+
+**A proposta da IA no card.** Quando o agente sugere um próximo passo, o card mostra
+*"Propõe: …"* com **Aprovar** e **Ignorar**. Aprovar aplica o que ele sugeriu; ignorar descarta.
+A sugestão não muda nada sozinha — ela espera uma pessoa.
 
 `[print: quadro do Kanban com as etapas da CEMED]`
 
