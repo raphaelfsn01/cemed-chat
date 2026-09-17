@@ -72,6 +72,21 @@ export const actionConfigSchema = z.discriminatedUnion('mode', [
 ]);
 
 /**
+ * Vocabulário de condição — EXPORTADO porque a UI precisa dele.
+ *
+ * Estas duas listas eram redeclaradas à mão no painel do construtor
+ * (`NodeConfigPanel.tsx`), e foi por aí que a tela passou a oferecer
+ * combinações que o motor nunca torna verdadeiras. Quem acrescentar um campo
+ * ou operador aqui nomeia-o em `lib/followup/vocabulary.ts` — há teste que
+ * reprova o esquecimento.
+ */
+export const CONDITION_FIELDS = ['lead_stage', 'tag', 'steps_taken', 'last_outcome'] as const;
+export type ConditionField = (typeof CONDITION_FIELDS)[number];
+
+export const CONDITION_OPS = ['eq', 'neq', 'gte', 'lte', 'contains'] as const;
+export type ConditionOp = (typeof CONDITION_OPS)[number];
+
+/**
  * Condition node configuration.
  * Evaluates multiple checks against lead state using boolean logic.
  */
@@ -80,13 +95,8 @@ export const conditionConfigSchema = z.strictObject({
   checks: z
     .array(
       z.strictObject({
-        field: z.enum([
-          'lead_stage',
-          'tag',
-          'steps_taken',
-          'last_outcome',
-        ]),
-        op: z.enum(['eq', 'neq', 'gte', 'lte', 'contains']),
+        field: z.enum(CONDITION_FIELDS),
+        op: z.enum(CONDITION_OPS),
         value: z.union([z.string(), z.number()]),
       })
     )
