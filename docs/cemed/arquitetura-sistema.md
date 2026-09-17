@@ -1,8 +1,8 @@
 ---
 type: arquitetura
 status: ativo
-last_updated: 2026-08-26
-audited_against: checkout local ~/dev/cemed-chat, HEAD em 2026-08-26
+last_updated: 2026-09-17
+audited_against: checkout local ~/dev/cemed-chat, HEAD em 2026-09-17
 ---
 
 # Como o sistema funciona — tour guiado
@@ -25,6 +25,24 @@ Um CRM de conversas com agente de IA, operado como instância única e privada d
 (clínica médica em Rio das Ostras/RJ): WhatsApp como canal primário, um agente que tria,
 qualifica e transfere pra equipe humana — nunca agenda sozinho, nunca dá orientação médica, nunca
 informa preço.
+
+## O sistema em sete peças que rodam
+
+Na VPS (`cemed.vortiatech.com`) não roda "o sistema": rodam **sete containers**, definidos em
+`docker-compose.prod.yml`. Saber quais são é metade do diagnóstico, porque cada erro visível
+costuma ser uma dessas peças parada — e elas param de um jeito específico.
+
+| Container | O que é | O que quebra quando ele cai |
+|---|---|---|
+| `app` | o Next.js: o painel e todas as rotas `/api/v1/` | o site sai do ar (ou responde 404, ver runbook de deploy) |
+| `worker` | processo Node separado que **roda o agente** (`workers/agent-worker/main.ts`) | o painel continua de pé e **o agente simplesmente para de responder**. É o modo de falha mais traiçoeiro: nada parece errado |
+| `waha` | o servidor que fala com o WhatsApp (WAHA Plus, engine NOWEB) | não entra nem sai mensagem; a bolinha de Conexões deixa de ficar verde |
+| `redis` + `srh` | rate limit e debounce (o `srh` é a ponte HTTP para o Redis) | o sistema degrada, não morre: sem eles as travas de frequência afrouxam |
+| `scheduler` | um Alpine com `crond` batendo `curl` nas rotas de cron a cada minuto | nada com hora marcada acontece: Radar não atualiza, follow-up não dispara, mensagem travada não é recuperada |
+| `caddy` | proxy reverso e HTTPS | o domínio não responde, ou responde sem certificado |
+
+O `worker` merece atenção separada porque ele é onde o agente de fato pensa, e porque ele tem
+uma armadilha de deploy — ver *O que o deploy atualiza, e o que não*, mais abaixo.
 
 ## De onde isto veio
 
@@ -116,9 +134,21 @@ O código tem **dois** caminhos que parecem fazer a mesma coisa. Só um está vi
    `lib/agent-engine/edge/channel/waha-adapter.ts`, que efetivamente envia via `lib/waha/send.ts`.
 
 7. **Fechamento.** Uma segunda chamada de modelo (propósito "checkpoint") grava o resumo do turno
-   em `lead_checkpoints`. Avanços de estágio pedidos pelo modelo (`update_lead_state`) são
-   espelhados no CRM visível (`mirrorLeadStageToCrm`) — se esse espelho falhar, não desfaz o
-   avanço no harness (que é a fonte da verdade), só registra um aviso.
+   em `lead_checkpoints`. Essa chamada tem retry com degradação
+   (`lib/agent-engine/agent/fechar-checkpoint.ts`): se o modelo devolver lixo, ela tenta de novo e,
+   esgotadas as tentativas, **fecha o turno sem checkpoint em vez de derrubar o turno inteiro** —
+   antes, uma falha aqui fazia o paciente ficar sem resposta por causa de um resumo. Avanços de
+   estágio pedidos pelo modelo (`update_lead_state`) são espelhados no CRM visível
+   (`mirrorLeadStageToCrm`) — se esse espelho falhar, não desfaz o avanço no harness (que é a fonte
+   da verdade), só registra um aviso.
+
+8. **A transferência para uma pessoa.** Quando o agente decide passar para a equipe
+   (`lib/agent-engine/agent/human-handoff.ts`), a regra é avisar o paciente **antes** de transferir:
+   a ferramenta recusa a primeira tentativa com o motivo `avise_antes` e devolve a frase de
+   disponibilidade da equipe. Como o modelo às vezes obedecia ao aviso e esquecia de concluir, o
+   runtime completa a transferência pendente sozinho (`transferenciaPendente`) — a conversa nunca
+   fica com o paciente avisado e ninguém chamado. Depois de transferida, a conversa entra na trava
+   `is_blocked or force_human` e o agente para de falar nela.
 
 Diagrama existente desse fluxo (produto genérico, mas a mecânica bate com o real):
 [`docs/architecture/agent-turn.html`](../architecture/agent-turn.html).
@@ -167,11 +197,85 @@ de WhatsApp), `ai_agents`/`ai_agent_versions` (agente + versão publicada), `con
 |---|---|---|---|
 | Supabase | Postgres + Auth + Realtime + Storage | `lib/supabase/` | Sim — obrigatório |
 | WAHA Plus | Envio/recebimento de WhatsApp | `lib/waha/` | Sim — canal primário |
-| Vercel AI Gateway | Modelo de IA (Anthropic primário) | `lib/agent-engine/edge/llm/` | Sim |
+| OpenRouter | Modelo de IA do agente — hoje **Gemini 2.5 Flash**, escolhido por medição (`benchmark-modelos-2026-09.md`) | `lib/agent-engine/edge/llm/providers.ts` | Sim — é quem responde |
 | Upstash Redis | Rate limit + debounce de RAG | `lib/ai/dispatcher/`, `lib/ai/rag/debounce.ts` | Sim (degrada sem) |
 | Nuvemshop | E-commerce (pedidos, produtos) | `lib/nuvemshop/` | **Não** — ver `plano-fora-de-escopo.md` item 2 |
 | Sentry | Erros e performance | `sentry.*.config.ts` | Opcional |
 | Resend | E-mail transacional (convites) | `lib/email/` | Opcional |
+
+## O que roda sozinho, e quando
+
+O container `scheduler` é um `crond` batendo em rotas internas do `app`. Não é um detalhe de
+infraestrutura: quase toda coisa que "aparece sozinha" no painel vem daqui.
+
+| Rota de cron | Frequência | O que você vê no painel quando funciona |
+|---|---|---|
+| `event-log-drain` | 1 min | sentimento, indexação de conhecimento, LGPD e automações saindo do estado pendente |
+| `followup-flow-worker` | 1 min | follow-up programado disparando |
+| `routing-worker` | 1 min | conversa nova caindo com o responsável certo |
+| `recover-stuck-messages` | 1 min | mensagem presa em "enviando" há mais de 5 min vira **falha** e abre aviso na Central |
+| `snooze-watcher` | 5 min | conversa adiada com **Lembrar** voltando para a fila na hora marcada |
+| `attendant-heartbeat` | 5 min | quem está disponível para receber conversa |
+| `storage-redaction` | 5 min | mídia sendo apagada de verdade depois de uma anonimização |
+| `contact-avatars` | 10 min | foto do paciente aparecendo na conversa |
+| `risk-watcher` | 15 min | o **Radar** mudando de estado |
+| `lgpd-sla-watcher` | 12h diário | prazo de pedido de LGPD estourando |
+| `kb-conversations-batch` | 03h30 diário | conversas viram material de conhecimento |
+| `agent-dispatcher` | 1 min | **nada** — é NO-OP, resto do runtime antigo |
+
+Se o `scheduler` estiver parado, nada disso acontece **e nenhuma tela dá erro**. O sintoma é
+ausência: o Radar congela, o "Lembrar" não volta, o aviso de mensagem travada nunca aparece.
+
+## O que o deploy atualiza, e o que não
+
+O caminho normal não constrói nada na VPS: commit → push → merge na `main` → o CI publica a
+imagem no GHCR → a VPS puxa. Todo `up -d` leva os **dois** arquivos de compose (ver
+[`runbooks/deploy.md`](../runbooks/deploy.md)); omitir o segundo tira as labels de roteamento e
+o domínio inteiro responde 404 com o container saudável.
+
+**A armadilha:** o CI publica a imagem do `app`. Ele **não** publica a do `worker`, e o
+`update.sh` também não a reconstrói. O `Dockerfile.worker` é construído à mão na VPS. Isso já
+aconteceu de verdade: em 16/09 o painel estava atualizado e o `worker` rodava código de 10/09 —
+o agente respondia com regra velha, e **nenhuma tela dizia isso**. A versão no rodapé do painel
+é a do `app`, não a do agente.
+
+A prova de que o worker está com o código certo é por checksum: comparar o `md5sum` do arquivo
+no repositório com o de `/app/<arquivo>` dentro do container. Não use `grep --exclude-dir` dentro
+dele: o Alpine usa BusyBox, que aceita a flag e a ignora, devolvendo falso negativo — já custou
+um diagnóstico errado.
+
+## Quando der errado, olhe nesta ordem
+
+A pergunta quase sempre é "o agente não respondeu". Ela tem seis causas possíveis, e elas se
+separam nesta ordem — da mais comum e mais visível para a mais rara e mais escondida. As três
+primeiras você resolve sozinho pelo painel.
+
+1. **Ele devia responder?** Abra a conversa na Inbox. Se alguém **assumiu**, o agente está calado
+   de propósito. Se houve transferência para humano, idem: a conversa fica travada por
+   `is_blocked or force_human` e ele não volta a falar sozinho. Silêncio correto parece defeito.
+
+2. **Ele tentou e foi barrado?** Tela do agente → aba **Execuções**. Cada turno aparece com o que
+   foi chamado e o que foi vetado. Um gate que veta registra o motivo — fora de janela de horário,
+   veto de promessa, opt-out. Barrado não é erro: é o sistema funcionando.
+
+3. **O WhatsApp está conectado?** Menu → **Conexões**. Sem a bolinha verde não entra nem sai
+   mensagem, e nada mais adiante importa.
+
+4. **A mensagem ficou presa na saída?** Mensagem em "enviando" há mais de 5 minutos vira falha e
+   abre aviso na Central, pelo cron `recover-stuck-messages`. Ele nunca reenvia: envio em dobro é
+   pior que não-envio. Se a Central está calada e a mensagem está parada, o `scheduler` é o
+   suspeito.
+
+5. **O worker está no ar e com o código certo?** Container `worker`, healthcheck em
+   `:8787/healthz`. Se estiver de pé mas com código velho, o sintoma é comportamento antigo, não
+   erro. Isto exige terminal — é comigo.
+
+6. **Tem saldo na OpenRouter?** Sem crédito, a chamada do modelo é recusada e o turno morre na
+   origem. É a causa mais boba e uma das mais prováveis, porque o mesmo saldo paga os testes.
+
+A informação que eu preciso para investigar qualquer uma delas é sempre a mesma: **nome do
+paciente, horário aproximado e o que apareceu na tela**. Com os três eu acho o turno no log; sem
+eles, começo caçando.
 
 ## Onde está a verdade sobre o negócio — e um alerta
 
