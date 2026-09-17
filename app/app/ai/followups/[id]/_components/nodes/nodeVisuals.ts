@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 
 import { Play, Clock, GitBranch, Brain, PaperPlaneTilt, Flag } from "@/lib/ui/icons";
 import type { FlowNode, NodeType } from "@/lib/followup/graph-schema";
+import { descreverCondicao } from "@/lib/followup/vocabulary";
 
 /**
  * Visual identity per node type — shared by the palette (Task 6.2 increment 2)
@@ -114,7 +115,10 @@ export function describeNodeConfig(type: NodeType, config: FlowNode["config"]): 
     }
     case "condition": {
       const c = config as ConfigOf<"condition">;
-      return `${c.checks.length} condição(ões) · ${c.combinator === "and" ? "E" : "OU"}`;
+      // A regra em português. O card não tem como resolver o nome da etapa
+      // (não busca dados), então lead_stage aparece como "a etapa configurada"
+      // — quem quer o nome abre o painel.
+      return descreverCondicao(c, { limite: 2 });
     }
     case "ai_classify": {
       const c = config as ConfigOf<"ai_classify">;
@@ -122,7 +126,9 @@ export function describeNodeConfig(type: NodeType, config: FlowNode["config"]): 
     }
     case "action": {
       const c = config as ConfigOf<"action">;
-      return c.mode === "ai_message" ? c.prompt_hint : "Template fixo";
+      return c.mode === "ai_message"
+        ? `Envia: ${c.prompt_hint}`
+        : "Template fixo — o motor não executa este modo";
     }
     case "end": {
       const c = config as ConfigOf<"end">;

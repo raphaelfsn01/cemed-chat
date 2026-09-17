@@ -21,7 +21,22 @@ import {
   actionConfigSchema,
   endConfigSchema,
   type FlowNode,
+  type ConditionField,
 } from "@/lib/followup/graph-schema";
+import {
+  CAMPOS_OFERECIDOS,
+  CAMPO_AJUDA,
+  CAMPO_LABEL,
+  CAMPO_SEM_PRODUTOR,
+  OPERADORES_POR_CAMPO,
+  TIPO_DO_VALOR,
+  descreverCheck,
+  operadorPadraoDoCampo,
+  valorPadraoDoCampo,
+  type Check,
+} from "@/lib/followup/vocabulary";
+import { usePipelines, usePipelineStages } from "@/hooks/webhooks/useWebhookSources";
+import { useMessageTemplates } from "@/hooks/inbox/useMessageTemplates";
 import type { RFNode, RFNodeData } from "@/lib/followup/graph-mappers";
 import { NODE_VISUALS } from "./nodes/nodeVisuals";
 
@@ -180,7 +195,7 @@ function WaitForm({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="fixed">Fixo</SelectItem>
-            <SelectItem value="smart">Adaptativo (min–max)</SelectItem>
+            <SelectItem value="smart">Adaptativo (hoje espera o máximo)</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -253,9 +268,22 @@ function WaitForm({
 
 // ─── condition ───────────────────────────────────────────────────────────
 
-const CONDITION_FIELDS = ["lead_stage", "tag", "steps_taken", "last_outcome"] as const;
-const CONDITION_OPS = ["eq", "neq", "gte", "lte", "contains"] as const;
-
+/**
+ * Editor de condição. Três decisões que o código sozinho não explica:
+ *
+ * - **o valor é tipado pelo campo** (número, etapa do funil, texto). Antes ele
+ *   era sempre string, e como o avaliador só compara `gte`/`lte` entre dois
+ *   números (`node-handlers.ts`), toda condição numérica editada por aqui
+ *   ficava permanentemente falsa — publicando normalmente, sem erro nenhum;
+ * - **trocar de campo reseta operador e valor**, senão sobra id de etapa dentro
+ *   de um campo numérico;
+ * - **campo sem produtor no motor não é oferecido**, mas continua sendo exibido
+ *   com aviso quando já está salvo — sumir com ele levaria a configuração junto.
+ *
+ * Campos e operadores vêm de `lib/followup/vocabulary.ts`, que por sua vez lê os
+ * enums do schema. Redeclarar as listas aqui foi como a tela passou a oferecer
+ * combinações que o motor nunca torna verdadeiras.
+ */
 function ConditionForm({
   config,
   onChange,
@@ -264,10 +292,22 @@ function ConditionForm({
   onChange: (c: ConfigOf<"condition">) => void;
 }) {
   const [combinator, setCombinator] = useState(config.combinator);
-  const [checks, setChecks] = useState(config.checks);
+  const [checks, setChecks] = useState<Check[]>(config.checks);
   const [error, setError] = useState<string | null>(null);
 
-  const commit = (nextCombinator: "and" | "or", nextChecks: typeof checks) => {
+  // Etapas só são buscadas quando alguma condição fala de etapa.
+  const usaEtapa = checks.some((c) => TIPO_DO_VALOR[c.field] === "etapa");
+  const { data: pipelinesRes } = usePipelines();
+  const pipelines = pipelinesRes?.data ?? [];
+  const [pipelineEscolhido, setPipelineEscolhido] = useState<string | null>(null);
+  const pipelineId = pipelineEscolhido ?? pipelines[0]?.id ?? null;
+  const { data: boardRes, isLoading: etapasCarregando } = usePipelineStages(
+    usaEtapa ? pipelineId : null,
+  );
+  const stages = boardRes?.data?.stages ?? [];
+  const nomeDaEtapa = (id: string) => stages.find((s) => s.id === id)?.name;
+
+  const commit = (nextCombinator: "and" | "or", nextChecks: Check[]) => {
     const parsed = conditionConfigSchema.safeParse({ combinator: nextCombinator, checks: nextChecks });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Configuração inválida.");
@@ -277,8 +317,43 @@ function ConditionForm({
     onChange(parsed.data);
   };
 
+  /** Troca de campo reseta operador e valor — tipos diferentes não se aproveitam. */
+  const trocarCampo = (idx: number, field: ConditionField) => {
+    const next = checks.map((c, i) =>
+      i === idx
+        ? { field, op: operadorPadraoDoCampo(field), value: valorPadraoDoCampo(field) }
+        : c,
+    );
+    setChecks(next);
+    commit(combinator, next);
+  };
+
+  const atualizar = (idx: number, patch: Partial<Check>) => {
+    const next = checks.map((c, i) => (i === idx ? { ...c, ...patch } : c));
+    setChecks(next);
+    commit(combinator, next);
+  };
+
   return (
     <div className="space-y-3">
+      {usaEtapa && pipelines.length > 1 && (
+        <div className="space-y-2">
+          <Label htmlFor="cond-pipeline">Funil das etapas</Label>
+          <Select value={pipelineId ?? ""} onValueChange={(v) => setPipelineEscolhido(v)}>
+            <SelectTrigger id="cond-pipeline">
+              <SelectValue placeholder="Escolha o funil" />
+            </SelectTrigger>
+            <SelectContent>
+              {pipelines.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       <div className="space-y-2">
         <Label htmlFor="cond-combinator">Combinador</Label>
         <Select
@@ -321,52 +396,81 @@ function ConditionForm({
             </div>
             <Select
               value={check.field}
-              onValueChange={(v) => {
-                const next = checks.map((c, i) => (i === idx ? { ...c, field: v as (typeof CONDITION_FIELDS)[number] } : c));
-                setChecks(next);
-                commit(combinator, next);
-              }}
+              onValueChange={(v) => trocarCampo(idx, v as ConditionField)}
             >
               <SelectTrigger aria-label="Campo">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {CONDITION_FIELDS.map((f) => (
+                {/* Campo já salvo que não é mais oferecido continua na lista, senão
+                    escolher outro seria a única saída — e a configuração se perderia. */}
+                {(CAMPOS_OFERECIDOS.includes(check.field)
+                  ? CAMPOS_OFERECIDOS
+                  : [check.field, ...CAMPOS_OFERECIDOS]
+                ).map((f) => (
                   <SelectItem key={f} value={f}>
-                    {f}
+                    {CAMPO_LABEL[f]}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <Select
               value={check.op}
-              onValueChange={(v) => {
-                const next = checks.map((c, i) => (i === idx ? { ...c, op: v as (typeof CONDITION_OPS)[number] } : c));
-                setChecks(next);
-                commit(combinator, next);
-              }}
+              onValueChange={(v) => atualizar(idx, { op: v as Check["op"] })}
             >
               <SelectTrigger aria-label="Operador">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {CONDITION_OPS.map((op) => (
-                  <SelectItem key={op} value={op}>
-                    {op}
+                {OPERADORES_POR_CAMPO[check.field].map((o) => (
+                  <SelectItem key={o.op} value={o.op}>
+                    {o.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <Input
-              aria-label="Valor"
-              placeholder="Valor"
-              value={String(check.value)}
-              onChange={(e) => {
-                const next = checks.map((c, i) => (i === idx ? { ...c, value: e.target.value } : c));
-                setChecks(next);
-                commit(combinator, next);
-              }}
-            />
+
+            {TIPO_DO_VALOR[check.field] === "numero" && (
+              <Input
+                aria-label="Valor"
+                type="number"
+                min={0}
+                value={Number(check.value)}
+                onChange={(e) => atualizar(idx, { value: Number(e.target.value) })}
+              />
+            )}
+            {TIPO_DO_VALOR[check.field] === "etapa" && (
+              <Select
+                value={String(check.value)}
+                onValueChange={(v) => atualizar(idx, { value: v })}
+                disabled={etapasCarregando || stages.length === 0}
+              >
+                <SelectTrigger aria-label="Valor">
+                  <SelectValue placeholder={etapasCarregando ? "Carregando etapas…" : "Escolha a etapa"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {stages.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {TIPO_DO_VALOR[check.field] === "texto" && (
+              <Input
+                aria-label="Valor"
+                placeholder="Valor"
+                value={String(check.value)}
+                onChange={(e) => atualizar(idx, { value: e.target.value })}
+              />
+            )}
+
+            <p className="text-xs text-text-muted">{CAMPO_AJUDA[check.field]}</p>
+            <p className="text-xs text-text">{descreverCheck(check, { nomeDaEtapa })}</p>
+            {CAMPO_SEM_PRODUTOR[check.field] && (
+              <p className="text-xs text-warning-fg">{CAMPO_SEM_PRODUTOR[check.field]}</p>
+            )}
           </div>
         ))}
       </div>
@@ -377,7 +481,14 @@ function ConditionForm({
         size="sm"
         disabled={checks.length >= 10}
         onClick={() => {
-          const next = [...checks, { field: "steps_taken" as const, op: "gte" as const, value: 0 }];
+          const next: Check[] = [
+            ...checks,
+            {
+              field: "steps_taken",
+              op: operadorPadraoDoCampo("steps_taken"),
+              value: valorPadraoDoCampo("steps_taken"),
+            },
+          ];
           setChecks(next);
           commit(combinator, next);
         }}
@@ -400,7 +511,8 @@ function ClassifyForm({
 }) {
   const [classesText, setClassesText] = useState(config.classes.join(", "));
   const [graceMin, setGraceMin] = useState(msToMin(config.grace_timeout_ms));
-  const [target, setTarget] = useState(config.target);
+  // Sem setter: "Alvo" saiu da tela, mas o valor salvo é preservado no commit.
+  const [target] = useState(config.target);
   const [hint, setHint] = useState(config.hint ?? "");
   const [error, setError] = useState<string | null>(null);
 
@@ -452,25 +564,9 @@ function ClassifyForm({
           }}
         />
       </div>
-      <div className="space-y-2">
-        <Label htmlFor="classify-target">Alvo</Label>
-        <Select
-          value={target}
-          onValueChange={(v) => {
-            const next = v as "last_reply" | "summary";
-            setTarget(next);
-            commit({ classesText, graceMin, target: next, hint });
-          }}
-        >
-          <SelectTrigger id="classify-target">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="last_reply">Última resposta</SelectItem>
-            <SelectItem value="summary">Resumo</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      {/* "Alvo" (last_reply/summary) saiu da tela: o schema aceita, mas nenhum
+          consumidor do runtime lê o campo — escolher ali não mudava nada. O valor
+          salvo continua sendo preservado pelo estado acima. */}
       <div className="space-y-2">
         <Label htmlFor="classify-hint">Instrução (opcional)</Label>
         <Textarea
@@ -490,6 +586,9 @@ function ClassifyForm({
 
 // ─── action ──────────────────────────────────────────────────────────────
 
+/** Radix não aceita "" como valor de item; este sentinela representa "nenhum". */
+const SEM_TEMPLATE = "__sem_template__";
+
 function ActionForm({
   config,
   onChange,
@@ -504,6 +603,7 @@ function ActionForm({
   );
   const [templateId, setTemplateId] = useState(config.mode === "template" ? config.template_id : "");
   const [error, setError] = useState<string | null>(null);
+  const { data: templates = [] } = useMessageTemplates();
 
   const commit = (next: {
     mode: "ai_message" | "template";
@@ -545,7 +645,12 @@ function ActionForm({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="ai_message">Mensagem gerada por IA</SelectItem>
-            <SelectItem value="template">Template fixo</SelectItem>
+            {/* O motor nunca lê `template_id` — este modo não envia nada. Fica
+                desabilitado em vez de sumir, para que um nó salvo com ele
+                continue abrindo e possa ser corrigido. */}
+            <SelectItem value="template" disabled>
+              Template fixo (indisponível)
+            </SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -565,28 +670,60 @@ function ActionForm({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="action-fallback">Template de fallback (UUID, opcional)</Label>
-            <Input
-              id="action-fallback"
-              value={fallbackTemplateId}
-              onChange={(e) => {
-                setFallbackTemplateId(e.target.value);
-                commit({ mode, promptHint, fallbackTemplateId: e.target.value, templateId });
+            <Label htmlFor="action-fallback">Resposta rápida de reserva (opcional)</Label>
+            <Select
+              value={fallbackTemplateId || SEM_TEMPLATE}
+              onValueChange={(v) => {
+                const next = v === SEM_TEMPLATE ? "" : v;
+                setFallbackTemplateId(next);
+                commit({ mode, promptHint, fallbackTemplateId: next, templateId });
               }}
-            />
+            >
+              <SelectTrigger id="action-fallback">
+                <SelectValue placeholder="Nenhuma" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SEM_TEMPLATE}>Nenhuma</SelectItem>
+                {templates.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-text-muted">
+              Exigida pela publicação quando o caminho até esta ação acumula 24h ou mais de
+              espera. As opções vêm de Respostas rápidas.
+            </p>
           </div>
         </>
       ) : (
         <div className="space-y-2">
-          <Label htmlFor="action-template-id">Template (UUID)</Label>
-          <Input
-            id="action-template-id"
-            value={templateId}
-            onChange={(e) => {
-              setTemplateId(e.target.value);
-              commit({ mode, promptHint, fallbackTemplateId, templateId: e.target.value });
+          <p className="text-xs text-warning-fg">
+            Este nó está no modo Template fixo, que o motor não executa — ele não envia
+            mensagem. Troque para “Mensagem gerada por IA”.
+          </p>
+          <Label htmlFor="action-template-id">Template configurado</Label>
+          <Select
+            value={templateId || SEM_TEMPLATE}
+            onValueChange={(v) => {
+              const next = v === SEM_TEMPLATE ? "" : v;
+              setTemplateId(next);
+              commit({ mode, promptHint, fallbackTemplateId, templateId: next });
             }}
-          />
+          >
+            <SelectTrigger id="action-template-id">
+              <SelectValue placeholder="Nenhum" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={SEM_TEMPLATE}>Nenhum</SelectItem>
+              {templates.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  {t.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
       {error && <p className="text-xs text-error-fg">{error}</p>}
