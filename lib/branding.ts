@@ -18,6 +18,13 @@
 
 export const DEFAULT_APP_NAME = "DeskcommCRM";
 
+/**
+ * Ícone da CEMED (as três folhas), desenhado antes do nome. Asset fixo do repo,
+ * não `.env`: esta é instância única, e o `APP_LOGO_URL` resolve outro caso — ele
+ * SUBSTITUI o nome pela arte inteira. O mesmo arquivo é o favicon (`app/icon.png`).
+ */
+export const BRAND_MARK_SRC = "/brand-mark.png";
+
 export type Branding = {
   /** Nome exibido na interface e nos títulos de página. */
   name: string;
