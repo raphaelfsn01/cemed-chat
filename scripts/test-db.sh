@@ -108,6 +108,23 @@ create or replace function auth.uid() returns uuid
   $fn$;
 
 grant usage on schema auth, extensions, storage to anon, authenticated, service_role;
+-- Stubs de auth.jwt() e auth.mfa_factors: fn_mfa_satisfeito() (migration 0122)
+-- lê o claim `aal` e os fatores verificados. No Supabase real são nativos; aqui
+-- `status` é text (lá é o enum auth.factor_status — a comparação com
+-- 'verified' funciona igual nos dois).
+create or replace function auth.jwt() returns jsonb
+  language sql stable
+  as $fn$
+    select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb
+  $fn$;
+
+create table if not exists auth.mfa_factors (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  status text not null default 'unverified',
+  created_at timestamptz not null default now()
+);
+
 grant select on auth.users to anon, authenticated, service_role;
 SQL
 

@@ -41,6 +41,8 @@ MFA obrigatório pra admin logo após o wizard (`MfaEnrollGate`).
 | J1.12 | Tentar `/app/inbox` antes de concluir | redirect pro onboarding, sem loop |
 | J1.13 | Reabrir `/onboarding` depois de concluído | redirect pro app (wizard não reabre) |
 | J1.14 | Stepper com Nuvemshop desabilitado | numeração/etapas não quebram visualmente |
+| J1.15 | Admin com autenticador digita só a senha e vai direto para `/app/inbox` pela barra | volta para `/login/mfa`; API responde 401 `mfa_required`; PostgREST com token só-senha não devolve dado. **Era um pulo real em produção até 2026-10-14** (entrava no sistema inteiro). Spec `mfa-pulo.spec.ts` + invariante `mfa-exigido-rls.test.ts` |
+| J1.16 | Atendente sem autenticador entra | direto no app, sem tela de código — e não volta a ser pedido navegando, recarregando ou reabrindo o navegador |
 | J1.15 | Setup IA: erro de banco ao listar os números (a publicação não pode ser decidida) | UI **não mente**: agente criado como rascunho, causa técnica na tela e saída pro próximo passo; clicar de novo NÃO cria um 2º agente · **PASS** (`tests/unit/onboarding-agente-nao-publicado.test.ts`, `tests/unit/onboarding-setup-ai-aviso.test.tsx`) |
 
 ## J2 — Conectar WhatsApp e Central de Conexões `[P0]`

@@ -9597,3 +9597,52 @@ on conflict (provider, model_id) do nothing;
 
 
 notify pgrst, 'reload schema';
+
+
+-- ---- MFA exigido no RLS (migration 0122) ----
+-- Quem tem fator MFA verificado só enxerga dados com sessão AAL2. A regra vive em
+-- fn_mfa_satisfeito() e entra nos três helpers de RLS. Ver o cabeçalho da migration.
+create or replace function public.fn_mfa_satisfeito() returns boolean
+  language sql stable security definer
+  set search_path = public
+  as $$
+  select coalesce(auth.jwt() ->> 'aal', 'aal1') = 'aal2'
+      or not exists (
+        select 1 from auth.mfa_factors
+        where user_id = auth.uid() and status = 'verified'
+      );
+$$;
+
+create or replace function public.fn_user_org_ids() returns setof uuid
+  language sql stable security definer
+  set search_path = public
+  as $$
+  select organization_id from public.user_organizations
+  where user_id = auth.uid() and revoked_at is null
+    and public.fn_mfa_satisfeito();
+$$;
+
+create or replace function public.fn_user_role_in_org(p_org uuid) returns text
+  language sql stable security definer
+  set search_path = public
+  as $$
+  select role from public.user_organizations
+  where user_id = auth.uid() and organization_id = p_org and revoked_at is null
+    and public.fn_mfa_satisfeito()
+  limit 1;
+$$;
+
+create or replace function public.fn_is_platform_admin() returns boolean
+  language sql stable security definer
+  set search_path = public
+  as $$
+  select exists (
+    select 1 from public.platform_admins
+    where user_id = auth.uid() and revoked_at is null
+  ) and public.fn_mfa_satisfeito();
+$$;
+
+revoke execute on function public.fn_mfa_satisfeito() from public, anon;
+grant  execute on function public.fn_mfa_satisfeito() to authenticated, service_role;
+
+notify pgrst, 'reload schema';
