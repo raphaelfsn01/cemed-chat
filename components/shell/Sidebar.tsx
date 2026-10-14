@@ -8,7 +8,7 @@ import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { ConnectionHealthDot } from "@/components/connections/ConnectionHealthDot";
 import { VersionFooter } from "@/components/shell/VersionFooter";
-import { branding } from "@/lib/branding";
+import { BRAND_MARK_SRC, branding } from "@/lib/branding";
 import { GRUPO_NO_RODAPE, NAV_GROUPS, sidebarGroups } from "@/lib/navigation/registry";
 
 /**
@@ -52,13 +52,13 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
             className="h-7 w-auto max-w-[10rem] object-contain"
           />
         ) : (
-          <span className={cn("font-semibold tracking-tight", collapsed && "sr-only")}>
-            {brand.name}
-          </span>
-        )}
-        {collapsed && (
-          <span aria-hidden className="text-lg font-bold text-primary">
-            {brand.initial}
+          <span className="flex items-center gap-2">
+            {/* alt vazio: o nome ao lado (visível ou sr-only) já é o rótulo. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={BRAND_MARK_SRC} alt="" className="h-6 w-6 shrink-0" />
+            <span className={cn("font-semibold tracking-tight", collapsed && "sr-only")}>
+              {brand.name}
+            </span>
           </span>
         )}
       </div>

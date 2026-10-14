@@ -15,7 +15,7 @@ import {
 } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
-import { branding } from "@/lib/branding";
+import { BRAND_MARK_SRC, branding } from "@/lib/branding";
 
 interface NavItem {
   href: string;
@@ -44,7 +44,9 @@ export function AdminSidebar({ userEmail }: AdminSidebarProps) {
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r bg-card">
-      <div className="flex h-14 items-center border-b px-4">
+      <div className="flex h-14 items-center gap-2 border-b px-4">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={BRAND_MARK_SRC} alt="" className="h-6 w-6 shrink-0" />
         <div className="flex flex-col">
           <span className="text-xs uppercase tracking-wider text-muted-foreground">
             {branding().name}

@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { LoginForm } from "@/components/auth/LoginForm";
-import { branding } from "@/lib/branding";
+import { BRAND_MARK_SRC, branding } from "@/lib/branding";
 
 export const metadata = { title: "Entrar" };
 
@@ -14,6 +14,8 @@ export default async function LoginPage({
   return (
     <div className="space-y-6">
       <div className="space-y-1.5 text-center">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={BRAND_MARK_SRC} alt="" className="mx-auto mb-3 h-12 w-12" />
         <h1 className="text-2xl font-semibold tracking-tight">Entrar</h1>
         <p className="text-sm text-muted-foreground">{branding().name}</p>
       </div>
