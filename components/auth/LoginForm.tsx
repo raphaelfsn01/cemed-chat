@@ -56,7 +56,13 @@ export function LoginForm({ next }: { next?: string }) {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+    // `method="post"` não é para o React — o envio de verdade é a server action
+    // no onSubmit. É para o intervalo ANTES da hidratação: sem JS ainda, o
+    // navegador envia o formulário sozinho, e o padrão é GET — com e-mail e
+    // senha na URL (histórico do navegador, logs do proxy). No celular, onde a
+    // hidratação demora, um toque rápido em "Entrar" bastava. Medido em
+    // tests/e2e/auth-sem-credencial-na-url.spec.ts. Vale para todo <form> de auth.
+    <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
       <div className="space-y-1.5">
         <Label htmlFor="email">Email</Label>
         <Input

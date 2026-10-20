@@ -60,6 +60,7 @@ export function MfaForm({ next }: MfaFormProps) {
 
   return (
     <form
+      method="post"
       onSubmit={(e) => {
         e.preventDefault();
         submit();
