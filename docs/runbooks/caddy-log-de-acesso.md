@@ -45,7 +45,7 @@ O **nome** do parâmetro fica. Assim ainda dá para ver que houve, por exemplo, 
 
 **Prova (2026-10-20).** A imagem de produção do app rodou atrás de um Caddy descartável com este Caddyfile, e o Playwright gerou tráfego real com um token de convite válido de teste em todo lugar possível: caminho, `?next=`, `token_hash`, `code`, `search`, redirect de página protegida, navegação logada do Next, chamada de API e headers forjados.
 - Em 158 linhas, o token inteiro, cada metade dele e os e-mails apareceram **0 vezes**.
-- Com o mesmo tráfego, o Caddyfile anterior vazou o token em **154** linhas.
+- Com o mesmo tráfego, o Caddyfile anterior vazou o token em **151** das 154 linhas.
 
 O **IP de origem fica**, porque é o que serve para auditoria. Por isso o arquivo também é **dado pessoal (LGPD)**: não copie para fora do servidor sem necessidade e apague as cópias depois do uso.
 
