@@ -8,6 +8,47 @@
 {$DOMAIN} {
 	encode gzip
 
+	# Log de ACESSO (uma linha JSON por requisição). Sem ele não havia como
+	# auditar nada pelo servidor — nem responder "alguma senha passou na URL?".
+	# Como consultar: docs/runbooks/caddy-log-de-acesso.md.
+	#
+	# Fica em /data, que é o volume `caddy-data`: sobrevive a restart e a
+	# recriação do contêiner. Rotação: arquivo novo a cada 10 MiB, guarda 10
+	# arquivos e nenhum com mais de 30 dias (≤ ~110 MiB no total).
+	#
+	# O que NÃO entra no log:
+	# - corpo de requisição/resposta: o Caddy nunca registra corpo;
+	# - headers de credencial: o Caddy já esvazia Authorization/Cookie por
+	#   padrão, e aqui eles são APAGADOS de vez, junto com X-Api-Key, o
+	#   Set-Cookie da resposta e o Referer (que pode trazer o link de convite);
+	# - credencial na URI: o token do webhook por canal e o do convite (no
+	#   caminho) e os parâmetros de query de credencial — e o `email`, dado
+	#   pessoal — viram REDACTED. Mesmo critério de caminho do scrub do Sentry
+	#   (lib/sentry/scrub.ts, CREDENTIAL_PATH). Provado com requisições reais
+	#   num Caddy descartável: nenhum valor marcado chegou ao arquivo.
+	# O IP de origem fica (é o que serve para auditoria de segurança) — por
+	# isso o log também é dado pessoal, e a retenção é curta (30 dias).
+	log {
+		output file /data/access.log {
+			roll_size 10MiB
+			roll_keep 10
+			roll_keep_for 720h
+		}
+		format filter {
+			wrap json
+			request>headers>Authorization delete
+			request>headers>Proxy-Authorization delete
+			request>headers>Cookie delete
+			request>headers>X-Api-Key delete
+			request>headers>Referer delete
+			resp_headers>Set-Cookie delete
+			request>uri multi_regexp {
+				regexp "(/api/v1/webhooks/[^/?#]+/|/team/accept-invite/)[^/?#]+" "${1}REDACTED"
+				regexp "([?&](?i:password|senha|pass|email|token|code|access_token|refresh_token|secret|api_key|apikey|key)=)[^&#]*" "${1}REDACTED"
+			}
+		}
+	}
+
 	# `route` é obrigatório aqui: fora dele o Caddy reordena as diretivas pela
 	# ordem padrão dele, na qual `respond` vem DEPOIS de `reverse_proxy` — o
 	# catch-all atendia primeiro e o 403 abaixo nunca era alcançado (medido: o
