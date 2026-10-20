@@ -23,8 +23,16 @@ on:
 
 jobs:
   e2e:
+    # Duas suítes em paralelo sobre o MESMO preparo (Supabase + baseline + build
+    # + seeds): `geral` é a de sempre; `responsivo` é tests/e2e/responsivo.spec.ts
+    # nos projetos de viewport (celular 390 e 360, tablet, desktop e WebKit) —
+    # sozinha ela leva ~25 min, e somada à geral estouraria os 30 do job.
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [geral, responsivo]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: ${{ matrix.suite == 'responsivo' && 50 || 30 }}
     steps:
       - uses: actions/checkout@v7
 
@@ -90,8 +98,10 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: "1"
 
+      # WebKit só na suíte responsiva: é o Safari do iPhone (zoom em campo com
+      # fonte < 16px, `dvh`, safe-area) nas telas de primeira impressão.
       - name: Instalar o browser
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install --with-deps chromium ${{ matrix.suite == 'responsivo' && 'webkit' || '' }}
 
       # O seed lê `.env.local` do cwd (não de process.env), então o arquivo é
       # escrito aqui. Ele cria 1 org + 4 usuários com os 4 papéis e um TOTP
@@ -136,6 +146,19 @@ jobs:
           pnpm exec tsx --env-file=.env.local scripts/seed-e2e-capacidades-ausentes.ts
           pnpm exec tsx scripts/seed-e2e-followup-agent.ts
 
+      # O que a responsivo.spec.ts mede precisa EXISTIR na tela: quadro com
+      # leads (CRM Vivo), conversas na fila e no radar para abrir pela inbox, e
+      # o admin da seed como super-admin — senão /admin/* cai no "forbidden" e a
+      # varredura mede a tela de erro em vez da tela de verdade.
+      - name: Semear as fixtures da suíte responsiva
+        if: matrix.suite == 'responsivo'
+        run: |
+          pnpm exec tsx --env-file=.env.local scripts/seed-crm-vivo.ts
+          pnpm exec tsx --env-file=.env.local scripts/seed-e2e-queue.ts
+          pnpm exec tsx --env-file=.env.local scripts/seed-e2e-radar.ts
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -q -c \
+            "insert into platform_admins(user_id, granted_by, reason) select id, id, 'CI e2e responsivo' from auth.users where email='e2e-admin@deskcomm.test' on conflict do nothing;"
+
       # O que ficou DE FORA (e por quê) é declarado no passo de summary —
       # cobertura parcial silenciosa se lê como cobertura total.
       #
@@ -168,6 +191,7 @@ jobs:
       # fazem o segundo ser recusado como replay. Foi o que derrubava a
       # `reset-password-mfa` (issue #80): ela passa sozinha e falha em paralelo.
       - name: E2E — parte 1 de 2
+        if: matrix.suite == 'geral'
         run: |
           pnpm exec playwright test --workers=1 \
             smoke.spec.ts auth.spec.ts error-pages.spec.ts \
@@ -175,7 +199,8 @@ jobs:
             rbac-roles.spec.ts inbox-scope.spec.ts reset-password-mfa.spec.ts \
             degradacao-silenciosa.spec.ts vps-webhook-outbound-ssrf.spec.ts \
             kanban-owner-filter.spec.ts queue-assign.spec.ts \
-            risk-radar.spec.ts invite-lifecycle.spec.ts system-update.spec.ts
+            risk-radar.spec.ts invite-lifecycle.spec.ts system-update.spec.ts \
+            auth-sem-credencial-na-url.spec.ts
         env:
           INTERNAL_SECRET: ci-placeholder-nao-e-segredo
           CPF_ENCRYPTION_KEY: ci-placeholder-nao-e-segredo
@@ -192,6 +217,7 @@ jobs:
           AUTH_RATE_LIMIT_LOGIN_IP: "1000"
 
       - name: E2E — parte 2 de 2 (processo novo, contador de login zerado)
+        if: matrix.suite == 'geral'
         run: |
           pnpm exec playwright test --workers=1 \
             agente-novo-e-uso.spec.ts agente-organiza-operacao.spec.ts \
@@ -216,13 +242,36 @@ jobs:
           # O teto por CONTA (5 falhas) NÃO muda — é ele que barra brute force.
           AUTH_RATE_LIMIT_LOGIN_IP: "1000"
 
+      # Projetos de viewport do playwright.config.ts — só eles rodam esta spec
+      # (o `chromium` a ignora). A jornada do dono cria um dono novo por projeto
+      # com o scripts/bootstrap-owner.ts, como o install.sh.
+      - name: E2E — responsivo (celular, tablet, desktop e Safari)
+        if: matrix.suite == 'responsivo'
+        run: |
+          pnpm exec playwright test --workers=1 \
+            --project=mobile --project=mobile-sm --project=tablet \
+            --project=desktop --project=webkit-p0 responsivo.spec.ts
+        env:
+          INTERNAL_SECRET: ci-placeholder-nao-e-segredo
+          CPF_ENCRYPTION_KEY: ci-placeholder-nao-e-segredo
+          WAHA_BYO_ENCRYPTION_KEY: ci-placeholder-nao-e-segredo
+          AI_CRED_AES_KEY: ci-placeholder-nao-e-segredo
+          SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+          WAHA_API_BASE_URL: http://127.0.0.1:3999
+          WAHA_API_KEY: ci-placeholder-nao-e-segredo
+          WAHA_WEBHOOK_BASE_URL: http://127.0.0.1:3001
+          UPSTASH_REDIS_REST_URL: http://127.0.0.1:3998
+          UPSTASH_REDIS_REST_TOKEN: ci-placeholder-nao-e-segredo
+          AUTH_RATE_LIMIT_LOGIN_IP: "1000"
+
       - name: Declarar o que este job ainda NÃO cobre
-        if: always()
+        if: always() && matrix.suite == 'geral'
         run: |
           {
             echo "## E2E — cobertura deste job"
             echo ""
-            echo "**Rodou (30 de 33 specs):** smoke, auth, error-pages, password-recovery,"
+            echo "**Rodou (31 de 35 specs; a responsivo.spec.ts roda na outra perna da matriz):**"
+            echo "smoke, auth, auth-sem-credencial-na-url, error-pages, password-recovery,"
             echo "signup-journey, rbac-roles, inbox-scope, reset-password-mfa,"
             echo "degradacao-silenciosa, vps-webhook-outbound-ssrf, kanban-owner-filter,"
             echo "queue-assign, risk-radar, invite-lifecycle, system-update,"
@@ -253,7 +302,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.suite }}
           path: |
             playwright-report/
             test-results/

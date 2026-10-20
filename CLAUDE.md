@@ -118,6 +118,14 @@ multi-tenant com RLS (arquitetura herdada), mas configurado e operado como produ
 - `custom_fields jsonb` com schema declarativo em `pipeline.settings.fields`; Zod construído dinamicamente
 - `vocabulary jsonb` em pipeline permite renomear lead/deal/won/lost (e-commerce: lead=Cliente, deal=Pedido, won=Pago, lost=Cancelado)
 
+### Responsivo (celular e tablet)
+A equipe da clínica atende pelo celular. Toda tela nova nasce cabendo em 360px e é provada em `tests/e2e/responsivo.spec.ts` (projetos `mobile`, `mobile-sm`, `tablet`, `desktop`, `webkit-p0`) — a rota entra na lista `ROTAS_LOGADAS`/`ROTAS_PUBLICAS` e a medida é por ferramenta: nem a página nem o `<main>` podem rolar na horizontal.
+- **Breakpoints:** padrão do Tailwind, mobile-first. O menu lateral fixo existe só a partir de `lg` (1024); abaixo disso ele é a gaveta do hambúrguer (`components/shell/MenuGaveta.tsx`). Desktop (`lg`+) não muda quando se ajusta o celular — use `lg:` para preservar o valor de antes.
+- **Largura:** nada de `w-64`/`w-[300px]` solto em filtro ou input — `w-full sm:w-64`. Popover/menu largo leva `max-w-[calc(100vw-2rem)]`. Grade de campos de formulário: `grid-cols-1 sm:grid-cols-2`. Wrapper de página **não** tem `p-6` próprio no celular (`lg:p-6`): o `<main>` já tem `p-4`.
+- **Toque:** ação primária da tela com `size="touch"` no `Button` (44px até `lg`); o `size="sm"` já tem 36px no toque. Campo de texto não pode ter fonte < 16px no toque (o Safari dá zoom) — a regra global em `app/globals.css` cobre, não a anule com `!text-sm`.
+- **Painéis lado a lado** (lista | detalhe) viram um OU outro abaixo de `md`, trocados só por CSS a partir de estado que o servidor também conhece (URL), para não haver flash. `hooks/useMediaQuery.ts` só onde CSS não resolve (hoje, o construtor de fluxos).
+- **Tabela larga** rola dentro do próprio contêiner (`components/ui/table.tsx`), nunca a página; a primeira coluna identifica a linha.
+
 ---
 
 ## Anti-patterns proibidos
