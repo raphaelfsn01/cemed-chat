@@ -17,7 +17,7 @@ export default async function TeamPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 lg:p-6">
-      <header className="flex items-center justify-between">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Equipe</h1>
           <p className="text-sm text-muted-foreground">

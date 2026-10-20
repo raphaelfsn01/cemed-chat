@@ -751,6 +751,33 @@ testLogado.describe("área logada", () => {
     }
   });
 
+  testLogado("perfil: editar e salvar pelo celular [fase 4a]", async ({ page }) => {
+    const projeto = testLogado.info().project.name;
+    await carregar(page, "/app/settings/profile");
+    const nome = page.locator("#full_name");
+    await tocar(nome);
+    // Mesmo nome de volta: prova o salvar sem mudar o que as outras telas mostram.
+    await nome.fill("E2E Admin");
+    const fuso = page.locator("#timezone");
+    await exigirDentroDaTela(page, fuso, "seletor de fuso horário");
+    const largura = (await fuso.boundingBox())!.width;
+    if (page.viewportSize()!.width < 640) {
+      expect.soft(largura, "fuso horário com largura de coluna inteira no celular").toBeGreaterThan(250);
+    }
+    const salvar = page.getByRole("button", { name: /^salvar$/i });
+    await tocar(salvar);
+    await expect(page.getByText("Perfil atualizado.")).toBeVisible({ timeout: 15_000 });
+    await provarTela(page, projeto, "perfil_salvo", "/app/settings/profile (salvo)", "4a");
+  });
+
+  testLogado("equipe: aba Atendimento cabe na tela [fase 4a]", async ({ page }) => {
+    const projeto = testLogado.info().project.name;
+    await carregar(page, "/app/team");
+    await tocar(page.getByRole("tab", { name: /atendimento/i }));
+    await page.waitForTimeout(600);
+    await provarTela(page, projeto, "equipe_atendimento", "/app/team (aba Atendimento)", "4a");
+  });
+
   testLogado("navegação: menu do admin abre, navega e fecha [fase 1]", async ({ page }) => {
     const info = testLogado.info();
     const projeto = info.project.name;
