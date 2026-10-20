@@ -31,12 +31,12 @@ multi-tenant com RLS (arquitetura herdada), mas configurado e operado como produ
 - **Auth:** Supabase Auth via `@supabase/ssr`. Cookie SameSite=Strict, HttpOnly, Secure
 - **Realtime:** Supabase Realtime (postgres_changes + broadcast)
 - **Storage:** Supabase Storage (bucket `whatsapp-media` privado, URLs assinadas)
-- **WhatsApp:** WAHA Plus, engine NOWEB
+- **WhatsApp:** WAHA, engine NOWEB. O desenho supõe o **Plus**; a VPS de produção roda o **Core** (ver "Infraestrutura desta VPS")
 - **Filas/eventos:** `event_log` table + workers (não usar Inngest/Trigger no MVP)
-- **Rate limit:** Upstash Redis sliding window
-- **AI:** Vercel AI Gateway (Anthropic primário; OpenAI backup pra embeddings); strings tipo `"anthropic/claude-sonnet-4-6"`
+- **Rate limit:** SDK `@upstash/redis` (sliding window). Na VPS de produção NÃO há Upstash cloud: é Redis local efêmero + `srh` (serverless-redis-http) falando o REST do Upstash
+- **AI:** Vercel AI Gateway (Anthropic primário; OpenAI backup pra embeddings); strings tipo `"anthropic/claude-sonnet-4-6"`. O código também fala com OpenRouter e Anthropic direto — **o que roda depende das chaves preenchidas no `.env`**; o boot do app avisa o que está desligado (`[env] No ...`)
 - **Validação:** Zod em todo input externo (request body, webhook payload, env)
-- **Observability:** Sentry com `beforeSend` sanitizado
+- **Observability:** Sentry com scrub em todos os hooks (`lib/sentry/scrub.ts`). **`SENTRY_DSN` vazio NÃO desliga**: envia para o Sentry da comunidade (DSN embutido em `lib/sentry/dsn.ts`, de terceiros). `off` desliga; um DSN próprio manda para o seu. O boot do app diz qual dos três está valendo (`[telemetria] ...`)
 
 ---
 
@@ -86,10 +86,10 @@ multi-tenant com RLS (arquitetura herdada), mas configurado e operado como produ
 - Action audit obrigatória: `lgpd.data_request_received`, `lgpd.export_generated`, `lgpd.redact_executed`, `lgpd.consent_changed`
 
 ### WAHA
-- Plus obrigatório (Core não suporta multi-tenant, sem retry, sem S3)
+- O desenho supõe o Plus (Core não suporta multi-tenant, sem retry, sem S3). **A VPS de produção roda o Core** (`WAHA_IMAGE=devlikeapro/waha:noweb`): essas limitações valem lá
 - Engine NOWEB default; WEBJS apenas se precisar stickers animados / botões
 - Auth: env do WAHA recebe **hash SHA512 hex** da api key; cliente envia plaintext em `X-Api-Key`
-- Webhooks: HMAC SHA512 com `crypto.timingSafeEqual`
+- Webhooks: HMAC SHA512 com `crypto.timingSafeEqual`, **exigido só com `WAHA_WEBHOOK_REQUIRE_SIGNATURE=true`**. Na VPS de produção fica `false` por decisão: o WAHA fala com o app pela rede interna do compose e o webhook global responde 403 na borda (Caddyfile)
 - Anti-banimento: throttle 1 msg/1.2s + jitter ≤800ms. Campanha 1 msg/5s. Warm-up 7-14d. Spinning de copy. Janela 7h-22h, evitar domingo
 - STOP detection: regex `/STOP|PARAR|SAIR|UNSUBSCRIBE/i` no inbound → `is_blocked=true` automaticamente
 - Mídia: subir pro Supabase Storage primeiro, passar URL ao WAHA (não inline base64)
@@ -164,32 +164,82 @@ A equipe da clínica atende pelo celular. Toda tela nova nasce cabendo em 360px 
 | `lib/supabase/{browser,server,admin}.ts` | Clients canônicos |
 | `app/api/v1/health/route.ts` | Health check (Supabase + Redis + WAHA) |
 | `supabase/migrations/` | Schema versionado |
-| `docs/runbooks/deploy.md` | **Deploy em produção — leia ANTES de mexer na VPS** |
+| `docs/runbooks/deploy.md` | **Deploy em produção — leia ANTES de mexer na VPS** (topologia Caddy × Traefik) |
+| `docs/runbooks/caddy-log-de-acesso.md` | Log de acesso do proxy: onde fica, o que é redigido, como consultar |
 
 ---
 
 ## Deploy em produção (NÃO NEGOCIÁVEL)
 
-**Numa VPS que já tem proxy reverso próprio (Hostinger, Coolify, Dokploy…), todo
-`up -d` leva os DOIS arquivos de compose:**
+**O comando depende do proxy da máquina — descubra antes de rodar.** Há duas
+topologias, e confundir as duas já derrubou o site:
+
+| Topologia | Quem serve 80/443 | Todo `up -d` leva |
+|---|---|---|
+| **A — Caddy do compose** (VPS "crua"; **é a VPS de produção do CEMED**) | `<projeto>-caddy-1` | só `-f docker-compose.prod.yml` |
+| **B — Traefik da hospedagem** (Hostinger, Coolify, Dokploy…) | Traefik da hospedagem | `-f docker-compose.prod.yml -f docker-compose.traefik.yml` |
 
 ```bash
+# A (produção do CEMED):
+docker compose -f docker-compose.prod.yml --env-file .env up -d app
+# B (Traefik da hospedagem):
 docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml --env-file .env up -d app
 ```
 
-Omitir `-f docker-compose.traefik.yml` recria o contêiner sem as labels de
-roteamento; o Traefik da hospedagem deixa de enxergá-lo e **o domínio inteiro
-responde `404 page not found`** — com o contêiner `healthy`, porque o
-healthcheck é um probe TCP interno e não sabe nada de roteamento.
+Para saber qual é, pergunte ao contêiner que está rodando (label
+`com.docker.compose.project.config_files` do `app`) — o comando está em
+`docs/runbooks/deploy.md`, seção 0. **Na A, o `-f docker-compose.traefik.yml`
+desliga o Caddy e o domínio cai. Na B, omiti-lo tira as labels do Traefik e o
+domínio responde `404 page not found`** — nos dois casos com o contêiner
+`healthy`, porque o healthcheck é interno e não sabe nada de roteamento.
 
 Depois de qualquer deploy, confirme que o domínio responde **307** (redireciona
-pro login) e não 404. Verificações e o caso de build local em
+pro login) e que a `revision` da imagem é o commit mergeado. Mudou o `Caddyfile`?
+`up -d --force-recreate caddy` (bind mount preso ao inode). Mudou o agente? O
+`worker` é construído na VPS — o CI não o atualiza. Tudo em
 `docs/runbooks/deploy.md`.
 
 O caminho normal **não constrói nada na VPS**: commit → push → PR → merge na
 `main` → o CI publica no GHCR → a VPS puxa. Imagem construída na VPS é exceção
 de emergência e é dívida: existe só naquele disco e qualquer `up -d` sem
 `APP_PULL_POLICY=never` a substitui em silêncio.
+
+---
+
+## Infraestrutura desta VPS (produção do CEMED)
+
+O padrão do produto (kit self-host, stack canônica acima) e o que roda na VPS de
+produção do CEMED divergem em pontos que mudam comandos e expectativas. Antes de
+operar a produção, valem estes fatos (levantados em 2026-10-20):
+
+- **Proxy: Caddy** do próprio compose nas portas 80/443 — topologia **A** acima.
+  HTTPS automático (Let's Encrypt, renovado pelo Caddy). **Não há Traefik.** Log de
+  acesso em JSON, sem credenciais: `docs/runbooks/caddy-log-de-acesso.md`.
+- **Compose:** só o `docker-compose.prod.yml`, projeto `cemed-chat` no checkout
+  `~/dev/cemed-chat` (não `/var/www/crm`). Mantenha esse checkout na `main`
+  depois de cada merge: o compose lê `Caddyfile` e compose do disco.
+- **Banco: Supabase cloud** (Postgres 17). Não há Postgres na VPS.
+- **Redis:** local, **efêmero** (sem `save`/AOF, sem senha, só na rede interna) +
+  `srh` emulando o REST do Upstash. Restart zera os contadores de rate limit.
+- **WhatsApp: WAHA Core** (`devlikeapro/waha:noweb`), engine NOWEB. Sem
+  healthcheck no compose: sessão caída não aparece no `docker ps`.
+- **Worker do agente:** imagem **construída na VPS**; o CI não publica e o
+  `update.sh` não reconstrói.
+- **Sentry e IA dependem das chaves no `.env`:**
+  - `SENTRY_DSN` vazio → erros vão para o **Sentry da comunidade (terceiros)**;
+    `off` → desligado; DSN próprio → seu Sentry. Só o app usa (o worker não).
+  - IA: sem `OPENAI_API_KEY`, RAG/embeddings e transcrição de áudio ficam
+    desligados; AI Gateway e Anthropic só valem se as chaves estiverem
+    preenchidas. O boot do app lista o que está faltando (`[env] No ...`).
+- **Assinatura do webhook do WAHA não é exigida** (`WAHA_WEBHOOK_REQUIRE_SIGNATURE=false`,
+  decisão tomada) — ver a seção WAHA acima.
+- **Atualização pela tela:** cron de 5 em 5 min roda `hostgator-setup-kit/agent.sh`
+  (heartbeat); o `update.sh` só roda quando alguém pede em Configurações →
+  Atualização, e usa só o `prod.yml` porque o `.env` não define `REVERSE_PROXY`.
+- **Máquina compartilhada:** a mesma VPS hospeda worktrees de desenvolvimento e o
+  QA local (Playwright em contêiner, Supabase local de teste). Confira `free -h`
+  antes de build/QA, um build por vez, e nunca trabalhe dentro de
+  `~/dev/cemed-chat` — use um worktree.
 
 ---
 
