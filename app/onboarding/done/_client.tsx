@@ -49,6 +49,7 @@ export function DoneClient({ recap }: { recap: Recap }) {
       </ul>
       <Button
         type="button"
+        size="touch"
         disabled={pending}
         onClick={() =>
           startTransition(async () => {

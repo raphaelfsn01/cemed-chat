@@ -77,7 +77,7 @@ export function RecoveryForm({ next }: RecoveryFormProps) {
         </div>
       )}
 
-      <Button type="submit" className="w-full" disabled={isPending}>
+      <Button type="submit" size="touch" className="w-full" disabled={isPending}>
         {isPending ? "Validando..." : "Recuperar acesso"}
       </Button>
     </form>

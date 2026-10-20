@@ -124,7 +124,7 @@ export function InviteTeamForm() {
             ))}
           </ul>
           <div className="flex justify-end">
-            <Button type="button" onClick={() => (window.location.href = "/onboarding")}>
+            <Button type="button" size="touch" onClick={() => (window.location.href = "/onboarding")}>
               Continuar
             </Button>
           </div>
@@ -135,7 +135,7 @@ export function InviteTeamForm() {
         <Button type="button" variant="ghost" disabled={pending} onClick={() => submit(true)}>
           Pular por enquanto
         </Button>
-        <Button type="button" disabled={pending} onClick={() => submit(false)}>
+        <Button type="button" size="touch" disabled={pending} onClick={() => submit(false)}>
           {pending ? "Enviando..." : "Enviar convites"}
         </Button>
       </div>

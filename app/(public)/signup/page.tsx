@@ -17,7 +17,7 @@ export default function SignupPage() {
       <SignupForm />
       <p className="text-center text-sm text-muted-foreground">
         Já tem conta?{" "}
-        <Link href="/login" className="font-medium text-foreground underline underline-offset-4">
+        <Link href="/login" className="font-medium text-foreground underline underline-offset-4 inline-block py-2 lg:py-0">
           Entrar
         </Link>
       </p>

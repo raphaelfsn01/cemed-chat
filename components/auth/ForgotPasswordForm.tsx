@@ -81,7 +81,7 @@ export function ForgotPasswordForm() {
           {serverError}
         </div>
       )}
-      <Button type="submit" className="w-full" disabled={isPending}>
+      <Button type="submit" size="touch" className="w-full" disabled={isPending}>
         {isPending ? "Enviando..." : "Enviar link de redefinição"}
       </Button>
     </form>

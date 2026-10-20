@@ -28,41 +28,52 @@ const STEPS: StepDef[] = [
 export function Stepper() {
   const pathname = usePathname() ?? "";
   const idx = STEPS.findIndex((s) => pathname.includes(`/${s.segment}`));
+  const atual = STEPS[idx];
   return (
-    <ol
-      aria-label="onboarding steps"
-      className="flex w-full items-center justify-between gap-2 px-2 py-3"
-    >
-      {STEPS.map((s, i) => {
-        const isActive = i === idx;
-        const isDone = i < idx;
-        return (
-          <li
-            key={s.segment}
-            aria-current={isActive ? "step" : undefined}
-            className="flex flex-1 flex-col items-center text-xs"
-          >
-            <div
-              className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-full border text-[11px] font-medium",
-                isActive && "border-primary bg-primary text-primary-foreground",
-                isDone && "border-primary/40 bg-primary/10 text-primary",
-                !isActive && !isDone && "border-muted-foreground/20 text-muted-foreground",
-              )}
+    <>
+      {/* No celular os cinco rótulos dividem ~60px cada e viravam "Boas-vi…":
+          lá ficam só os números, e o nome do passo atual vem por extenso aqui. */}
+      {atual && (
+        <p className="px-2 pt-2 text-center text-xs text-muted-foreground sm:hidden">
+          Passo {idx + 1} de {STEPS.length} ·{" "}
+          <span className="font-medium text-foreground">{atual.label}</span>
+        </p>
+      )}
+      <ol
+        aria-label="onboarding steps"
+        className="flex w-full items-center justify-between gap-2 px-2 py-3"
+      >
+        {STEPS.map((s, i) => {
+          const isActive = i === idx;
+          const isDone = i < idx;
+          return (
+            <li
+              key={s.segment}
+              aria-current={isActive ? "step" : undefined}
+              className="flex flex-1 flex-col items-center text-xs"
             >
-              {i + 1}
-            </div>
-            <span
-              className={cn(
-                "mt-1 truncate",
-                isActive ? "font-medium text-foreground" : "text-muted-foreground",
-              )}
-            >
-              {s.label}
-            </span>
-          </li>
-        );
-      })}
-    </ol>
+              <div
+                className={cn(
+                  "flex h-7 w-7 items-center justify-center rounded-full border text-[11px] font-medium",
+                  isActive && "border-primary bg-primary text-primary-foreground",
+                  isDone && "border-primary/40 bg-primary/10 text-primary",
+                  !isActive && !isDone && "border-muted-foreground/20 text-muted-foreground",
+                )}
+              >
+                {i + 1}
+              </div>
+              <span
+                className={cn(
+                  "mt-1 hidden truncate sm:block",
+                  isActive ? "font-medium text-foreground" : "text-muted-foreground",
+                )}
+              >
+                {s.label}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </>
   );
 }

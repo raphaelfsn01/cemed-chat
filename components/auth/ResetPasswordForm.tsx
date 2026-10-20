@@ -103,7 +103,7 @@ export function ResetPasswordForm() {
           {serverError}
         </div>
       )}
-      <Button type="submit" className="w-full" disabled={isPending}>
+      <Button type="submit" size="touch" className="w-full" disabled={isPending}>
         {isPending ? "Salvando..." : "Definir nova senha"}
       </Button>
     </form>

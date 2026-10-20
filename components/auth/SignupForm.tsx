@@ -120,7 +120,7 @@ export function SignupForm() {
           {serverError}
         </div>
       )}
-      <Button type="submit" className="w-full" disabled={isPending}>
+      <Button type="submit" size="touch" className="w-full" disabled={isPending}>
         {isPending ? "Criando conta..." : "Criar conta"}
       </Button>
     </form>
