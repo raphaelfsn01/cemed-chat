@@ -29,7 +29,7 @@ export default async function KnowledgeSourcesPage() {
 
   if (!agent) {
     return (
-      <div className="flex h-full flex-col gap-6 p-6">
+      <div className="flex h-full flex-col gap-6 lg:p-6">
         <header>
           <h1 className="text-2xl font-semibold tracking-tight">Fontes de Conhecimento</h1>
           <p className="text-sm text-muted-foreground">
@@ -59,7 +59,7 @@ export default async function KnowledgeSourcesPage() {
   const initialSources = (sourcesRaw ?? []) as unknown as SourceRow[];
 
   return (
-    <div className="flex h-full flex-col gap-6 p-6">
+    <div className="flex h-full flex-col gap-6 lg:p-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Fontes de Conhecimento</h1>
         <p className="text-sm text-muted-foreground">

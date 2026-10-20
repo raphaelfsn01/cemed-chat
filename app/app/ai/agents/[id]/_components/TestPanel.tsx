@@ -141,7 +141,7 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="test-name">Nome (opcional)</Label>
             <Input

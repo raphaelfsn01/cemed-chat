@@ -83,11 +83,13 @@ function InboxRow({
     locale: ptBR,
   });
   return (
-    <li className="flex items-start gap-3 px-4 py-3" data-testid="inbox-item">
+    // `flex-wrap` + `basis-48` no texto: no celular o botão desce para a linha
+    // de baixo em vez de espremer o aviso numa coluna de ~110px.
+    <li className="flex flex-wrap items-start gap-3 px-4 py-3" data-testid="inbox-item">
       <Badge variant={SEVERITY_VARIANT[item.severity]} className="mt-0.5 shrink-0">
         {SEVERITY_LABEL[item.severity]}
       </Badge>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 basis-48">
         <p className="text-sm font-medium">{item.title}</p>
         <p className="text-xs text-muted-foreground">
           {kindLabel(item.kind)} · {when}
@@ -96,11 +98,11 @@ function InboxRow({
       </div>
       {canResolve ? (
         item.status === "resolved" ? (
-          <Button size="sm" variant="ghost" disabled={pending} onClick={() => onToggle("open")}>
+          <Button size="sm" variant="ghost" className="ml-auto" disabled={pending} onClick={() => onToggle("open")}>
             Reabrir
           </Button>
         ) : (
-          <Button size="sm" variant="outline" disabled={pending} onClick={() => onToggle("resolved")}>
+          <Button size="sm" variant="outline" className="ml-auto" disabled={pending} onClick={() => onToggle("resolved")}>
             <Check size={14} aria-hidden />
             Marcar resolvido
           </Button>

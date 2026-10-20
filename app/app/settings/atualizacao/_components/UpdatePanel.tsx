@@ -394,13 +394,13 @@ function DetalhesTecnicos({ texto }: { texto: string | undefined }) {
 
 function Layout({ titulo, children }: { titulo?: string; children: React.ReactNode }) {
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
+    <div className="mx-auto flex max-w-2xl flex-col gap-6 lg:p-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">
           {titulo ?? "Atualização do sistema"}
         </h1>
       </header>
-      <Card className="p-6">{children}</Card>
+      <Card className="p-4 sm:p-6">{children}</Card>
     </div>
   );
 }

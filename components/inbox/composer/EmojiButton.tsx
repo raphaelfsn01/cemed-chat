@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Smiley } from "@/lib/ui/icons";
+import { cn } from "@/lib/utils";
 
 // Lazy: o picker (+dados) só carrega quando o usuário abre — zero peso no bundle do inbox.
 const Picker = lazy(() => import("@emoji-mart/react"));
@@ -12,9 +13,10 @@ const Picker = lazy(() => import("@emoji-mart/react"));
 interface Props {
   disabled?: boolean;
   onPick: (emoji: string) => void;
+  className?: string;
 }
 
-export function EmojiButton({ disabled, onPick }: Props) {
+export function EmojiButton({ disabled, onPick, className }: Props) {
   const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -23,7 +25,7 @@ export function EmojiButton({ disabled, onPick }: Props) {
           type="button"
           size="icon"
           variant="ghost"
-          className="h-9 w-9 shrink-0"
+          className={cn("h-9 w-9 shrink-0", className)}
           aria-label="Emoji"
           disabled={disabled}
         >
@@ -32,7 +34,7 @@ export function EmojiButton({ disabled, onPick }: Props) {
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className="w-auto border-none p-0 shadow-lg">
         {open && (
-          <Suspense fallback={<Skeleton className="h-[420px] w-[352px]" />}>
+          <Suspense fallback={<Skeleton className="h-[420px] w-[352px] max-w-[calc(100vw-2rem)]" />}>
             <EmojiPickerLazy onPick={onPick} />
           </Suspense>
         )}

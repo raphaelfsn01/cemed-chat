@@ -17,9 +17,9 @@ export default async function OnboardingLayout({ children }: { children: React.R
   const isDev = process.env.NODE_ENV !== "production";
 
   return (
-    <div className="flex min-h-screen flex-col bg-muted/40">
+    <div className="flex min-h-screen flex-col bg-muted/40 supports-[height:100dvh]:min-h-dvh">
       <header className="border-b bg-background">
-        <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-4 py-4 sm:px-6">
           <div>
             <p className="text-xs uppercase tracking-wider text-muted-foreground">{branding().name}</p>
             <h1 className="text-lg font-semibold tracking-tight">{activeOrg.name}</h1>

@@ -14,7 +14,8 @@ export function CaseDetail({ caseId }: { caseId: string | null }) {
   if (caseId === null) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-1 py-16 text-center">
-        <p className="text-sm font-medium">Selecione um caso à esquerda</p>
+        {/* "na lista", não "à esquerda": no celular a lista fica ACIMA. */}
+        <p className="text-sm font-medium">Selecione um caso na lista</p>
         <p className="text-xs text-muted-foreground">Os detalhes e a resposta aparecem aqui.</p>
       </div>
     );

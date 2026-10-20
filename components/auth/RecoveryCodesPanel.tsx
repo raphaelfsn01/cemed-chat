@@ -47,7 +47,7 @@ export function RecoveryCodesPanel({ codes, onAcknowledge }: RecoveryCodesPanelP
           <strong>uma única vez</strong> para entrar caso você perca acesso ao autenticador.
           Eles <strong>não serão mostrados novamente</strong>.
         </p>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {codes.map((c, i) => (
             <div
               key={i}
@@ -80,6 +80,7 @@ export function RecoveryCodesPanel({ codes, onAcknowledge }: RecoveryCodesPanelP
 
       <Button
         type="button"
+        size="touch"
         className={cn("w-full")}
         disabled={!acked}
         onClick={onAcknowledge}

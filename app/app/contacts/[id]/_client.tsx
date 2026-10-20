@@ -27,7 +27,7 @@ export function ContactDetailClient({ contactId }: Props) {
 
   if (q.isLoading) {
     return (
-      <div className="space-y-4 p-6">
+      <div className="space-y-4 lg:p-6">
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-32 w-full" />
       </div>
@@ -53,7 +53,7 @@ export function ContactDetailClient({ contactId }: Props) {
     contact.display_name?.trim() || contact.name?.trim() || "Sem nome";
 
   return (
-    <div className="space-y-4 p-6">
+    <div className="space-y-4 lg:p-6">
       {contact.is_anonymized && (
         <div
           role="alert"

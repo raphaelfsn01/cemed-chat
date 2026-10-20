@@ -109,7 +109,7 @@ export function WelcomeForm({ defaultOrgName }: { defaultOrgName: string }) {
       </label>
 
       <div className="flex justify-end">
-        <Button type="submit" disabled={pending || !accepted}>
+        <Button type="submit" size="touch" disabled={pending || !accepted}>
           {pending ? "Salvando..." : "Continuar"}
         </Button>
       </div>

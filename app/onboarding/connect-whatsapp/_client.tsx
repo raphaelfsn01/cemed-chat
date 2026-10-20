@@ -201,6 +201,7 @@ export function ConnectWhatsappClient({ wahaConfigured, sessionName }: Props) {
         <Button
           type="button"
           variant="outline"
+          size="touch"
           disabled={pending}
           onClick={() =>
             startTransition(async () => {
@@ -217,6 +218,7 @@ export function ConnectWhatsappClient({ wahaConfigured, sessionName }: Props) {
         </Button>
         <Button
           type="button"
+          size="touch"
           disabled={pending || status === "WORKING"}
           onClick={() =>
             startTransition(async () => {

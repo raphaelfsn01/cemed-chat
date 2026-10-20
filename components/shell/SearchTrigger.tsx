@@ -14,10 +14,15 @@ export function SearchTrigger() {
 
   return (
     <>
+      {/* No celular o texto some e o botão vira só a lupa: o `aria-label` dá o
+          nome que o texto escondido levava junto. A altura de toque (36px; o
+          `sm` tem 32) vale até `lg`, e não só até `md`: o tablet já mostra o
+          texto, mas continua sendo dedo, não mouse. */}
       <Button
         variant="outline"
         size="sm"
-        className="gap-2 text-muted-foreground"
+        className="h-9 w-9 gap-2 px-0 text-muted-foreground md:w-auto md:px-3 lg:h-8"
+        aria-label="Buscar telas"
         onClick={() => setOpen(true)}
       >
         <MagnifyingGlass size={14} aria-hidden />

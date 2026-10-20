@@ -12,7 +12,7 @@ export default async function MetricsPage() {
   const canCompare = !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
 
   return (
-    <div className="flex h-full flex-col gap-6 p-6">
+    <div className="flex h-full flex-col gap-6 lg:p-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Desempenho</h1>
         <p className="text-sm text-muted-foreground">

@@ -106,11 +106,18 @@ o contrato de governança para agentes de IA externos.
 MCP público · flywheel de auto-aprimoramento · templates por nicho (clínica,
 imobiliária, infoproduto, serviços) · VTEX e Shopify via adapter · identity probabilística.
 
-### Dois achados de produto registrados e não endereçados
+### Dois achados de produto registrados no `HANDOFF-harness-evolution.md`
 
-Vêm do `HANDOFF-harness-evolution.md`, anotados como "não são desta feature":
-**transbordo de layout a 390px em qualquer tela** e **não existe caminho de criação de
-funil** (só de etapas). O primeiro é bug de primeira impressão em mobile.
+Anotados lá como "não são desta feature":
+- **Transbordo de layout a 390px em qualquer tela — RESOLVIDO (2026-10-20, branch
+  `feat/responsivo-mobile`).** Medido na main: 47 de 56 rotas rolavam na horizontal no
+  celular. Depois: nenhuma — nas 60 rotas da varredura (as 56 + 4 públicas) e nas telas das
+  jornadas (84 medidas por viewport), em 390, no tablet (768) e no desktop (1440); em 360 e no
+  Safari (WebKit), nas telas de primeira impressão. Menu vira gaveta abaixo de `lg`, inbox alterna
+  lista/conversa, kanban mostra uma etapa por tela. Prova: `tests/e2e/responsivo.spec.ts`;
+  jornada J9 em `docs/testing/user-journey-map.md`; convenção no CLAUDE.md ("Responsivo").
+- **Não existe caminho de criação de funil** (só de etapas) — já resolvido antes: a tela
+  de funis (`/app/kanban`) tem "Novo funil".
 
 ---
 
@@ -243,8 +250,9 @@ consequência natural de trabalho em branches paralelas, mas ilustra a regra:
 3. Casos Humanos Wave 7 e Inbox Multimodal ondas 4–6 fecharam? Os HANDOFFs foram arquivados
    em `docs/handoffs/`, o que sugere sim, mas o texto interno ainda diz PARCIAL.
 4. A credencial Anthropic e a chave direta do Google AI Studio foram providenciadas?
-5. Os dois achados de produto registrados e não endereçados — transbordo a 390px e ausência
-   de criação de funil — entram em qual momento? O primeiro é bug de primeira impressão mobile.
+5. ~~Transbordo a 390px e criação de funil~~ — os dois resolvidos (ver §3, "Dois achados").
+   Fica aberto: o contraste do botão primário (branco sobre `#00909c`, 3.83:1, abaixo do
+   AA 4.5:1) reprova `tests/e2e/auth.spec.ts` na main — decisão de cor pendente.
 6. `pnpm gov:verify` deve passar a incluir `test:db` (exige Docker em toda máquina de dev)
    ou fica um `verify:full` separado?
 7. As branch protection rules exigem os dois checks do CI verdes para merge? Isso decide se o

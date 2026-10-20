@@ -45,11 +45,18 @@ const buttonVariants = cva(
           "bg-transparent text-accent underline underline-offset-4 decoration-1 hover:decoration-2 h-auto p-0",
       },
       size: {
-        sm: "h-8 px-3 text-xs",
+        // 36px abaixo de `lg`: é o alvo mínimo de toque secundário; o desktop
+        // segue com 32px.
+        sm: "h-9 px-3 text-xs lg:h-8",
         default: "h-9 px-4 text-sm",
         md: "h-9 px-4 text-sm",
         lg: "h-11 px-6 text-sm",
         icon: "h-9 w-9",
+        // Ação PRIMÁRIA de tela usada no dedo (entrar, enviar, confirmar):
+        // 44px abaixo de `lg` — celular e tablet —, e o `default` a partir
+        // dele, para o desktop não mudar. 44px é o mínimo de toque da Apple
+        // e o que o QA responsivo mede (tests/e2e/responsivo.spec.ts).
+        touch: "h-11 px-4 text-sm lg:h-9",
       },
     },
     defaultVariants: {

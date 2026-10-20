@@ -37,7 +37,7 @@ export function ContactsTable({ contacts }: Props) {
       <TableBody>
         {contacts.map((c) => (
           <TableRow key={c.id} className="cursor-pointer">
-            <TableCell className="font-medium">
+            <TableCell className="whitespace-nowrap font-medium">
               <Link href={`/app/contacts/${c.id}`} className="hover:underline">
                 {displayName(c)}
               </Link>

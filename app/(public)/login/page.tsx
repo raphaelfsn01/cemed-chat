@@ -50,7 +50,7 @@ export default async function LoginPage({
         <p>
           <Link
             href="/login/forgot"
-            className="text-muted-foreground underline underline-offset-4 hover:text-foreground"
+            className="text-muted-foreground underline underline-offset-4 hover:text-foreground inline-block py-2 lg:py-0"
           >
             Esqueci minha senha
           </Link>
@@ -59,7 +59,7 @@ export default async function LoginPage({
           Não tem conta?{" "}
           <Link
             href="/signup"
-            className="font-medium text-foreground underline underline-offset-4"
+            className="font-medium text-foreground underline underline-offset-4 inline-block py-2 lg:py-0"
           >
             Criar conta
           </Link>

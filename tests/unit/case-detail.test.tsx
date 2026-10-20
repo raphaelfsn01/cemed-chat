@@ -53,7 +53,7 @@ describe("CaseDetail", () => {
   it("estado vazio quando nenhum caso selecionado", () => {
     useCaseMock.mockReturnValue({ isLoading: false, data: undefined });
     render(wrap(<CaseDetail caseId={null} />));
-    expect(screen.getByText("Selecione um caso à esquerda")).toBeInTheDocument();
+    expect(screen.getByText("Selecione um caso na lista")).toBeInTheDocument();
   });
 
   it("mostra summary/blocker rotulados e traduz pelo menos 2 kinds da timeline pra pt-br", () => {

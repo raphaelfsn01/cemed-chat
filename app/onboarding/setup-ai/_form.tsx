@@ -136,7 +136,7 @@ export function SetupAiForm() {
         >
           Pular
         </Button>
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" size="touch" disabled={pending}>
           {pending ? "Criando..." : "Criar e continuar"}
         </Button>
       </div>

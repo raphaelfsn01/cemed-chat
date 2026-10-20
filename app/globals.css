@@ -270,6 +270,27 @@
     text-rendering: optimizeLegibility;
   }
 
+  /*
+   * Zoom do iOS: o Safari amplia a página ao focar um campo com fonte menor
+   * que 16px, e não desfaz ao sair — no celular o operador termina com a
+   * inbox cortada dos dois lados. A condição do zoom é o toque, não a largura,
+   * por isso `pointer: coarse` (cobre iPad também) e não um breakpoint.
+   *
+   * É regra global, e não `text-base` nos primitivos, por dois motivos medidos:
+   * 34 campos crus (`<input>`/`<textarea>`/`<select>`) não passam pelos
+   * primitivos, e qualquer `className="text-sm"` de quem consome o primitivo
+   * venceria no tailwind-merge. O `:not(...)` com as classes ≥16px evita
+   * ENCOLHER o que já é grande (os dígitos do MFA são `text-lg`); e a
+   * especificidade dele (0,1,1) é o que faz a regra vencer o `.text-sm`.
+   */
+  @media (pointer: coarse) {
+    input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], .text-base, .text-lg, .text-xl, .text-2xl, .text-3xl),
+    textarea:not(.text-base, .text-lg, .text-xl, .text-2xl, .text-3xl),
+    select {
+      font-size: 16px;
+    }
+  }
+
   code, kbd, pre, samp {
     font-family: var(--font-mono), ui-monospace, "SFMono-Regular", Menlo,
       Monaco, Consolas, "Liberation Mono", "Courier New", monospace;

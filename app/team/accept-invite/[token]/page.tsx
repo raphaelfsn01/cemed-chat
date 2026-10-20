@@ -68,7 +68,7 @@ export default async function AcceptInvitePage({ params }: PageProps) {
         </p>
         <Link
           href={`/login?next=${next}`}
-          className="mt-4 inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+          className="mt-4 inline-flex h-11 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground lg:h-9"
         >
           Fazer login
         </Link>
@@ -88,7 +88,7 @@ export default async function AcceptInvitePage({ params }: PageProps) {
         <form action="/api/auth/signout" method="post" className="mt-4">
           <button
             type="submit"
-            className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
+            className="inline-flex h-11 items-center rounded-md border px-4 text-sm font-medium hover:bg-accent lg:h-9"
           >
             Sair
           </button>
@@ -112,7 +112,7 @@ export default async function AcceptInvitePage({ params }: PageProps) {
       <form action={accept} className="mt-4">
         <button
           type="submit"
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+          className="inline-flex h-11 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground lg:h-9"
         >
           Aceitar convite
         </button>
@@ -123,8 +123,8 @@ export default async function AcceptInvitePage({ params }: PageProps) {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-lg border bg-card p-8 shadow-sm">{children}</div>
+    <div className="flex min-h-screen items-center justify-center p-4 sm:p-6 supports-[height:100dvh]:min-h-dvh">
+      <div className="w-full max-w-md rounded-lg border bg-card p-6 shadow-sm sm:p-8">{children}</div>
     </div>
   );
 }

@@ -125,7 +125,7 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
           {summaryLabel(triggerConfig)}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80" align="end" data-testid="trigger-config-panel">
+      <PopoverContent className="w-80 max-w-[calc(100vw-2rem)]" align="end" data-testid="trigger-config-panel">
         <div className="space-y-3">
           <div className="space-y-2">
             <Label htmlFor="trigger-kind">Tipo de gatilho</Label>

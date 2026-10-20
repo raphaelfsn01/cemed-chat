@@ -37,7 +37,7 @@ export function RecoveryForm({ next }: RecoveryFormProps) {
   };
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4" noValidate>
+    <form method="post" onSubmit={onSubmit} className="space-y-4" noValidate>
       <div className="space-y-1.5">
         <Label htmlFor="email">Email</Label>
         <Input
@@ -77,7 +77,7 @@ export function RecoveryForm({ next }: RecoveryFormProps) {
         </div>
       )}
 
-      <Button type="submit" className="w-full" disabled={isPending}>
+      <Button type="submit" size="touch" className="w-full" disabled={isPending}>
         {isPending ? "Validando..." : "Recuperar acesso"}
       </Button>
     </form>

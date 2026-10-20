@@ -1,11 +1,14 @@
 "use client";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useAdminConversation } from "@/hooks/useAdminConversation";
 import { MessageBubble } from "@/components/inbox/MessageBubble";
 import { TenantBadge } from "@/components/admin/inbox/TenantBadge";
 import { AdminSidePanel } from "./AdminSidePanel";
-import { CircleNotch, Lock } from "@/lib/ui/icons";
+import { ArrowLeft, CircleNotch, Lock } from "@/lib/ui/icons";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import type { Message } from "@/lib/types/messaging";
 
 // ---------------------------------------------------------------------------
@@ -29,6 +32,7 @@ interface Props {
 
 export function AdminThreadClient({ conversationId }: Props) {
   const { data, isLoading, isError } = useAdminConversation(conversationId);
+  const [detalhesAberto, setDetalhesAberto] = useState(false);
 
   // Messages come in desc order from API — reverse for chronological display
   const messages = useMemo<Message[]>(() => {
@@ -61,7 +65,14 @@ export function AdminThreadClient({ conversationId }: Props) {
       {/* ── Thread area ── */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Header */}
-        <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+        <div className="flex items-center gap-2 border-b border-border px-2 py-2 md:gap-3 md:px-4 md:py-3">
+          {/* Abaixo de `md` a lista some quando há conversa aberta: o caminho
+              de volta tem de estar na tela. */}
+          <Button asChild variant="ghost" size="icon" className="h-11 w-11 shrink-0 md:hidden">
+            <Link href="/admin/inbox" aria-label="Voltar para as conversas">
+              <ArrowLeft size={20} aria-hidden />
+            </Link>
+          </Button>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="truncate text-sm font-semibold">{contactName}</span>
@@ -79,6 +90,14 @@ export function AdminThreadClient({ conversationId }: Props) {
               </div>
             )}
           </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="shrink-0 xl:hidden"
+            onClick={() => setDetalhesAberto(true)}
+          >
+            Detalhes
+          </Button>
         </div>
 
         {/* Messages */}
@@ -104,8 +123,18 @@ export function AdminThreadClient({ conversationId }: Props) {
         </div>
       </div>
 
-      {/* ── Side panel ── */}
-      <AdminSidePanel data={data} />
+      {/* ── Side panel: coluna a partir de `xl`, gaveta abaixo ── */}
+      <AdminSidePanel data={data} className="hidden xl:flex" />
+      <Sheet open={detalhesAberto} onOpenChange={setDetalhesAberto}>
+        <SheetContent
+          side="right"
+          aria-describedby={undefined}
+          className="w-full p-0 pt-12 sm:max-w-md xl:hidden"
+        >
+          <SheetTitle className="sr-only">Detalhes da conversa</SheetTitle>
+          <AdminSidePanel data={data} className="w-full border-l-0" />
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
