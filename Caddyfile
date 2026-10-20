@@ -16,16 +16,28 @@
 	# recriação do contêiner. Rotação: arquivo novo a cada 10 MiB, guarda 10
 	# arquivos e nenhum com mais de 30 dias (≤ ~110 MiB no total).
 	#
-	# O que NÃO entra no log:
-	# - corpo de requisição/resposta: o Caddy nunca registra corpo;
-	# - headers de credencial: o Caddy já esvazia Authorization/Cookie por
-	#   padrão, e aqui eles são APAGADOS de vez, junto com X-Api-Key, o
-	#   Set-Cookie da resposta e o Referer (que pode trazer o link de convite);
-	# - credencial na URI: o token do webhook por canal e o do convite (no
-	#   caminho) e os parâmetros de query de credencial — e o `email`, dado
-	#   pessoal — viram REDACTED. Mesmo critério de caminho do scrub do Sentry
-	#   (lib/sentry/scrub.ts, CREDENTIAL_PATH). Provado com requisições reais
-	#   num Caddy descartável: nenhum valor marcado chegou ao arquivo.
+	# O que entra: data, método, URI (redigida), status, duração, tamanhos, IP de
+	# origem e o User-Agent. NADA além disso — e é por lista BRANCA:
+	# - headers de requisição e de resposta saem INTEIROS do log, e só o
+	#   User-Agent volta (`log_append`). Por lista negra eles vazavam: o app
+	#   devolve `X-Pathname` com o caminho completo (o token do convite junto),
+	#   o `Location` do redirect leva `?next=<caminho>`, o `Content-Disposition`
+	#   de exportação leva nome de arquivo, e a navegação do Next manda
+	#   `Next-Url`/`Next-Router-State-Tree` com os parâmetros da rota. Header
+	#   novo que o app passe a emitir não entra no log sem ninguém decidir.
+	# - corpo de requisição/resposta: o Caddy nunca registra corpo.
+	# - na URI, viram REDACTED: o token no caminho (webhook por canal, convite),
+	#   o mesmo caminho quando vem codificado dentro de um parâmetro
+	#   (`?next=%2Fteam%2Faccept-invite%2F<token>`), e o valor de todo parâmetro
+	#   cujo NOME contém token, secret, password/senha/pass, code, key, email,
+	#   search ou cpf (pega `token_hash` dos links do Supabase e a busca, que
+	#   pode ser nome/telefone/CPF de paciente) — inclusive quando o parâmetro
+	#   vem codificado dentro do `next` de um redirect
+	#   (`?next=%2Fapp%2Fcontacts%3Fsearch%3D<valor>`). Critério de caminho igual ao
+	#   do scrub do Sentry (lib/sentry/scrub.ts, CREDENTIAL_PATH).
+	# Provado de ponta a ponta com o app de verdade atrás de um Caddy
+	# descartável (docs/runbooks/caddy-log-de-acesso.md): o token de teste não
+	# aparece em campo nenhum do arquivo.
 	# O IP de origem fica (é o que serve para auditoria de segurança) — por
 	# isso o log também é dado pessoal, e a retenção é curta (30 dias).
 	log {
@@ -36,18 +48,17 @@
 		}
 		format filter {
 			wrap json
-			request>headers>Authorization delete
-			request>headers>Proxy-Authorization delete
-			request>headers>Cookie delete
-			request>headers>X-Api-Key delete
-			request>headers>Referer delete
-			resp_headers>Set-Cookie delete
+			request>headers delete
+			resp_headers delete
 			request>uri multi_regexp {
 				regexp "(/api/v1/webhooks/[^/?#]+/|/team/accept-invite/)[^/?#]+" "${1}REDACTED"
-				regexp "([?&](?i:password|senha|pass|email|token|code|access_token|refresh_token|secret|api_key|apikey|key)=)[^&#]*" "${1}REDACTED"
+				regexp "((?i:%2Fapi%2Fv1%2Fwebhooks%2F)[^&#%]+(?i:%2F)|(?i:%2Fteam%2Faccept-invite%2F))[^&#%]+" "${1}REDACTED"
+				regexp "([?&][^=&#]*(?i:token|secret|password|senha|pass|code|key|email|search|cpf)[^=&#]*=)[^&#]*" "${1}REDACTED"
+				regexp "((?i:%3F|%26)[^=&#%]*(?i:token|secret|password|senha|pass|code|key|email|search|cpf)[^=&#%]*(?i:%3D))[^&#%]*" "${1}REDACTED"
 			}
 		}
 	}
+	log_append user_agent {http.request.header.User-Agent}
 
 	# `route` é obrigatório aqui: fora dele o Caddy reordena as diretivas pela
 	# ordem padrão dele, na qual `respond` vem DEPOIS de `reverse_proxy` — o
