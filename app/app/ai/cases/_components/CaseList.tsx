@@ -18,8 +18,11 @@ export function CaseList() {
   const { data, isLoading } = useCases(tab);
 
   return (
-    <div className="flex min-h-0 flex-1 gap-6">
-      <div className="flex w-full max-w-xs shrink-0 flex-col gap-4">
+    // Lista | detalhe lado a lado a partir de `md`. No celular a lista de 320px
+    // + o gap deixavam ~14px para o detalhe (o texto dele estourava a tela):
+    // ali os dois empilham.
+    <div className="flex min-h-0 flex-1 flex-col gap-6 md:flex-row">
+      <div className="flex w-full shrink-0 flex-col gap-4 md:max-w-xs">
         <Tabs value={tab} onValueChange={(v) => setTab(v as "open" | "resolved")}>
           <TabsList>
             <TabsTrigger value="open">Abertos{data ? ` (${data.open_count})` : ""}</TabsTrigger>

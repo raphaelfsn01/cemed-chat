@@ -778,6 +778,73 @@ testLogado.describe("área logada", () => {
     await provarTela(page, projeto, "equipe_atendimento", "/app/team (aba Atendimento)", "4a");
   });
 
+  testLogado("rotas com id abertas pela própria tela cabem [fase 4b]", async ({ page }) => {
+    test.setTimeout(120_000);
+    const projeto = testLogado.info().project.name;
+    const abrirPrimeiro = async (lista: string, link: Locator, padrao: RegExp, arquivo: string, rotulo: string) => {
+      await carregar(page, lista);
+      await expect(link.first()).toBeVisible({ timeout: 15_000 });
+      await tocar(link.first());
+      await page.waitForURL(padrao, { timeout: 20_000 });
+      await carregar(page, page.url());
+      await provarTela(page, projeto, arquivo, rotulo, "4b");
+    };
+    await abrirPrimeiro("/app/ai/agents", page.getByRole("link", { name: /editar/i }), /\/app\/ai\/agents\/[^/]+$/, "ai_agente_detalhe", "/app/ai/agents/[id]");
+    await abrirPrimeiro("/app/contacts", page.locator('a[href^="/app/contacts/"]'), /\/app\/contacts\/[^/]+$/, "contato_detalhe", "/app/contacts/[id]");
+    await abrirPrimeiro("/admin/tenants", page.locator('a[href^="/admin/tenants/"]:not([href$="/new"])'), /\/admin\/tenants\/[^/]+$/, "admin_tenant_detalhe", "/admin/tenants/[id]");
+    await abrirPrimeiro("/admin/users", page.locator('a[href^="/admin/users/"]'), /\/admin\/users\/[^/]+$/, "admin_usuario_detalhe", "/admin/users/[id]");
+    await abrirPrimeiro("/admin/audit", page.locator('a[href^="/admin/audit/"]'), /\/admin\/audit\/[^/]+$/, "admin_audit_detalhe", "/admin/audit/[entryId]");
+  });
+
+  testLogado("fluxos de follow-up: criar, adicionar passo e configurar pelo celular [fase 4b] @p0", async ({ page }) => {
+    test.setTimeout(120_000);
+    const projeto = testLogado.info().project.name;
+    const compacto = page.viewportSize()!.width < 1024;
+    await carregar(page, "/app/ai/followups");
+    await tocar(page.getByRole("button", { name: "Novo fluxo" }).first());
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await exigirDentroDaTela(page, dialog, "dialog Novo fluxo");
+    const nomeDoFluxo = `Fluxo QA ${projeto} ${Date.now()}`;
+    await dialog.getByLabel("Nome").fill(nomeDoFluxo);
+    await tocar(dialog.getByRole("button", { name: "Criar fluxo" }));
+    await expect(dialog).toBeHidden();
+    await tocar(page.locator("li", { hasText: nomeDoFluxo }).getByRole("link").first());
+    await expect(page.getByTestId("flow-canvas")).toBeVisible({ timeout: 20_000 });
+
+    const canvas = (await page.getByTestId("flow-canvas").boundingBox())!;
+    if (compacto) {
+      await expect(page.getByTestId("node-palette"), "paleta fixa some abaixo de lg").toBeHidden();
+      expect.soft(canvas.width, "o canvas ocupa a largura útil").toBeGreaterThan(page.viewportSize()!.width - 80);
+      const adicionar = page.getByRole("button", { name: "Adicionar passo" });
+      await exigirAlvo(page, adicionar, 36, "Adicionar passo");
+      await tocar(adicionar);
+      const paleta = page.getByRole("dialog", { name: "Adicionar passo" });
+      await expect(paleta).toBeVisible();
+      await exigirDentroDaTela(page, paleta, "gaveta da paleta");
+      await page.screenshot({ path: path.join(EVIDENCE, `${projeto}-fluxo_paleta.png`) });
+      await tocar(paleta.getByTestId("palette-add-wait"));
+      await expect(paleta).toBeHidden();
+    } else {
+      await expect(page.getByTestId("node-palette")).toBeVisible();
+      await page.getByTestId("palette-add-wait").click();
+    }
+
+    const no = page.locator('.react-flow__node[data-id^="wait-"]').first();
+    await expect(no).toBeVisible();
+    await tocar(no);
+    const painel = page.getByTestId("node-config-sheet");
+    await expect(painel).toBeVisible();
+    await exigirDentroDaTela(page, painel, "configuração do passo");
+    await page.waitForTimeout(400);
+    await provarTela(page, projeto, "fluxo_configurar_passo", "/app/ai/followups/[id] (passo)", "4b");
+    if (compacto) {
+      await expect(page.getByRole("dialog", { name: "Configurar passo" })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(painel, "fechar a gaveta desmarca o passo").toBeHidden();
+    }
+  });
+
   testLogado("navegação: menu do admin abre, navega e fecha [fase 1]", async ({ page }) => {
     const info = testLogado.info();
     const projeto = info.project.name;

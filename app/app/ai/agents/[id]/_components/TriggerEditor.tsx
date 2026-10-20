@@ -182,7 +182,7 @@ export function TriggerEditor({ value, onChange, disabled }: Props) {
         </div>
         {bh ? (
           <div className="space-y-2">
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <div className="space-y-1">
                 <Label htmlFor="bh_tz">Fuso horário</Label>
                 <Input

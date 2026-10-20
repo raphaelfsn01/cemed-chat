@@ -59,7 +59,7 @@ export function PreviewPanel({ requestId }: PreviewPanelProps) {
           {isLoading && (
             <div className="space-y-3">
               <Skeleton className="h-4 w-32" />
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <Skeleton key={i} className="h-16 w-full rounded-lg" />
                 ))}
@@ -99,7 +99,7 @@ export function PreviewPanel({ requestId }: PreviewPanelProps) {
               )}
 
               {/* Counts grid */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {(Object.entries(preview.counts) as [keyof LgpdPreviewCounts, number][]).map(
                   ([key, value]) => (
                     <Card key={key} className="py-3">

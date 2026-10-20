@@ -146,7 +146,7 @@ export function RequestsTable() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="h-9 w-[170px]">
+          <SelectTrigger className="h-9 w-full sm:w-[170px]">
             <SelectValue placeholder="Status: todos" />
           </SelectTrigger>
           <SelectContent>
@@ -166,7 +166,7 @@ export function RequestsTable() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="h-9 w-[200px]">
+          <SelectTrigger className="h-9 w-full sm:w-[200px]">
             <SelectValue placeholder="Tipo: todos" />
           </SelectTrigger>
           <SelectContent>
@@ -184,7 +184,7 @@ export function RequestsTable() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="h-9 w-[160px]">
+          <SelectTrigger className="h-9 w-full sm:w-[160px]">
             <SelectValue placeholder="SLA: todos" />
           </SelectTrigger>
           <SelectContent>
