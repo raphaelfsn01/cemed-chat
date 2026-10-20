@@ -113,7 +113,7 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
       <Button
         type="button"
         size="icon"
-        className="h-9 w-9 shrink-0"
+        className="h-11 w-11 shrink-0 lg:h-9 lg:w-9"
         aria-label="Gravar áudio"
         onClick={start}
         disabled={disabled}

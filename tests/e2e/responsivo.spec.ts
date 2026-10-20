@@ -543,6 +543,214 @@ testLogado.describe("área logada", () => {
     }
   });
 
+  testLogado("inbox: abrir conversa, agir e voltar para a lista [fase 3] @p0", async ({ page }) => {
+    const projeto = testLogado.info().project.name;
+    const celular = page.viewportSize()!.width < 768;
+    await carregar(page, "/app/inbox?filter=all");
+    const lista = page.locator('[data-painel="lista"]');
+    const conversa = page.locator('[data-painel="conversa"]');
+    await expect(lista).toBeVisible();
+    if (celular) await expect(conversa, "no celular a conversa só aparece ao abrir uma").toBeHidden();
+
+    const primeiro = lista.getByRole("button").filter({ hasText: /Cliente/ }).first();
+    await expect(primeiro).toBeVisible();
+    await tocar(primeiro);
+    await expect(page).toHaveURL(/[?&]id=/);
+    await expect(conversa).toBeVisible();
+    if (celular) await expect(lista, "no celular a lista some com a conversa aberta").toBeHidden();
+    await page.waitForTimeout(500);
+    await provarTela(page, projeto, "inbox_conversa", "/app/inbox?id= (conversa)", "3");
+
+    const composer = page.getByRole("textbox", { name: "Mensagem" });
+    await expect(composer).toBeVisible();
+    await exigirDentroDaTela(page, composer, "campo de mensagem");
+    const baseComposer = (await composer.boundingBox())!;
+    expect
+      .soft(baseComposer.y + baseComposer.height, "campo de mensagem abaixo da dobra")
+      .toBeLessThanOrEqual(page.viewportSize()!.height);
+    if (ehCompacto(projeto)) {
+      const fonte = await composer.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+      expect(fonte, "fonte < 16px faz o Safari dar zoom ao focar").toBeGreaterThanOrEqual(16);
+    }
+    await tocar(composer);
+    await composer.fill("Olá! Já verifico para você.");
+    const enviar = page.getByRole("button", { name: "Enviar" });
+    await exigirAlvo(page, enviar, 44, "Enviar mensagem");
+    await exigirDentroDaTela(page, enviar, "botão Enviar");
+    await composer.fill("");
+
+    const cabecalho = conversa.locator("div.border-b").first();
+    const assumir = cabecalho.getByRole("button", { name: /^(assumir|liberar)$/i }).first();
+    if (await assumir.isVisible()) await exigirAlvo(page, assumir, 44, "Assumir/Liberar");
+
+    const desktop = page.viewportSize()!.width >= 1024;
+    const mais = page.getByRole("button", { name: "Mais ações da conversa" });
+    if (desktop) {
+      await expect(mais).toBeHidden();
+      await expect(cabecalho.getByRole("button", { name: "Transferir" })).toBeVisible();
+    } else {
+      await exigirAlvo(page, mais, 44, "Mais ações (⋯)");
+      await tocar(mais);
+      const menu = page.getByRole("menu");
+      await expect(menu).toBeVisible();
+      await exigirDentroDaTela(page, menu, "menu de ações da conversa");
+      await expect(menu.getByRole("menuitem", { name: "Transferir" })).toBeVisible();
+      await page.screenshot({ path: path.join(EVIDENCE, `${projeto}-inbox_menu_acoes.png`) });
+      await tocar(menu.getByRole("menuitem", { name: "Detalhes do contato" }));
+      const detalhes = page.getByRole("dialog", { name: "Detalhes do contato" });
+      await expect(detalhes).toBeVisible();
+      await exigirDentroDaTela(page, detalhes, "gaveta de detalhes do contato");
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: path.join(EVIDENCE, `${projeto}-inbox_detalhes.png`) });
+      await page.keyboard.press("Escape");
+      await expect(detalhes).toBeHidden();
+    }
+
+    if (celular) {
+      const voltar = page.getByRole("button", { name: "Voltar para as conversas" });
+      await exigirAlvo(page, voltar, 44, "Voltar para as conversas");
+      await tocar(voltar);
+      await expect(page).not.toHaveURL(/[?&]id=/);
+      await expect(lista).toBeVisible();
+      await expect(conversa).toBeHidden();
+      // E o voltar DO APARELHO: abre de novo e volta pelo histórico.
+      await tocar(primeiro);
+      await expect(conversa).toBeVisible();
+      await page.goBack();
+      await expect(page).not.toHaveURL(/[?&]id=/);
+      await expect(lista, "o voltar do celular tem de levar à lista").toBeVisible();
+      await expect(page).toHaveURL(/\/app\/inbox/);
+    } else {
+      await expect(lista, "a partir de md, lista e conversa lado a lado").toBeVisible();
+    }
+  });
+
+  testLogado("kanban: uma etapa por tela, deslizar não arrasta card, dossiê e novo lead [fase 3] @p0", async ({ page, browserName }) => {
+    const projeto = testLogado.info().project.name;
+    const vp = page.viewportSize()!;
+    await carregar(page, "/app/kanban");
+    await tocar(page.getByRole("link", { name: /CRM Vivo/ }).first());
+    await page.waitForURL(/\/app\/pipelines\//);
+    await expect(page.locator('[aria-label^="Lead: "]').first()).toBeVisible({ timeout: 20_000 });
+    await page.waitForTimeout(400);
+    await provarTela(page, projeto, "kanban_quadro", "/app/pipelines/[id]", "3");
+
+    const etapaDosCards = () =>
+      page.evaluate(() =>
+        Object.fromEntries(
+          Array.from(document.querySelectorAll('[aria-label^="Lead: "]')).map((el) => [
+            el.getAttribute("aria-label"),
+            el.closest(".snap-start")?.querySelector("h2")?.textContent ?? "?",
+          ]),
+        ),
+      );
+    const antes = await etapaDosCards();
+    const quadro = page.locator(".snap-x").first();
+    const colunas = quadro.locator(":scope > .snap-start");
+    const larguraColuna = (await colunas.first().boundingBox())!.width;
+
+    if (vp.width < 640) {
+      expect
+        .soft(larguraColuna, "no celular a etapa ocupa a largura útil (100vw − 4rem)")
+        .toBeCloseTo(vp.width - 64, 0);
+      // Deslize de dedo DE VERDADE sobre um card: eventos de toque crus
+      // (touchStart → touchMove… → touchEnd), rápidos como um deslize, abaixo
+      // do toque longo que o dnd exige para pegar o card. Se o arrasto
+      // disputasse com a rolagem, o card mudaria de etapa e o quadro não
+      // andaria. (O `Input.synthesizeScrollGesture` foi descartado: não rola
+      // nada no Chromium headless, nem fora dos cards — medido.) No WebKit não
+      // há CDP; lá a prova é só do encaixe, por rolagem programática.
+      const card = (await page.locator('[aria-label^="Lead: "]').first().boundingBox())!;
+      if (browserName === "chromium") {
+        const cdp = await page.context().newCDPSession(page);
+        const x = Math.round(card.x + card.width / 2);
+        const y = Math.round(card.y + card.height / 2);
+        const distancia = -Math.round(larguraColuna * 0.75);
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+        for (let i = 1; i <= 10; i++) {
+          await cdp.send("Input.dispatchTouchEvent", {
+            type: "touchMove",
+            touchPoints: [{ x: x + (distancia * i) / 10, y }],
+          });
+          await page.waitForTimeout(8);
+        }
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      } else {
+        await quadro.evaluate((el, d) => el.scrollBy({ left: d, behavior: "smooth" }), larguraColuna * 1.4);
+      }
+      await page.waitForTimeout(1200);
+      const rolou = await quadro.evaluate((el) => el.scrollLeft);
+      expect(rolou, "o deslize tem de rolar o quadro").toBeGreaterThan(larguraColuna / 2);
+      // Encaixe: a rolagem para no começo de uma etapa (passo = coluna + gap de 12px).
+      const passo = larguraColuna + 12;
+      const resto = rolou % passo;
+      expect
+        .soft(Math.min(resto, passo - resto), `a rolagem parou entre etapas (scrollLeft=${rolou})`)
+        .toBeLessThanOrEqual(2);
+      expect(await etapaDosCards(), "deslizar não pode mover card de etapa").toEqual(antes);
+      await page.screenshot({ path: path.join(EVIDENCE, `${projeto}-kanban_deslizado.png`) });
+      await quadro.evaluate((el) => el.scrollTo({ left: 0 }));
+      await page.waitForTimeout(400);
+    }
+
+    await tocar(page.locator('[aria-label^="Lead: "]').first());
+    const dossie = page.getByRole("dialog");
+    await expect(dossie).toBeVisible();
+    await exigirDentroDaTela(page, dossie, "dossiê do lead");
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(EVIDENCE, `${projeto}-kanban_dossie.png`) });
+    await page.keyboard.press("Escape");
+    await expect(dossie).toBeHidden();
+
+    const novo = page.getByRole("button", { name: /novo lead/i });
+    await exigirAlvo(page, novo, 44, "Novo Lead");
+    await tocar(novo);
+    const dialog = page.getByRole("dialog", { name: "Novo Lead" });
+    await expect(dialog).toBeVisible();
+    await exigirDentroDaTela(page, dialog, "dialog Novo Lead");
+    const caixa = (await dialog.boundingBox())!;
+    expect.soft(caixa.y, "dialog começa acima da tela").toBeGreaterThanOrEqual(0);
+    expect.soft(caixa.y + caixa.height, "dialog passa do rodapé").toBeLessThanOrEqual(vp.height);
+    const titulo = `Lead QA responsivo ${projeto} ${Date.now()}`;
+    await dialog.locator("#title").fill(titulo);
+    const criar = dialog.getByRole("button", { name: /criar lead/i });
+    await criar.scrollIntoViewIfNeeded();
+    await exigirDentroDaTela(page, criar, "botão Criar lead");
+    await page.screenshot({ path: path.join(EVIDENCE, `${projeto}-kanban_novo_lead.png`) });
+    await tocar(criar);
+    await expect(dialog).toBeHidden({ timeout: 15_000 });
+    await expect(page.getByRole("group", { name: `Lead: ${titulo}` })).toHaveCount(1, { timeout: 15_000 });
+  });
+
+  testLogado("inbox do admin: lista ou conversa, com volta e detalhes [fase 3]", async ({ page }) => {
+    const projeto = testLogado.info().project.name;
+    const celular = page.viewportSize()!.width < 768;
+    await carregar(page, "/admin/inbox");
+    // A lista do admin mostra o tenant de cada conversa — é por ele que se acha.
+    const item = page.locator("aside button").filter({ hasText: /E2E Test Org/ }).first();
+    await expect(item).toBeVisible();
+    await tocar(item);
+    await page.waitForURL(/\/admin\/inbox\/[^/]+$/);
+    await expect(page.getByText(/modo somente-leitura/i)).toBeVisible({ timeout: 20_000 });
+    if (celular) await expect(item, "no celular a lista some com a conversa aberta").toBeHidden();
+    await page.waitForTimeout(400);
+    await provarTela(page, projeto, "admin_inbox_conversa", "/admin/inbox/[id]", "3");
+    if (page.viewportSize()!.width < 1280) {
+      await tocar(page.getByRole("button", { name: "Detalhes" }));
+      const detalhes = page.getByRole("dialog", { name: "Detalhes da conversa" });
+      await expect(detalhes).toBeVisible();
+      await exigirDentroDaTela(page, detalhes, "gaveta de detalhes (admin)");
+      await page.keyboard.press("Escape");
+    }
+    if (celular) {
+      const voltar = page.getByRole("link", { name: "Voltar para as conversas" });
+      await exigirAlvo(page, voltar, 44, "Voltar (admin)");
+      await tocar(voltar);
+      await page.waitForURL(/\/admin\/inbox$/);
+      await expect(page.locator("aside button").filter({ hasText: /E2E Test Org/ }).first()).toBeVisible();
+    }
+  });
+
   testLogado("navegação: menu do admin abre, navega e fecha [fase 1]", async ({ page }) => {
     const info = testLogado.info();
     const projeto = info.project.name;

@@ -25,7 +25,7 @@ export function TemplateMenu({ open, query, templates, onPick, onClose: _onClose
   );
   return (
     <div
-      className="absolute bottom-14 left-3 z-20 max-h-64 w-80 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg"
+      className="absolute bottom-14 left-3 z-20 max-h-64 w-80 max-w-[calc(100%-1.5rem)] overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg"
       role="listbox"
       aria-label="Templates de script"
     >

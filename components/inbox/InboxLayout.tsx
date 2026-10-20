@@ -19,6 +19,9 @@ import { RetentionNotice } from "./RetentionNotice";
 import { CRMSidePanel } from "./CRMSidePanel";
 import { InboxKeyboardShortcuts } from "./InboxKeyboardShortcuts";
 import { ShortcutsHelpDialog } from "./ShortcutsHelpDialog";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
 
 function tabToFilter(tab: InboxFiltersValue["tab"]): Partial<ConversationsFilters> {
   switch (tab) {
@@ -46,11 +49,7 @@ function parseFilterParam(v: string | null): InboxTab {
   return v && FILTER_TABS.includes(v as InboxTab) ? (v as InboxTab) : "unassigned";
 }
 
-interface InboxLayoutProps {
-  initialSelectedId?: string | null;
-}
-
-export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {}) {
+export function InboxLayout() {
   const { activeOrg } = useAuth();
   const orgId = activeOrg?.orgId ?? null;
 
@@ -78,7 +77,30 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
     [tab, searchParams, router, pathname],
   );
 
-  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
+  // A conversa aberta vive na URL (`?id=`), não em estado local. No celular a
+  // lista e a conversa não cabem juntas — uma substitui a outra —, e o "voltar"
+  // do aparelho tem de sair da conversa para a lista, não do inbox. Com estado
+  // local, voltar levava para a tela anterior ao inbox inteiro.
+  //
+  // A troca é por `history.pushState`/`replaceState`, que o Next sincroniza com
+  // `useSearchParams` SEM ida ao servidor (um `router.push` re-renderizaria a
+  // página dinâmica a cada clique na lista). E como o servidor já renderiza
+  // com o `?id=`, o painel certo nasce no HTML — não há flash de layout.
+  const selectedId = searchParams.get("id");
+  const veioDaLista = useRef(false);
+  const irPara = useCallback(
+    (id: string | null, modo: "push" | "replace") => {
+      const params = new URLSearchParams(searchParams);
+      if (id) params.set("id", id);
+      else params.delete("id");
+      const qs = params.toString();
+      const url = qs ? `${pathname}?${qs}` : pathname;
+      if (modo === "push") window.history.pushState(null, "", url);
+      else window.history.replaceState(null, "", url);
+    },
+    [searchParams, pathname],
+  );
+  const [detalhesAberto, setDetalhesAberto] = useState(false);
   const [visibleIds, setVisibleIds] = useState<string[]>([]);
   const [helpOpen, setHelpOpen] = useState(false);
   const composerRef = useRef<ComposerHandle | null>(null);
@@ -121,7 +143,33 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   const claim = useClaimConversation();
   const close = useCloseConversation();
 
-  const handleSelect = useCallback((id: string) => setSelectedId(id), []);
+  const handleSelect = useCallback(
+    (id: string) => {
+      if (id === selectedId) return;
+      // Da lista para uma conversa: entrada NOVA no histórico, para o voltar do
+      // celular voltar à lista. De uma conversa para outra (clique na lista no
+      // desktop, atalho j/k): substitui — senão o voltar percorreria todas.
+      if (selectedId) {
+        irPara(id, "replace");
+      } else {
+        veioDaLista.current = true;
+        irPara(id, "push");
+      }
+    },
+    [selectedId, irPara],
+  );
+  // O "← Conversas" do celular. Se a conversa foi aberta pela lista, desfaz a
+  // entrada que ela criou; se veio por link direto, não há para onde voltar
+  // dentro do inbox, então só tira o `?id=`.
+  const handleVoltar = useCallback(() => {
+    if (veioDaLista.current) {
+      veioDaLista.current = false;
+      window.history.back();
+    } else {
+      irPara(null, "replace");
+    }
+  }, [irPara]);
+  const abrirDetalhes = useCallback(() => setDetalhesAberto(true), []);
   const handleVisibleChange = useCallback((ids: string[]) => setVisibleIds(ids), []);
   const handleFocusReply = useCallback(() => composerRef.current?.focus(), []);
   const handleClaim = useCallback(() => {
@@ -162,9 +210,23 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   //
   // `dvh` em vez de `vh` porque no celular a `vh` ignora a barra do navegador — o
   // mesmo corte, só que pior e mudando conforme se rola a página.
+  //
+  // `minmax(0,1fr)`, não `1fr`: o `1fr` não encolhe abaixo do conteúdo, e o
+  // cabeçalho da conversa (645px de botões) alargava a coluna — em 1440 o
+  // painel do contato saía 89px da tela. Medido também na main: é anterior.
+  //
+  // Abaixo de `md` cabe UM painel: sem conversa aberta, a lista; com conversa, a
+  // conversa. A troca é só CSS (`hidden md:flex`), decidida pelo `?id=` que o
+  // servidor também enxerga.
   return (
-    <div className="grid h-[calc(100dvh-3.5rem-2*var(--space-4))] w-full lg:h-[calc(100dvh-3.5rem-2*var(--space-6))] grid-cols-1 md:grid-cols-[300px_1fr] xl:grid-cols-[300px_1fr_320px]">
-      <div className="flex h-full min-h-0 flex-col border-r border-border">
+    <div className="grid h-[calc(100dvh-3.5rem-2*var(--space-4))] w-full lg:h-[calc(100dvh-3.5rem-2*var(--space-6))] grid-cols-1 md:grid-cols-[280px_minmax(0,1fr)] lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_320px]">
+      <div
+        className={cn(
+          "h-full min-h-0 flex-col border-border md:border-r",
+          selectedId ? "hidden md:flex" : "flex",
+        )}
+        data-painel="lista"
+      >
         <InboxFilters value={filterValue} onChange={setFilterValue} />
         <div className="min-h-0 flex-1 overflow-hidden">
           <ConversationList
@@ -178,10 +240,17 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
         </div>
       </div>
 
-      <div className="flex h-full min-h-0 flex-col">
+      <div
+        className={cn("h-full min-h-0 flex-col", selectedId ? "flex" : "hidden md:flex")}
+        data-painel="conversa"
+      >
         {selectedConversation ? (
           <>
-            <ConversationHeader conversation={selectedConversation} />
+            <ConversationHeader
+              conversation={selectedConversation}
+              onVoltar={handleVoltar}
+              onDetalhes={abrirDetalhes}
+            />
             <div className="min-h-0 flex-1 overflow-hidden">
               <ChatThread conversationId={selectedConversation.id} />
             </div>
@@ -195,8 +264,11 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
             />
           </>
         ) : selectionNotFound ? (
-          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
             Conversa não encontrada ou fora do seu acesso.
+            <Button variant="outline" size="touch" className="md:hidden" onClick={handleVoltar}>
+              Voltar para as conversas
+            </Button>
           </div>
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -208,6 +280,19 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
       <div className="hidden h-full min-h-0 xl:block">
         <CRMSidePanel conversation={selectedConversation} />
       </div>
+      {/* Abaixo de `xl` a coluna do contato não cabe; antes ela simplesmente
+          sumia, sem caminho para os dados do contato. Agora abre em gaveta
+          pelo "Detalhes" do cabeçalho da conversa. */}
+      <Sheet open={detalhesAberto} onOpenChange={setDetalhesAberto}>
+        <SheetContent
+          side="right"
+          aria-describedby={undefined}
+          className="w-full p-0 pt-12 sm:max-w-md xl:hidden"
+        >
+          <SheetTitle className="sr-only">Detalhes do contato</SheetTitle>
+          <CRMSidePanel conversation={selectedConversation} />
+        </SheetContent>
+      </Sheet>
 
       <InboxKeyboardShortcuts
         visibleIds={visibleIds}

@@ -53,7 +53,7 @@ function BoardSkeleton() {
       {[0, 1, 2].map((c) => (
         <div
           key={c}
-          className="flex w-80 shrink-0 flex-col gap-2 rounded-lg border border-border bg-surface-muted/40 p-3"
+          className="flex w-[calc(100vw-4rem)] shrink-0 flex-col sm:w-80 gap-2 rounded-lg border border-border bg-surface-muted/40 p-3"
         >
           <Skeleton className="h-5 w-32" />
           {[0, 1, 2, 3].map((i) => (
@@ -232,7 +232,13 @@ export function KanbanBoard({
 
   return (
     <DragDropContext onDragEnd={handleDragEnd}>
-      <div className="flex h-full gap-3 overflow-x-auto p-4">
+      {/* No celular, uma etapa por tela: a coluna ocupa a largura útil
+          (viewport − padding do main − padding daqui = 100vw − 4rem) e a
+          rolagem "encaixa" na próxima etapa. A partir de `sm`, rolagem livre
+          com colunas de 320px, como sempre. O arrasto do card não disputa com
+          o deslize: o @hello-pangea/dnd só pega o card no toque LONGO — um
+          deslize rápido é rolagem (provado em tests/e2e/responsivo.spec.ts). */}
+      <div className="flex h-full snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto p-4 sm:snap-none">
         {data.stages.map((stage) => (
           <StageColumn
             key={stage.id}

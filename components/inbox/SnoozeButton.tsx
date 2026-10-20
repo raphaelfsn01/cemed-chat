@@ -15,13 +15,13 @@ interface Props {
   disabled?: boolean;
 }
 
-const DURATIONS: Array<{ hours: 1 | 3 | 24; label: string }> = [
+export const DURATIONS: Array<{ hours: 1 | 3 | 24; label: string }> = [
   { hours: 1, label: "Em 1 hora" },
   { hours: 3, label: "Em 3 horas" },
   { hours: 24, label: "Em 24 horas" },
 ];
 
-function isSnoozeActive(snoozeUntil: string | null): boolean {
+export function isSnoozeActive(snoozeUntil: string | null): boolean {
   return snoozeUntil != null && new Date(snoozeUntil).getTime() > Date.now();
 }
 

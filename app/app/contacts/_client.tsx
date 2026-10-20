@@ -67,7 +67,7 @@ export function ContactsListClient() {
       </header>
 
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-2">
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <MagnifyingGlass
             size={16}
             className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
@@ -78,7 +78,7 @@ export function ContactsListClient() {
             placeholder="Buscar por nome, email ou telefone…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            className="h-9 w-72 pl-8"
+            className="h-9 w-full pl-8 sm:w-72"
           />
         </div>
 

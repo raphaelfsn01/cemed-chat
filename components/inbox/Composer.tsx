@@ -132,7 +132,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     <>
       <div
         className={cn(
-          "relative border-t border-border bg-background px-3 py-2",
+          // Fundo: no iPhone sem botão home, a barra de gestos cobre os últimos
+          // ~34px; `env(safe-area-inset-bottom)` (com o `viewport-fit=cover` do
+          // layout raiz) empurra o composer para cima dela. No desktop o env
+          // vale 0 e sobra o `py-2` de sempre.
+          "relative border-t border-border bg-background px-3 pt-2 pb-[max(var(--space-2),env(safe-area-inset-bottom))]",
           mode === "note" && "border-warning/40 bg-warning-bg",
         )}
       >
@@ -143,12 +147,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           onPick={applyTemplate}
           onClose={() => setMenuDismissed(true)}
         />
-        <div className="mb-1.5 flex gap-1">
+        <div className="mb-1.5 flex items-center gap-1">
           <button
             type="button"
             onClick={() => setMode("reply")}
             className={cn(
-              "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+              "inline-flex min-h-9 items-center rounded-full px-2.5 py-1 text-xs font-medium transition-colors lg:min-h-0",
               mode === "reply"
                 ? "bg-accent text-accent-foreground"
                 : "text-muted-foreground hover:bg-muted",
@@ -160,7 +164,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             type="button"
             onClick={() => setMode("note")}
             className={cn(
-              "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+              "inline-flex min-h-9 items-center rounded-full px-2.5 py-1 text-xs font-medium transition-colors lg:min-h-0",
               mode === "note"
                 ? "bg-warning text-warning-fg"
                 : "text-muted-foreground hover:bg-muted",
@@ -168,13 +172,27 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           >
             Nota interna
           </button>
+          {/* As dicas saíram do placeholder: lá elas não cabiam (cortadas no
+              celular e no desktop com a coluna do contato aberta) e faziam o
+              campo crescer para várias linhas. Atalho de teclado só interessa
+              a quem tem teclado; "só o time vê" interessa a todos. */}
+          <span className="ml-auto truncate pl-2 text-[11px] text-muted-foreground">
+            {mode === "note" ? (
+              "Só o time vê"
+            ) : (
+              <span className="hidden lg:inline">Enter envia · Shift+Enter quebra linha</span>
+            )}
+          </span>
         </div>
         <div className="flex items-end gap-2">
           {mode === "reply" && <AttachMenu disabled={isDisabled} onPick={setPendingFile} />}
           {mode === "reply" && (
             <DraftReplyButton conversationId={conversationId} disabled={isDisabled} onDraft={applyDraft} />
           )}
+          {/* Celular já tem emoji no teclado — e cada botão a menos é largura
+              devolvida ao campo de texto. */}
           <EmojiButton
+            className="hidden md:inline-flex"
             disabled={isDisabled}
             onPick={(emoji) => {
               const ta = taRef.current;
@@ -203,14 +221,14 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             }}
             onKeyDown={onKeyDown}
             rows={1}
-            placeholder={
-              mode === "note"
-                ? "Escreva uma nota interna… (só o time vê)"
-                : "Escreva uma mensagem… (Enter envia, Shift+Enter quebra linha)"
-            }
+            placeholder={mode === "note" ? "Escreva uma nota interna…" : "Escreva uma mensagem…"}
             className={cn(
               "min-h-9 max-h-40 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm",
               "placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring",
+              // Vazio, o placeholder fica em UMA linha (com reticências): no
+              // celular o campo tem ~170px e ele quebrava, cortado ao meio.
+              // Ao digitar, a quebra de linha normal volta.
+              "placeholder-shown:overflow-hidden placeholder-shown:text-ellipsis placeholder-shown:whitespace-nowrap",
             )}
             disabled={isDisabled}
             aria-label="Mensagem"
@@ -219,7 +237,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             <Button
               type="button"
               size="icon"
-              className="h-9 w-9 shrink-0"
+              className="h-11 w-11 shrink-0 lg:h-9 lg:w-9"
               onClick={handleSubmit}
               disabled={isDisabled || !text.trim()}
               aria-label="Enviar"
