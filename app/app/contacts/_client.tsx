@@ -52,7 +52,7 @@ export function ContactsListClient() {
   }, [allContacts]);
 
   return (
-    <div className="space-y-4 p-6">
+    <div className="space-y-4 lg:p-6">
       <header className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Contatos</h1>

@@ -144,7 +144,9 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
 
   // Altura da grade: a conta desconta TUDO que fica acima e abaixo dela.
   //   3.5rem            TopBar (`h-14`, em components/shell/TopBar.tsx)
-  //   2 * --space-6     padding do <main> do AppShell (`p-6`, em cima e embaixo)
+  //   2 * --space-N     padding do <main> do AppShell, em cima e embaixo — `p-4`
+  //                     abaixo de `lg` e `p-6` a partir dele; por isso a altura
+  //                     tem as duas versões, cada uma com o seu token
   //
   // Com `100vh-3.5rem` o padding ficava de fora e a grade media 48px a MAIS que a
   // tela. Quem pagava a diferença era o composer, que fica no rodapé: nascia
@@ -161,7 +163,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   // `dvh` em vez de `vh` porque no celular a `vh` ignora a barra do navegador — o
   // mesmo corte, só que pior e mudando conforme se rola a página.
   return (
-    <div className="grid h-[calc(100dvh-3.5rem-2*var(--space-6))] w-full grid-cols-1 md:grid-cols-[300px_1fr] xl:grid-cols-[300px_1fr_320px]">
+    <div className="grid h-[calc(100dvh-3.5rem-2*var(--space-4))] w-full lg:h-[calc(100dvh-3.5rem-2*var(--space-6))] grid-cols-1 md:grid-cols-[300px_1fr] xl:grid-cols-[300px_1fr_320px]">
       <div className="flex h-full min-h-0 flex-col border-r border-border">
         <InboxFilters value={filterValue} onChange={setFilterValue} />
         <div className="min-h-0 flex-1 overflow-hidden">

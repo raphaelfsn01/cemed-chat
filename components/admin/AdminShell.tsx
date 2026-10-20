@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { PlatformModeBanner } from "./PlatformModeBanner";
-import { AdminSidebar } from "./AdminSidebar";
+import { AdminMenuGaveta, AdminSidebar } from "./AdminSidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 interface AdminShellProps {
@@ -51,7 +51,15 @@ export function AdminShell({ userEmail, children }: AdminShellProps) {
         <PlatformModeBanner />
         <div className="flex flex-1">
           <AdminSidebar userEmail={userEmail} />
-          <main className="flex-1 overflow-auto p-6">{children}</main>
+          {/* `min-w-0`: sem ele a coluna não encolhe abaixo do conteúdo e uma
+              tabela larga empurra a página inteira para o lado (ver AppShell). */}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur lg:hidden">
+              <AdminMenuGaveta userEmail={userEmail} />
+              <span className="truncate text-sm font-semibold tracking-tight">Admin Plataforma</span>
+            </header>
+            <main className="flex-1 overflow-auto p-4 lg:p-6">{children}</main>
+          </div>
         </div>
       </div>
     </TooltipProvider>

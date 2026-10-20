@@ -16,6 +16,7 @@ import {
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { BRAND_MARK_SRC, branding } from "@/lib/branding";
+import { MenuGaveta } from "@/components/shell/MenuGaveta";
 
 interface NavItem {
   href: string;
@@ -40,10 +41,34 @@ interface AdminSidebarProps {
 }
 
 export function AdminSidebar({ userEmail }: AdminSidebarProps) {
+  // Abaixo de `lg` o trilho some e o mesmo menu abre pela `AdminMenuGaveta`,
+  // no cabeçalho que o AdminShell só mostra nessa faixa.
+  return (
+    <aside className="hidden w-60 shrink-0 flex-col border-r bg-card lg:flex">
+      <AdminNav userEmail={userEmail} />
+    </aside>
+  );
+}
+
+/** Hambúrguer + gaveta com o menu da plataforma — o par mobile do `AdminSidebar`. */
+export function AdminMenuGaveta({ userEmail }: AdminSidebarProps) {
+  return (
+    <MenuGaveta>
+      {(fechar) => <AdminNav userEmail={userEmail} naGaveta aoNavegar={fechar} />}
+    </MenuGaveta>
+  );
+}
+
+interface AdminNavProps extends AdminSidebarProps {
+  naGaveta?: boolean;
+  aoNavegar?: () => void;
+}
+
+function AdminNav({ userEmail, naGaveta = false, aoNavegar }: AdminNavProps) {
   const pathname = usePathname();
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r bg-card">
+    <>
       <div className="flex h-14 items-center gap-2 border-b px-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={BRAND_MARK_SRC} alt="" className="h-6 w-6 shrink-0" />
@@ -63,12 +88,14 @@ export function AdminSidebar({ userEmail }: AdminSidebarProps) {
             <Link
               key={item.href}
               href={item.href}
+              onClick={aoNavegar}
               aria-current={isActive ? "page" : undefined}
               className={cn(
                 "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
                 isActive
                   ? "bg-accent text-accent-foreground"
                   : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                naGaveta && "min-h-10",
               )}
             >
               <Icon size={18} weight={isActive ? "fill" : "regular"} aria-hidden />
@@ -80,7 +107,11 @@ export function AdminSidebar({ userEmail }: AdminSidebarProps) {
       <div className="space-y-2 border-t p-3">
         <Link
           href="/app"
-          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+          onClick={aoNavegar}
+          className={cn(
+            "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+            naGaveta && "min-h-10",
+          )}
         >
           <ArrowRight size={14} aria-hidden />
           <span>Voltar pra app</span>
@@ -89,6 +120,6 @@ export function AdminSidebar({ userEmail }: AdminSidebarProps) {
           {userEmail}
         </p>
       </div>
-    </aside>
+    </>
   );
 }

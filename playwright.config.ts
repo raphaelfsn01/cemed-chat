@@ -1,4 +1,6 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
+
+const RESPONSIVO = /responsivo\.spec\.ts/;
 
 // Porta do dev server sob teste. Default 3001; sobrescreva com E2E_PORT quando
 // a 3001 já estiver ocupada por outro checkout/worktree.
@@ -47,5 +49,62 @@ export default defineConfig({
     // o sintoma seria "Muitas tentativas" numa spec tardia, não um erro de config.
     timeout: 120_000,
   },
-  projects: [{ name: "chromium", use: { browserName: "chromium" } }],
+  projects: [
+    {
+      name: "chromium",
+      use: { browserName: "chromium" },
+      testIgnore: RESPONSIVO,
+    },
+    // Projetos de viewport: rodam SÓ `responsivo.spec.ts`. Se a suíte inteira
+    // rodasse em cada viewport, o tempo do CI quadruplicaria sem provar nada a
+    // mais — as outras specs testam comportamento, não layout.
+    {
+      name: "mobile",
+      testMatch: RESPONSIVO,
+      use: {
+        browserName: "chromium",
+        viewport: { width: 390, height: 844 },
+        deviceScaleFactor: 2,
+        isMobile: true,
+        hasTouch: true,
+      },
+    },
+    // Android pequeno, pior caso de largura — só as telas de primeira impressão.
+    {
+      name: "mobile-sm",
+      testMatch: RESPONSIVO,
+      grep: /@p0/,
+      use: {
+        browserName: "chromium",
+        viewport: { width: 360, height: 740 },
+        deviceScaleFactor: 2,
+        isMobile: true,
+        hasTouch: true,
+      },
+    },
+    {
+      name: "tablet",
+      testMatch: RESPONSIVO,
+      use: {
+        browserName: "chromium",
+        viewport: { width: 768, height: 1024 },
+        deviceScaleFactor: 2,
+        isMobile: true,
+        hasTouch: true,
+      },
+    },
+    {
+      name: "desktop",
+      testMatch: RESPONSIVO,
+      use: { browserName: "chromium", viewport: { width: 1440, height: 900 } },
+    },
+    // Safari de verdade (WebKit): zoom em input com fonte < 16px, `100dvh` e
+    // safe-area só se comportam como no iPhone neste motor. Só as telas P0.
+    {
+      name: "webkit-p0",
+      testMatch: RESPONSIVO,
+      grep: /@p0/,
+      use: { ...devices["iPhone 13"] },
+    },
+  ],
 });

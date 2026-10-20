@@ -53,6 +53,14 @@ export function generateMetadata(): Metadata {
 }
 
 export const viewport: Viewport = {
+  // O Next já emite `width=device-width, initial-scale=1` por padrão; fica
+  // explícito porque `viewportFit: "cover"` só existe junto. Sem o `cover`, o
+  // iOS deixa faixas vazias ao redor do notch e `env(safe-area-inset-*)` vale
+  // sempre 0 — e é dele que o composer e a barra de ações em massa dependem
+  // para não ficarem embaixo da barra de gestos do iPhone.
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#faf9f6" },
     { media: "(prefers-color-scheme: dark)", color: "#161510" },

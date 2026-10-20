@@ -52,7 +52,7 @@ export default async function AgentEditorPage({
   // Caminho legado: rag_bot continua usando o editor pré-EPIC-13.
   if ((agent.kind ?? "rag_bot") !== "mcp_agent") {
     return (
-      <div className="flex h-full flex-col gap-6 p-6">
+      <div className="flex h-full flex-col gap-6 lg:p-6">
         <AgentEditorClient agentId={agent.id} initialData={agent} readOnly={readOnly} />
       </div>
     );
@@ -97,7 +97,7 @@ export default async function AgentEditorPage({
   const published = versions.find((v) => v.status === "published") ?? null;
 
   return (
-    <div className="flex h-full flex-col gap-6 p-6">
+    <div className="flex h-full flex-col gap-6 lg:p-6">
       <AgentTabs
         agent={agent}
         draft={draft}

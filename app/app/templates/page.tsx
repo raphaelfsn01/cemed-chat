@@ -12,7 +12,7 @@ export default async function TemplatesPage() {
   const canShare = ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
 
   return (
-    <div className="flex h-full flex-col gap-6 p-6">
+    <div className="flex h-full flex-col gap-6 lg:p-6">
       <header>
         {/* "Respostas rápidas", não "Templates": estes são scripts do atendente,
             consumidos pelo composer do inbox. O nome "Templates" pertence aos da

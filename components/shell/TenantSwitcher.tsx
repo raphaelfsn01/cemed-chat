@@ -23,11 +23,11 @@ export function TenantSwitcher() {
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" disabled={isPending} className="gap-2">
           <Storefront size={16} weight="duotone" aria-hidden />
-          <span className="max-w-[160px] truncate">{active?.name ?? "Selecionar org"}</span>
+          <span className="max-w-[96px] truncate sm:max-w-[160px]">{active?.name ?? "Selecionar org"}</span>
           <CaretDown size={12} aria-hidden />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-[220px]">
+      <DropdownMenuContent align="start" className="min-w-[220px] max-w-[calc(100vw-2rem)]">
         {user.organizations.map((org) => (
           <DropdownMenuItem
             key={org.organization_id}

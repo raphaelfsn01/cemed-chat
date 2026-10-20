@@ -25,9 +25,15 @@ export function AppShell({ sidebarCollapsed, children }: AppShellProps) {
         cabeçalho, presente também em telas que não têm abas (a lista de agentes
         estoura 236px). Isolado ancestral por ancestral: é este o que decide.
       */}
-      <div className={cn("flex min-h-screen min-w-0 flex-1 flex-col transition-[margin] duration-200", sidebarCollapsed ? "ml-16" : "ml-60")}>
+      {/*
+        Abaixo de `lg` não há trilho (o menu vira gaveta), então a margem só
+        existe a partir de 1024px. O padding do `main` encolhe junto — e a
+        altura da inbox (`InboxLayout`) desconta ESTE padding: mexeu aqui,
+        mexa lá.
+      */}
+      <div className={cn("flex min-h-screen min-w-0 flex-1 flex-col transition-[margin] duration-200", sidebarCollapsed ? "lg:ml-16" : "lg:ml-60")}>
         <TopBar />
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        <main className="flex-1 overflow-auto p-4 lg:p-6">{children}</main>
       </div>
     </div>
   );
