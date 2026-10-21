@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
-# DeskcommCRM — imagem de produção self-host (Next.js standalone).
-# Build: docker build --build-arg NEXT_PUBLIC_SUPABASE_URL=... -t deskcomm-app .
+# CEMED Chat — imagem de produção self-host (Next.js standalone).
+# Build: docker build --build-arg NEXT_PUBLIC_SUPABASE_URL=... -t cemed-chat-app .
 
 # ---- deps: instala dependências (layer cacheável) ----
 FROM node:22-alpine AS deps
