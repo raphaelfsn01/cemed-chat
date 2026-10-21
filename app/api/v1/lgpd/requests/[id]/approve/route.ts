@@ -123,6 +123,19 @@ export async function POST(
     );
   }
 
+  // Transition status → processing ANTES do evento: o worker de redact só roda
+  // pedido em `processing` (aprovado). Emitir primeiro abria uma corrida em que o
+  // dreno pegava o evento com o pedido ainda `received` e o descartava.
+  const { error: updateErr } = await admin
+    .from("lgpd_requests")
+    .update({ status: "processing", updated_at: new Date().toISOString() })
+    .eq("organization_id", orgId)
+    .eq("id", id);
+
+  if (updateErr) {
+    return fail("internal_error", updateErr.message, 500, { requestId });
+  }
+
   // Determine event type based on request_type
   const eventType =
     request.request_type === "data_request"
@@ -154,17 +167,6 @@ export async function POST(
   if (emitErr) {
     console.error("[lgpd-approve] emit_event failed", emitErr.message);
     // Non-blocking — worker can recover via cron
-  }
-
-  // Transition status → processing
-  const { error: updateErr } = await admin
-    .from("lgpd_requests")
-    .update({ status: "processing", updated_at: new Date().toISOString() })
-    .eq("organization_id", orgId)
-    .eq("id", id);
-
-  if (updateErr) {
-    return fail("internal_error", updateErr.message, 500, { requestId });
   }
 
   // Audit — fire-and-forget
