@@ -1,4 +1,4 @@
-// Design tokens for DeskcommCRM showcase.
+// Design tokens for CEMED Chat showcase.
 // "Soft-tech / calmo" — neutros desaturados (greige/warm-gray), accent não-saturado.
 // 5-Constraint Rule applied: Shape, Color (exact hex), Typography, Motion, Layout.
 
