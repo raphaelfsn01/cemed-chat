@@ -1,4 +1,4 @@
-# Migration Manifest — DeskcommCRM
+# Migration Manifest — CEMED Chat
 
 Migrations applied to Supabase project `rrydmwnporysaiysiztn` (sa-east-1, Postgres 17) via Supabase MCP on 2026-04-28.
 

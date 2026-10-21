@@ -1,6 +1,6 @@
 ---
 type: current-state
-project: DeskcommCRM
+project: CEMED Chat
 status: draft
 last_updated: 2026-07-29
 generated_by: auditoria documental (Claude Code) — leitura de código, HANDOFFs, plan/, loop/, CI
@@ -8,7 +8,7 @@ confidence: média-alta (métricas de código são CONFIRMADO; estado de épico 
 audited_against: origin/main @ 789dfa6 (v1.0.0, 2026-07-27)
 ---
 
-# Estado atual — DeskcommCRM
+# Estado atual — CEMED Chat
 
 Este documento existe porque "o que está pronto" estava espalhado em 5 `HANDOFF-*.md`
 na raiz, `plan/progress.md`, `loop/checkpoints/`, `tasks/todo.md` e o roadmap do README —

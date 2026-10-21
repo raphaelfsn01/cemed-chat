@@ -1,6 +1,6 @@
 # Mapa de Jornadas & Testes E2E — Experiência do usuário em VPS fresca
 
-> Fonte da verdade do QA de produto do DeskcommCRM open-source. Cada caso aqui é
+> Fonte da verdade do QA de produto do CEMED Chat. Cada caso aqui é
 > exercitado **pelo frontend real** (Playwright), com contas de teste reais e
 > recursos reais (banco fresco do `baseline.sql`, WAHA local, receiver de webhook
 > real). Curl/API só como diagnóstico, nunca como prova de UX.
@@ -319,7 +319,8 @@ espaço e acento, que era o gatilho do defeito #6.
 - Tela de Conexões diz "1 número conectado" mesmo com o número **caído** (conta
   sessões, não conectados).
 - O autenticador registra o nome fixo "DeskcommCRM", ignorando o `APP_NAME` que o
-  instalador vende como marca de toda a interface.
+  instalador vende como marca de toda a interface. **Resolvido em 2026-10-21** (rebrand
+  para CEMED): o fator TOTP usa `branding().name`.
 - `CLAUDE.md` documenta bearer `tok_...`; o token real nasce com prefixo `dsk_`.
 
 ## Segurança — achados após conectar o WhatsApp real (2026-07-30)
