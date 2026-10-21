@@ -1,6 +1,6 @@
 # Mapa de Jornadas & Testes E2E — Experiência do usuário em VPS fresca
 
-> Fonte da verdade do QA de produto do DeskcommCRM open-source. Cada caso aqui é
+> Fonte da verdade do QA de produto do CEMED Chat. Cada caso aqui é
 > exercitado **pelo frontend real** (Playwright), com contas de teste reais e
 > recursos reais (banco fresco do `baseline.sql`, WAHA local, receiver de webhook
 > real). Curl/API só como diagnóstico, nunca como prova de UX.
@@ -224,6 +224,29 @@ Achados desta jornada:
 
 ---
 
+## J10 — Marca CEMED em tudo o que a equipe e o paciente veem `[P0]`
+
+Contexto: o CEMED Chat é fork do DeskcommCRM, e o nome antigo saía por string solta fora do
+`branding()`: e-mails, rodapé do PDF LGPD do paciente, contatos de suporte de outro domínio,
+nome do fator no autenticador, arquivo de códigos de recuperação. Spec:
+`tests/e2e/marca-cemed.spec.ts` (pela tela) + `tests/unit/marca-artefatos.test.ts` (PDF e
+e-mails, que não passam por tela) + a guarda de `tests/unit/branding.test.ts`. Ambiente da
+prova (2026-10-21): Supabase local pg17 fresco com `baseline.sql` + `seed-e2e-credentials`,
+`next build` + `next start`, Playwright em contêiner, **sem** `APP_NAME`, `RESEND_*` e
+`SUPPORT_EMAIL`; segunda rodada com `SUPPORT_EMAIL` só no ambiente do `next start`.
+Evidência: `.superpowers/evidence/marca-cemed/` (`*-com-support-email.png` na segunda rodada).
+
+| # | Caso | Expectativa | Resultado |
+|---|---|---|---|
+| 10.1 | Aba e metadados do `/login` | título termina em `· CEMED Saúde`; descrição da clínica, sem "multi-tenant" | PASS |
+| 10.2 | `/account-suspended` sem `SUPPORT_EMAIL` | "fale com o responsável pelo sistema", nenhum `mailto:` | PASS |
+| 10.3 | `/account-suspended` com `SUPPORT_EMAIL` | link `mailto:` com o valor do `.env`, lido em runtime | PASS |
+| 10.4 | `/app/settings/billing` (admin), com e sem `SUPPORT_EMAIL` | idem 10.2/10.3 | PASS |
+| 10.5 | Enroll do MFA pela tela (admin novo) | fator "CEMED Saúde AAAA-MM-DD"; download `cemed-saude-codigos-de-recuperacao.txt` | PASS |
+| 10.6 | Onboarding (`signup-journey`) | "Boas-vindas — CEMED Saúde"; e-mail de confirmação do Supabase local com a marca | PASS |
+| 10.7 | Convite sem Resend (`invite-lifecycle`) | convite registrado, e-mail não sai; fluxo do link segue | PASS |
+| 10.8 | PDF LGPD (unit, renderizado de verdade) | rodapé "CEMED Saúde · Relatório LGPD…", segue `APP_NAME` | PASS |
+
 ## Achados do mapeamento (pré-execução) — candidatos a correção
 
 | ID | Achado | Origem | Severidade |
@@ -319,7 +342,8 @@ espaço e acento, que era o gatilho do defeito #6.
 - Tela de Conexões diz "1 número conectado" mesmo com o número **caído** (conta
   sessões, não conectados).
 - O autenticador registra o nome fixo "DeskcommCRM", ignorando o `APP_NAME` que o
-  instalador vende como marca de toda a interface.
+  instalador vende como marca de toda a interface. **Resolvido em 2026-10-21** (rebrand
+  para CEMED): o fator TOTP usa `branding().name`.
 - `CLAUDE.md` documenta bearer `tok_...`; o token real nasce com prefixo `dsk_`.
 
 ## Segurança — achados após conectar o WhatsApp real (2026-07-30)

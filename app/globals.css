@@ -388,7 +388,7 @@
    desenha para dentro da própria caixa e não depende do overflow do pai.
    Provado na tela nos três cenários (claro, escuro, reduce) —
    `evidence/wave3-pulso/`. */
-@keyframes deskcomm-card-pulse {
+@keyframes card-pulse {
   from {
     border-color: var(--color-accent);
   }
@@ -401,7 +401,7 @@
    evento (key = contador de pulsos), e é a remontagem que faz a animação
    recomeçar. Alternar classe no mesmo nó não reinicia animação em CSS. */
 .card-pulse {
-  animation: deskcomm-card-pulse var(--duration-slow) var(--ease-out) 1;
+  animation: card-pulse var(--duration-slow) var(--ease-out) 1;
   border: 2px solid transparent;
   border-radius: inherit;
   box-sizing: border-box;

@@ -163,14 +163,14 @@ Só quando é preciso validar algo em produção **antes** de a imagem oficial
 existir (ex.: CI ainda rodando e um bug bloqueando o usuário).
 
 ```bash
-APP_IMAGE=deskcomm-app:local docker compose \
+APP_IMAGE=cemed-chat-app:local docker compose \
   -f docker-compose.prod.yml -f docker-compose.build.yml --env-file .env build app
 
 # topologia A:
-APP_IMAGE=deskcomm-app:local APP_PULL_POLICY=never docker compose \
+APP_IMAGE=cemed-chat-app:local APP_PULL_POLICY=never docker compose \
   -f docker-compose.prod.yml --env-file .env up -d app
 # topologia B:
-APP_IMAGE=deskcomm-app:local APP_PULL_POLICY=never docker compose \
+APP_IMAGE=cemed-chat-app:local APP_PULL_POLICY=never docker compose \
   -f docker-compose.prod.yml -f docker-compose.traefik.yml --env-file .env up -d app
 ```
 

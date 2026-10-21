@@ -1,9 +1,8 @@
 /**
  * Marca da instalação — nome e logo configuráveis pelo `.env`, SEM rebuild.
  *
- * Por que existe: quem instala o DeskcommCRM para clientes (agência, revendedor)
- * precisa da própria marca na interface. Fazer isso editando o código quebraria o
- * caminho de atualização — `update.sh` puxa a imagem nova e o patch local se perde,
+ * Por que existe: o nome e o logo que a equipe vê vêm do `.env` da instalação, não
+ * do código. Fazer isso editando o código quebraria o caminho de atualização — `update.sh` puxa a imagem nova e o patch local se perde,
  * que é exatamente a dor nº 1 de quem hospeda o próprio sistema. Configuração em
  * `.env` sobrevive a toda atualização.
  *
@@ -16,7 +15,7 @@
  * runtime em vez de lida do bundle.
  */
 
-export const DEFAULT_APP_NAME = "DeskcommCRM";
+export const DEFAULT_APP_NAME = "CEMED Saúde";
 
 /**
  * Ícone da CEMED (as três folhas), desenhado antes do nome. Asset fixo do repo,
@@ -55,6 +54,21 @@ export function resolveBranding(
     // no meio do code point e renderizaria caractere inválido.
     initial: ([...resolvedName][0] ?? DEFAULT_APP_NAME[0]!).toUpperCase(),
   };
+}
+
+/**
+ * E-mail de suporte da instalação, ou `null` quando não configurado — a tela então
+ * manda falar com o responsável pelo sistema em vez de mostrar um endereço. Pura,
+ * como `resolveBranding`: valor vazio ou só com espaços conta como ausente.
+ */
+export function resolveSupportEmail(raw: string | undefined | null): string | null {
+  const email = (raw ?? "").trim();
+  return email.length > 0 ? email : null;
+}
+
+/** Só no servidor: as telas que mostram o contato são server components. */
+export function supportEmail(): string | null {
+  return resolveSupportEmail(process.env.SUPPORT_EMAIL);
 }
 
 /** Lê a marca da fonte correta em cada lado da fronteira servidor/navegador. */

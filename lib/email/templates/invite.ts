@@ -18,7 +18,7 @@ export function buildInviteEmail(opts: InviteEmailOptions): {
   const expiresStr = opts.expiresAt.toLocaleString("pt-BR", {
     timeZone: "America/Sao_Paulo",
   });
-  const subject = `${opts.inviterName} convidou você para a ${opts.orgName} no Deskcomm`;
+  const subject = `${opts.inviterName} convidou você para a equipe da ${opts.orgName}`;
 
   const html = `<!doctype html>
 <html lang="pt-BR">
@@ -28,8 +28,8 @@ export function buildInviteEmail(opts: InviteEmailOptions): {
       Você foi convidado para a ${escapeHtml(opts.orgName)}
     </h1>
     <p style="margin:0 0 16px;font-size:15px;line-height:1.5">
-      ${escapeHtml(opts.inviterName)} convidou você como
-      <strong>${escapeHtml(opts.role)}</strong> no DeskcommCRM.
+      ${escapeHtml(opts.inviterName)} convidou você para entrar como
+      <strong>${escapeHtml(opts.role)}</strong>.
     </p>
     <p style="margin:24px 0">
       <a href="${opts.acceptUrl}" style="display:inline-block;padding:12px 24px;background:#0ea5e9;color:#ffffff;border-radius:6px;text-decoration:none;font-weight:600">

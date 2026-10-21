@@ -200,7 +200,7 @@ jobs:
             degradacao-silenciosa.spec.ts vps-webhook-outbound-ssrf.spec.ts \
             kanban-owner-filter.spec.ts queue-assign.spec.ts \
             risk-radar.spec.ts invite-lifecycle.spec.ts system-update.spec.ts \
-            auth-sem-credencial-na-url.spec.ts
+            auth-sem-credencial-na-url.spec.ts marca-cemed.spec.ts
         env:
           INTERNAL_SECRET: ci-placeholder-nao-e-segredo
           CPF_ENCRYPTION_KEY: ci-placeholder-nao-e-segredo
@@ -270,11 +270,11 @@ jobs:
           {
             echo "## E2E — cobertura deste job"
             echo ""
-            echo "**Rodou (31 de 35 specs; a responsivo.spec.ts roda na outra perna da matriz):**"
+            echo "**Rodou (32 de 36 specs; a responsivo.spec.ts roda na outra perna da matriz):**"
             echo "smoke, auth, auth-sem-credencial-na-url, error-pages, password-recovery,"
             echo "signup-journey, rbac-roles, inbox-scope, reset-password-mfa,"
             echo "degradacao-silenciosa, vps-webhook-outbound-ssrf, kanban-owner-filter,"
-            echo "queue-assign, risk-radar, invite-lifecycle, system-update,"
+            echo "queue-assign, risk-radar, invite-lifecycle, system-update, marca-cemed,"
             echo "agente-novo-e-uso, agente-organiza-operacao, central-de-avisos-capacidades,"
             echo "escalacao-ciclo, navegacao, olhar-telas-do-epico, pipelines-gestao,"
             echo "qa-agente-usa-as-maos, qa-selo-no-funil-usado, qa-telas-descobertas-w4,"

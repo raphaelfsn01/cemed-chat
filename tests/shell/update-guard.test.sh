@@ -112,7 +112,7 @@ export FAKE_CRONTAB="$WORK/crontab.txt"
 export PATH="$WORK/bin:$PATH"
 
 # ── Instalação de mentira: repo git + kit + .env ─────────────────────────────
-PROJ="$WORK/deskcommcrm"
+PROJ="$WORK/cemed-chat"
 mkdir -p "$PROJ/hostgator-setup-kit" "$PROJ/supabase"
 cp "$REPO_ROOT/hostgator-setup-kit/_common.sh" "$REPO_ROOT/hostgator-setup-kit/update.sh" \
    "$REPO_ROOT/hostgator-setup-kit/agent.sh" "$PROJ/hostgator-setup-kit/"

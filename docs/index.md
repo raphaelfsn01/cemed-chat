@@ -1,6 +1,6 @@
 ---
 type: index
-project: DeskcommCRM
+project: CEMED Chat
 status: draft
 last_updated: 2026-07-29
 generated_by: auditoria documental (Claude Code)
@@ -8,7 +8,7 @@ confidence: alta (inventário de arquivos é CONFIRMADO; agrupamento temático �
 audited_against: origin/main @ 789dfa6 (v1.0.0, 2026-07-27)
 ---
 
-# Índice da documentação — DeskcommCRM
+# Índice da documentação — CEMED Chat
 
 Mapa dos **119** arquivos `.md` de `docs/`, espalhados por **23** subpastas — régua:
 `git ls-files 'docs/**/*.md' | wc -l`. Existe porque a documentação cresceu sem ponto
@@ -19,6 +19,11 @@ reescrevem por cima.
 `CLAUDE.md` (doutrina) > `docs/specs/` (contrato técnico) > `docs/prd/` (intenção) >
 `HANDOFF-*.md` (estado de sessão) > README. Se achou divergência, corrija a fonte
 de menor precedência e registre.
+
+**Sobre o nome "DeskcommCRM".** É o produto-base de que o CEMED Chat é fork (crédito e licença
+MIT original no arquivo `NOTICE` da raiz). Docs históricos — handoffs, épicos, planos, specs e
+PRDs herdados, `evidence/` — continuam com o nome antigo porque registram o que era verdade na
+época. O material que descreve o projeto original e **não se aplica à CEMED** está na seção 10.
 
 ---
 
@@ -47,7 +52,7 @@ de menor precedência e registre.
 | [`prd/05-prd-ai-rag-handoff.md`](prd/05-prd-ai-rag-handoff.md) | IA conversacional, RAG por tenant, sentiment |
 | [`prd/06-prd-nuvemshop-lgpd.md`](prd/06-prd-nuvemshop-lgpd.md) | Integração Nuvemshop + webhooks LGPD |
 | [`business-rules/00-business-rules-catalog.md`](business-rules/00-business-rules-catalog.md) | **Catálogo de regras de negócio** — fonte da verdade fora do código |
-| [`presentation/pitch-deck.md`](presentation/pitch-deck.md) | Pitch |
+| [`presentation/pitch-deck.md`](presentation/pitch-deck.md) | Pitch — **legado do projeto original** (seção 10) |
 
 ## 3. Contrato técnico (specs)
 
@@ -104,7 +109,7 @@ acessibilidade).
 | [`DEPLOY-CHECKLIST.md`](DEPLOY-CHECKLIST.md) | Checklist de deploy |
 | [`ATUALIZANDO.md`](ATUALIZANDO.md) | `update.sh`, `restore.sh`, `healthcheck.sh` |
 | [`runbooks/deploy.md`](runbooks/deploy.md) | **Deploy em produção — os dois `-f` do compose, verificação pós-deploy** |
-| [`runbooks/waha-hostgator.md`](runbooks/waha-hostgator.md) | Runbook do WAHA em produção |
+| [`runbooks/waha-hostgator.md`](runbooks/waha-hostgator.md) | Runbook do WAHA na VPS do **projeto original** (WAHA Plus) — legado, seção 10. A produção da CEMED está no `CLAUDE.md` ("Infraestrutura desta VPS") e em `runbooks/deploy.md` |
 | [`runbooks/ai-credentials-rotation.md`](runbooks/ai-credentials-rotation.md) | Rotação de credenciais de IA |
 | [`../SECURITY.md`](../SECURITY.md) | Política de reporte de vulnerabilidade |
 
@@ -128,7 +133,7 @@ Documentação de *processo*. Alta rotatividade; trate como estado, não como co
 - [`handoffs/`](handoffs/) — arquivados: casos humanos, inbox multimodal, CRM vivo, LGPD, wave1-devvivo, contrato wave5, briefing CRM vivo
 - [`stories/`](stories/) — épicos e stories (`epics/MASTER.md` = plano por epic/wave)
 - [`superpowers/`](superpowers/) — `plans/` e `specs/` datados por onda, mais `handoffs/`
-- [`growth/`](growth/) — material de crescimento · [`brand/`](brand/) — marca · [`white-label.md`](white-label.md) — instalação com marca própria
+- [`growth/`](growth/), [`brand/`](brand/) e [`white-label.md`](white-label.md) — legado do projeto original (seção 10)
 - [`../plan/`](../plan/) — backlog do gov-loop (`features.json` 31/31, `phases.md`, `progress.md`)
 - [`../loop/`](../loop/) — máquina do gov-loop (`LOOP.md`, `CHECKPOINT.md`, `checkpoints/G1..G6-report.md` + `.approved`)
 - [`../tasks/todo.md`](../tasks/todo.md) — workflow de construção original (Fase 0 → PRD → specs)
@@ -139,6 +144,21 @@ Documentação de *processo*. Alta rotatividade; trate como estado, não como co
 geração). Consulte via skill `graphify` antes de varrer código bruto. `GRAPH_REPORT.md` traz
 god nodes, hyperedges e comunidades. **Gerado — não editar.** ⚠️ Foi gerado contra uma árvore
 anterior à v1.0.0; regenere (`/graphify .`) antes de confiar em detalhe fino.
+
+---
+
+## 10. Legado do projeto original (não se aplica à CEMED)
+
+Material do DeskcommCRM como produto open source multi-cliente. Fica no repositório como
+registro, mas **não descreve o CEMED Chat** — não use como instrução.
+
+| Doc | O que é |
+|---|---|
+| [`growth/`](growth/) | Divulgação do projeto original (landing page, diretórios, awesome-selfhosted) |
+| [`presentation/`](presentation/) | Pitch deck e handoff da apresentação |
+| [`brand/`](brand/) | Card de compartilhamento (`brand/og-social-preview.png`) com a marca DeskcommCRM — o app não o serve |
+| [`white-label.md`](white-label.md) | Guia para revender a instalação com outra marca |
+| [`runbooks/waha-hostgator.md`](runbooks/waha-hostgator.md) | Infra do WAHA Plus da VPS do projeto original (usuário, domínio e bucket dele) |
 
 ---
 

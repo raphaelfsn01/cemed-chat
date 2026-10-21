@@ -120,9 +120,9 @@
     "runtime-core"
   ],
   "managedFiles": [
-    ".claude/skills/DeskcommCRM/SKILL.md",
-    ".agents/skills/DeskcommCRM/SKILL.md",
-    ".agents/skills/DeskcommCRM/agents/openai.yaml",
+    ".claude/skills/cemed-chat/SKILL.md",
+    ".agents/skills/cemed-chat/SKILL.md",
+    ".agents/skills/cemed-chat/agents/openai.yaml",
     ".claude/identity.json",
     ".codex/config.toml",
     ".codex/AGENTS.md",
@@ -133,9 +133,9 @@
   ],
   "packageFiles": {
     "runtime-core": [
-      ".claude/skills/DeskcommCRM/SKILL.md",
-      ".agents/skills/DeskcommCRM/SKILL.md",
-      ".agents/skills/DeskcommCRM/agents/openai.yaml",
+      ".claude/skills/cemed-chat/SKILL.md",
+      ".agents/skills/cemed-chat/SKILL.md",
+      ".agents/skills/cemed-chat/agents/openai.yaml",
       ".claude/identity.json",
       ".codex/config.toml",
       ".codex/AGENTS.md",
@@ -147,9 +147,9 @@
   },
   "moduleFiles": {
     "runtime-core": [
-      ".claude/skills/DeskcommCRM/SKILL.md",
-      ".agents/skills/DeskcommCRM/SKILL.md",
-      ".agents/skills/DeskcommCRM/agents/openai.yaml",
+      ".claude/skills/cemed-chat/SKILL.md",
+      ".agents/skills/cemed-chat/SKILL.md",
+      ".agents/skills/cemed-chat/agents/openai.yaml",
       ".claude/identity.json",
       ".codex/config.toml",
       ".codex/AGENTS.md",
@@ -162,17 +162,17 @@
   "files": [
     {
       "moduleId": "runtime-core",
-      "path": ".claude/skills/DeskcommCRM/SKILL.md",
+      "path": ".claude/skills/cemed-chat/SKILL.md",
       "description": "Repository-specific Claude Code skill generated from git history."
     },
     {
       "moduleId": "runtime-core",
-      "path": ".agents/skills/DeskcommCRM/SKILL.md",
+      "path": ".agents/skills/cemed-chat/SKILL.md",
       "description": "Codex-facing copy of the generated repository skill."
     },
     {
       "moduleId": "runtime-core",
-      "path": ".agents/skills/DeskcommCRM/agents/openai.yaml",
+      "path": ".agents/skills/cemed-chat/agents/openai.yaml",
       "description": "Codex skill metadata so the repo skill appears cleanly in the skill interface."
     },
     {
@@ -214,14 +214,14 @@
   "workflows": [],
   "adapters": {
     "claudeCode": {
-      "skillPath": ".claude/skills/DeskcommCRM/SKILL.md",
+      "skillPath": ".claude/skills/cemed-chat/SKILL.md",
       "identityPath": ".claude/identity.json",
       "commandPaths": []
     },
     "codex": {
       "configPath": ".codex/config.toml",
       "agentsGuidePath": ".codex/AGENTS.md",
-      "skillPath": ".agents/skills/DeskcommCRM/SKILL.md"
+      "skillPath": ".agents/skills/cemed-chat/SKILL.md"
     }
   }
 }
