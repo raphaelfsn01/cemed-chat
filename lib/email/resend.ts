@@ -1,7 +1,8 @@
 /**
  * Resend wrapper. Usado por: convites de team, magic links, notificações operacionais.
  *
- * Comportamento defensivo: quando RESEND_API_KEY não está configurada, faz log
+ * Comportamento defensivo: quando RESEND_API_KEY ou RESEND_FROM_EMAIL não está
+ * configurada (as duas são obrigatórias — não há remetente padrão), faz log
  * do payload no console em DEV (nunca em prod) e retorna { ok: false, error: 'not_configured' }
  * — o caller decide se isso é fatal ou não. Convites NÃO devem falhar silenciosamente
  * em prod; em dev, o log permite que o flow continue sem credenciais reais.
@@ -34,17 +35,23 @@ function getClient(): Resend | null {
   return _client;
 }
 
-function fromAddress(): string {
-  return process.env.RESEND_FROM_EMAIL || "Deskcomm <noreply@deskcomm.app>";
+/**
+ * Sem remetente padrão de propósito: o Resend só envia de domínio verificado, e um
+ * endereço inventado aqui falharia no envio em vez de cair no "copiar link".
+ */
+function fromAddress(): string | null {
+  const from = (process.env.RESEND_FROM_EMAIL ?? "").trim();
+  return from.length > 0 ? from : null;
 }
 
 export async function sendEmail(args: SendArgs): Promise<SendResult> {
   const client = getClient();
+  const from = fromAddress();
 
-  if (!client) {
+  if (!client || !from) {
     if (process.env.NODE_ENV !== "production") {
       console.warn(
-        "[email] RESEND_API_KEY não configurada — email não enviado. Payload:",
+        "[email] RESEND_API_KEY ou RESEND_FROM_EMAIL não configurada — email não enviado. Payload:",
         {
           to: args.to,
           subject: args.subject,
@@ -58,7 +65,7 @@ export async function sendEmail(args: SendArgs): Promise<SendResult> {
 
   try {
     const { data, error } = await client.emails.send({
-      from: fromAddress(),
+      from,
       to: args.to,
       subject: args.subject,
       html: args.html,
@@ -86,5 +93,5 @@ export async function sendEmail(args: SendArgs): Promise<SendResult> {
 }
 
 export function isEmailConfigured(): boolean {
-  return getClient() !== null;
+  return getClient() !== null && fromAddress() !== null;
 }

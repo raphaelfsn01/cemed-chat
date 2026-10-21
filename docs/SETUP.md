@@ -334,6 +334,8 @@ RESEND_FROM_EMAIL=onboarding@resend.dev
 
 > 💡 O domínio `onboarding@resend.dev` é compartilhado e funciona no plano free pra testes. Em prod, **verifique seu próprio domínio** no Resend (DNS records SPF + DKIM) e use `noreply@seudominio.com`.
 >
+> ⚠️ As duas variáveis são obrigatórias para enviar: **não há remetente padrão**. Sem `RESEND_FROM_EMAIL`, o app trata o e-mail como não configurado (o convite cai em "copiar link").
+>
 > ℹ️ Se você não configurar o Resend, o app sobe normal — só faz `console.log` em vez de enviar emails de verdade. Bom pra dev sem precisar gastar quota.
 
 ---
