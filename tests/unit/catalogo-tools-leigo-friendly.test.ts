@@ -1,8 +1,8 @@
 /**
  * GATE DO PILAR 3 — o catalogo de tools fala com quem NAO programa.
  *
- * Quem configura um agente no DeskcommCRM e dono de clinica, de loja, de
- * imobiliaria. Sem este teste a regra apodrece na primeira pressa: alguem
+ * Quem configura um agente no CEMED Chat e gente da clinica — recepcao,
+ * gestao. Sem este teste a regra apodrece na primeira pressa: alguem
  * adiciona a tool com `rotulo: "crm_archive_lead"` as 23h e ninguem percebe.
  *
  * O gate e MECANICO de proposito. Um bloco de comentario no topo do arquivo
