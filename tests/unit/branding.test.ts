@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_APP_NAME, resolveBranding } from "@/lib/branding";
+import { DEFAULT_APP_NAME, resolveBranding, resolveSupportEmail } from "@/lib/branding";
 
 const RAIZ = process.cwd();
 
@@ -42,6 +42,20 @@ describe("resolveBranding", () => {
     // inválido na sidebar recolhida.
     expect(resolveBranding("🚀 Foguete", null).initial).toBe("🚀");
     expect(resolveBranding("Ótimo CRM", null).initial).toBe("Ó");
+  });
+});
+
+describe("resolveSupportEmail", () => {
+  it("sem SUPPORT_EMAIL não há e-mail — a tela manda falar com o responsável", () => {
+    // Vazio chega como string (a chave declarada no .env sem valor), não como
+    // undefined. Um "mailto:" vazio seria um link que não leva a lugar nenhum.
+    expect(resolveSupportEmail(undefined)).toBeNull();
+    expect(resolveSupportEmail("")).toBeNull();
+    expect(resolveSupportEmail("   ")).toBeNull();
+  });
+
+  it("devolve o e-mail configurado, aparado", () => {
+    expect(resolveSupportEmail("  contato@exemplo.com.br  ")).toBe("contato@exemplo.com.br");
   });
 });
 

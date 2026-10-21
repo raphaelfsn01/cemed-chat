@@ -56,6 +56,21 @@ export function resolveBranding(
   };
 }
 
+/**
+ * E-mail de suporte da instalação, ou `null` quando não configurado — a tela então
+ * manda falar com o responsável pelo sistema em vez de mostrar um endereço. Pura,
+ * como `resolveBranding`: valor vazio ou só com espaços conta como ausente.
+ */
+export function resolveSupportEmail(raw: string | undefined | null): string | null {
+  const email = (raw ?? "").trim();
+  return email.length > 0 ? email : null;
+}
+
+/** Só no servidor: as telas que mostram o contato são server components. */
+export function supportEmail(): string | null {
+  return resolveSupportEmail(process.env.SUPPORT_EMAIL);
+}
+
 /** Lê a marca da fonte correta em cada lado da fronteira servidor/navegador. */
 export function branding(): Branding {
   if (typeof window !== "undefined") {
