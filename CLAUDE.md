@@ -195,7 +195,8 @@ domínio responde `404 page not found`** — nos dois casos com o contêiner
 
 Depois de qualquer deploy, confirme que o domínio responde **307** (redireciona
 pro login) e que a `revision` da imagem é o commit mergeado. Mudou o `Caddyfile`?
-`up -d --force-recreate caddy` (bind mount preso ao inode). Mudou o agente? O
+`up -d --force-recreate --no-deps caddy` (bind mount preso ao inode; sem o
+`--no-deps` o `app` é recriado junto). Mudou o agente? O
 `worker` é construído na VPS — o CI não o atualiza. Tudo em
 `docs/runbooks/deploy.md`.
 

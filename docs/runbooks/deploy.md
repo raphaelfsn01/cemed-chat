@@ -79,11 +79,13 @@ contêiner continua lendo o antigo — para sempre, sem erro. Depois de um deplo
 que mexe no `Caddyfile`:
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env up -d --force-recreate caddy
+docker compose -f docker-compose.prod.yml --env-file .env up -d --force-recreate --no-deps caddy
 ```
 
-(O HTTPS cai por alguns segundos durante a recriação.) O `update.sh` do kit já
-faz isso sozinho.
+(O HTTPS cai por alguns segundos durante a recriação.) O `--no-deps` não é
+opcional: o `caddy` tem `depends_on: app`, e sem a flag o Compose recria o `app`
+junto (e, com `APP_PULL_POLICY=always`, puxa a `:latest` no caminho) — um deploy
+do app que ninguém pediu. O `update.sh` do kit já faz isso sozinho, com a flag.
 
 ### Mudou o agente? (`lib/agent-engine`, `workers/`, `Dockerfile.worker`)
 
