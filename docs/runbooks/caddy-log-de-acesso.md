@@ -105,10 +105,10 @@ O `cat >` reescreve o **mesmo** arquivo, e por isso o Caddy continua escrevendo 
 O `Caddyfile` entra no contêiner por bind mount de **um arquivo**, e esse mount fica preso ao inode. O `git pull` grava um arquivo novo, com outro inode, e o contêiner continua lendo o antigo. O `update.sh` do kit já trata disso. No deploy manual:
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env up -d --force-recreate caddy
+docker compose -f docker-compose.prod.yml --env-file .env up -d --force-recreate --no-deps caddy
 ```
 
-A recriação derruba o HTTPS por alguns segundos. Depois dela, confirme:
+Sem o `--no-deps`, o `app` também é recriado: o `caddy` depende dele (`depends_on`) e o Compose recria a dependência junto. A recriação derruba o HTTPS por alguns segundos. Depois dela, confirme:
 
 ```bash
 docker exec cemed-chat-caddy-1 ls -la /data/access.log   # existe e cresce a cada requisição

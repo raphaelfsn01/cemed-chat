@@ -218,7 +218,7 @@ Pré-requisitos além do `seed-e2e-credentials`: `seed-crm-vivo`, `seed-e2e-queu
 Achados desta jornada:
 - **Corrigido (segurança):** os formulários de auth eram enviados por GET antes da hidratação — `/login?email=…&password=…` na URL. `method="post"` nos seis formulários.
 - **Corrigido (desktop, anterior):** inbox em 1440 com conversa aberta empurrava o painel do contato 89px para fora da tela (coluna `1fr` + cabeçalho de 645px). Medido igual na main.
-- **Aberto (decisão do dono):** contraste do botão primário (branco sobre `#00909c`, 3.83:1 < 4.5:1) reprova `auth.spec.ts` na main.
+- **Corrigido (2026-10-21):** contraste do botão primário (branco sobre `#00909c`, 3.83:1 < 4.5:1) reprovava `auth.spec.ts` e 3 testes de `rbac-roles.spec.ts`. Texto e botão passam a `#007480` (5,51:1); o `#00909c` fica no anel de foco e nas bordas (3,84:1). Escondido na mesma falha havia o cinza secundário `#737373` sobre `#f5f5f5` (4,35:1, badges e chip do ⌘K): passa a `#707070` (4,54:1).
 - **Aberto (fora do escopo):** a lista do inbox de plataforma mostra "Sem nome" para contato que só tem `display_name`.
 - **Fora de propósito:** montar fluxo grande no celular (lá é ver e ajustar); tabelas do admin em cards (rolam na horizontal).
 

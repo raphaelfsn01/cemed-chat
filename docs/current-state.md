@@ -251,8 +251,12 @@ consequência natural de trabalho em branches paralelas, mas ilustra a regra:
    em `docs/handoffs/`, o que sugere sim, mas o texto interno ainda diz PARCIAL.
 4. A credencial Anthropic e a chave direta do Google AI Studio foram providenciadas?
 5. ~~Transbordo a 390px e criação de funil~~ — os dois resolvidos (ver §3, "Dois achados").
-   Fica aberto: o contraste do botão primário (branco sobre `#00909c`, 3.83:1, abaixo do
-   AA 4.5:1) reprova `tests/e2e/auth.spec.ts` na main — decisão de cor pendente.
+   ~~Contraste do botão primário~~ — resolvido em 2026-10-21: texto e botão usam `#007480`
+   (5,51:1 com branco); o `#00909c` original ficou no anel de foco e nas bordas (3,84:1, ≥3:1
+   para elemento de interface); e o cinza de texto secundário passou de `#737373` a `#707070`,
+   porque dava 4,35:1 sobre o `#f5f5f5` das superfícies (badges, chip do ⌘K). As 4 falhas de
+   axe (`auth.spec.ts` e 3 de `rbac-roles.spec.ts`) saíram. Cálculo no cabeçalho de
+   `app/globals.css`.
 6. `pnpm gov:verify` deve passar a incluir `test:db` (exige Docker em toda máquina de dev)
    ou fica um `verify:full` separado?
 7. As branch protection rules exigem os dois checks do CI verdes para merge? Isso decide se o
