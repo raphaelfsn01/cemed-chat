@@ -2,7 +2,7 @@
   "name": "cemed-chat",
   "version": "0.1.0",
   "private": true,
-  "description": "DeskcommCRM — sistema operacional de vendas open source com agentes de IA nativos e WhatsApp (WAHA). Self-hosted, multi-tenant, LGPD by-design.",
+  "description": "CEMED Chat — central de atendimento por WhatsApp da CEMED Saúde, com agente de IA de triagem e equipe humana.",
   "engines": {
     "node": ">=22"
   },

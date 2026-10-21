@@ -17,7 +17,7 @@ import { ensureRole, ensureScope, type McpAuthResult } from "./auth";
 import { allTools } from "./tools";
 import type { McpContext } from "./types";
 
-const SERVER_NAME = "deskcomm-crm";
+const SERVER_NAME = "cemed-chat";
 const SERVER_VERSION = "0.1.0";
 
 function summarizeResult(result: unknown): string | undefined {
