@@ -3,6 +3,7 @@ import { cookieSecure } from "@/lib/supabase/cookie-secure";
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
 import { isPublicPath } from "@/lib/auth/public-paths";
+import { precisaSegundoFator } from "@/lib/auth/mfa-gate";
 import {
   verifyImpersonateCookieEdge,
   IMPERSONATE_COOKIE_NAME_EDGE,
@@ -86,6 +87,32 @@ export async function proxy(request: NextRequest) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("next", pathname + search);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // Segundo fator: quem tem autenticador e só digitou a senha (AAL1) não passa
+  // daqui — ver lib/auth/mfa-gate.ts. /login/mfa é público e já saiu acima.
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (precisaSegundoFator(aal)) {
+    if (pathname.startsWith("/api/")) {
+      return new NextResponse(
+        JSON.stringify({
+          error: {
+            code: "mfa_required",
+            message: "Two-factor verification required",
+          },
+        }),
+        {
+          status: 401,
+          headers: {
+            "content-type": "application/json",
+            "x-request-id": requestId,
+          },
+        },
+      );
+    }
+    const mfaUrl = new URL("/login/mfa", request.url);
+    mfaUrl.searchParams.set("next", pathname + search);
+    return NextResponse.redirect(mfaUrl);
   }
 
   // EPIC-11 S-11.07: validate impersonate cookie on /app/* paths. Middleware

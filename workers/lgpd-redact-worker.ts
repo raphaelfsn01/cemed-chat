@@ -3,7 +3,8 @@
  *
  * Pipeline (S-08.05):
  *   1. Load lgpd_requests row (programmatic org filter).
- *   2. Status guard (skip when already completed/failed beyond cap).
+ *   2. Status guard: skip completed/failed, and anything not yet approved
+ *      (only `processing` runs — the approve route sets it before emitting).
  *   3. attempts++ (cap 3 → status='failed').
  *   4. Branch by scope:
  *      - 'contact': resolve contactId (req.contact_id || external_customer_id);
@@ -123,6 +124,19 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
       consumer_key: "lgpd-redact-worker.v1",
       status: "skipped",
       detail: "already_failed",
+    };
+  }
+
+  // Só pedido APROVADO roda. A rota de aprovação (admin) passa `received` para
+  // `processing` antes de emitir o evento, e as novas tentativas mantêm
+  // `processing`. Um `lgpd.redact_received` sem aprovação — pedido ainda
+  // `received`, ou `expired` — não anonimiza ninguém: anonimização é irreversível
+  // e o evento pode ser emitido por quem não é admin (auditoria de 2026-10-21).
+  if (req.status !== "processing") {
+    return {
+      consumer_key: "lgpd-redact-worker.v1",
+      status: "skipped",
+      detail: "not_approved",
     };
   }
 

@@ -108,12 +108,39 @@ create or replace function auth.uid() returns uuid
   $fn$;
 
 grant usage on schema auth, extensions, storage to anon, authenticated, service_role;
+-- Stubs de auth.jwt() e auth.mfa_factors: fn_mfa_satisfeito() (migration 0122)
+-- lê o claim `aal` e os fatores verificados. No Supabase real são nativos; aqui
+-- `status` é text (lá é o enum auth.factor_status — a comparação com
+-- 'verified' funciona igual nos dois).
+create or replace function auth.jwt() returns jsonb
+  language sql stable
+  as $fn$
+    select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb
+  $fn$;
+
+create table if not exists auth.mfa_factors (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  status text not null default 'unverified',
+  created_at timestamptz not null default now()
+);
+
 grant select on auth.users to anon, authenticated, service_role;
 SQL
 
 echo "==> modo INSTALL: aplicando baseline.sql com ON_ERROR_STOP=1"
 psql_install < "$BASELINE"
 echo "    ✓ install ok"
+
+# Banco "sujo" como o de um clone que nasceu no Supabase cloud: lá os default
+# privileges dão EXECUTE de toda função nova a anon e authenticated, e foi assim
+# que a produção ficou com seis `security definer` abertas à anon key enquanto o
+# install limpo daqui passava verde (auditoria de 2026-10-21). O update abaixo
+# tem que curar isso sozinho; os invariantes de varredura conferem depois.
+echo "==> banco SUJO: EXECUTE de toda função de public para anon e authenticated"
+psql_install <<'SQL'
+grant execute on all functions in schema public to anon, authenticated;
+SQL
 
 echo "==> modo UPDATE: re-aplicando baseline.sql sem ON_ERROR_STOP (idempotência)"
 docker exec -i "$CONTAINER" psql -U postgres -d postgres -q -f - < "$BASELINE" >/dev/null
