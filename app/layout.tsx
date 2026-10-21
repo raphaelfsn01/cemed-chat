@@ -33,11 +33,10 @@ export function generateMetadata(): Metadata {
   const { name } = branding();
   return {
     title: {
-      default: `${name} — atendimento e vendas por WhatsApp com agentes de IA`,
+      default: `${name} — atendimento por WhatsApp`,
       template: `%s · ${name}`,
     },
-    description:
-      "Centralize o atendimento por WhatsApp num funil só. Agentes de IA resolvem o que dá pra resolver e passam para o time humano o que importa — com tudo registrado. Multi-tenant, LGPD-nativo, feito para operações brasileiras.",
+    description: `Central de atendimento por WhatsApp da ${name}: o assistente faz a primeira triagem e passa a conversa para a equipe da clínica, com tudo registrado.`,
     applicationName: name,
     authors: [{ name }],
     keywords: [
@@ -46,13 +45,20 @@ export function generateMetadata(): Metadata {
       "WhatsApp",
       "IA conversacional",
       "LGPD",
-      "multi-tenant",
     ],
     robots: { index: false, follow: false },
   };
 }
 
 export const viewport: Viewport = {
+  // O Next já emite `width=device-width, initial-scale=1` por padrão; fica
+  // explícito porque `viewportFit: "cover"` só existe junto. Sem o `cover`, o
+  // iOS deixa faixas vazias ao redor do notch e `env(safe-area-inset-*)` vale
+  // sempre 0 — e é dele que o composer e a barra de ações em massa dependem
+  // para não ficarem embaixo da barra de gestos do iPhone.
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#faf9f6" },
     { media: "(prefers-color-scheme: dark)", color: "#161510" },

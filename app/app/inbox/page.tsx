@@ -4,11 +4,7 @@ import { InboxLayout } from "@/components/inbox/InboxLayout";
 
 export const dynamic = "force-dynamic";
 
-export default async function InboxPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ id?: string }>;
-}) {
+export default async function InboxPage() {
   const user = await loadAuthUser();
   if (!user) redirect("/login");
   const activeOrg = await resolveActiveOrg(user);
@@ -19,6 +15,7 @@ export default async function InboxPage({
       </div>
     );
   }
-  const { id } = await searchParams;
-  return <InboxLayout initialSelectedId={id ?? null} />;
+  // A conversa aberta (`?id=`) é lida pelo próprio InboxLayout via
+  // `useSearchParams` — é a URL, e não uma prop, a fonte da verdade.
+  return <InboxLayout />;
 }

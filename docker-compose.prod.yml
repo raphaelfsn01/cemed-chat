@@ -1,4 +1,4 @@
-# DeskcommCRM — stack de produção self-host (VPS HostGator).
+# CEMED Chat — stack de produção self-host (VPS HostGator).
 # Sobe: caddy (HTTPS) → app (Next standalone) + waha + redis+srh + scheduler.
 # Só o Caddy publica portas (80/443). Todo o resto vive na rede interna.
 #
@@ -16,7 +16,7 @@ services:
     # Os NEXT_PUBLIC_* reais vêm em RUNTIME (env_file abaixo) — o browser lê via
     # <PublicEnvScript/> e o servidor via lib/env.ts. Não precisa buildar no VPS.
     # Build local (avançado): docker compose -f docker-compose.prod.yml -f docker-compose.build.yml build
-    image: ${APP_IMAGE:-ghcr.io/melgarafael/deskcommcrm:latest}
+    image: ${APP_IMAGE:-ghcr.io/raphaelfsn01/cemed-chat:latest}
     pull_policy: ${APP_PULL_POLICY:-always}
     restart: unless-stopped
     env_file: .env

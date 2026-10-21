@@ -216,7 +216,7 @@ export function FunisClient({
             <li key={funil.id} className="flex flex-col gap-3 p-4" data-testid={`funil-${funil.id}`}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 {podeGerenciar && (
-                  <div className="flex shrink-0 gap-1">
+                  <div className="flex max-w-full shrink-0 flex-wrap gap-1">
                     <Button
                       variant="ghost"
                       size="icon"
@@ -291,7 +291,7 @@ export function FunisClient({
                 <span className="shrink-0 text-xs text-muted-foreground">/{funil.slug}</span>
 
                 {podeGerenciar && !renomeandoAqui && (
-                  <div className="flex shrink-0 gap-1">
+                  <div className="flex max-w-full shrink-0 flex-wrap gap-1">
                     <Button
                       variant="ghost"
                       size="sm"

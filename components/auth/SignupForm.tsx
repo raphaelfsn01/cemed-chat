@@ -58,7 +58,7 @@ export function SignupForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+    <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
       <div className="space-y-1.5">
         <Label htmlFor="org_name">Nome da empresa</Label>
         <Input
@@ -120,7 +120,7 @@ export function SignupForm() {
           {serverError}
         </div>
       )}
-      <Button type="submit" className="w-full" disabled={isPending}>
+      <Button type="submit" size="touch" className="w-full" disabled={isPending}>
         {isPending ? "Criando conta..." : "Criar conta"}
       </Button>
     </form>

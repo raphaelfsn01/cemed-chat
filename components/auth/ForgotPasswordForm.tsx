@@ -58,7 +58,7 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+    <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
       <div className="space-y-1.5">
         <Label htmlFor="email">Email</Label>
         <Input
@@ -81,7 +81,7 @@ export function ForgotPasswordForm() {
           {serverError}
         </div>
       )}
-      <Button type="submit" className="w-full" disabled={isPending}>
+      <Button type="submit" size="touch" className="w-full" disabled={isPending}>
         {isPending ? "Enviando..." : "Enviar link de redefinição"}
       </Button>
     </form>

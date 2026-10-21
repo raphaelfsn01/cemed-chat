@@ -44,7 +44,7 @@ export default async function KanbanPickerPage() {
   const podeGerenciar = ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
 
   return (
-    <div className="flex h-full flex-col gap-4 p-6">
+    <div className="flex h-full flex-col gap-4 lg:p-6">
       <header className="flex items-center gap-3">
         <Kanban size={28} className="text-muted-foreground" weight="duotone" />
         {/* ⚠️ O TÍTULO CONTINUA "Pipelines", e não é desatenção. Trocá-lo por

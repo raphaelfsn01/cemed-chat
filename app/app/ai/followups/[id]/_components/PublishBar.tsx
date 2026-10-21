@@ -109,7 +109,7 @@ export function PublishBar({ flowId, flow, graph, dirty, onSaved, onPublishError
         <TriggerConfigControl flowId={flowId} triggerConfig={flow.trigger_config} />
 
         <Select value={flow.handoff_policy} onValueChange={(v) => handoffPolicy.mutate(v as FollowupFlowDetailRow["handoff_policy"])}>
-          <SelectTrigger className="w-56" aria-label="Política de handoff">
+          <SelectTrigger className="w-full sm:w-56" aria-label="Política de handoff">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

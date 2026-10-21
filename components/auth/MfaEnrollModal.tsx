@@ -78,123 +78,130 @@ export function MfaEnrollModal() {
       role="dialog"
       aria-modal="true"
       aria-labelledby="mfa-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 overflow-y-auto bg-black/60"
     >
-      <div className="w-full max-w-md rounded-lg border border-border bg-background p-6 shadow-xl">
-        {step === "intro" && (
-          <div className="space-y-4">
-            <div>
-              <h2 id="mfa-title" className="text-xl font-semibold">
-                Configure a verificação em duas etapas
-              </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Sua conta exige 2FA. Use um aplicativo autenticador (Google
-                Authenticator, 1Password, Authy, Bitwarden) para gerar códigos
-                de 6 dígitos.
-              </p>
-            </div>
-            {error && (
-              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {error}
+      {/* `min-h-full` + `items-center` centraliza quando cabe e deixa ROLAR
+          quando não cabe (o teclado do celular encolhe a área visível) — com
+          `items-center` direto no overlay, o topo cortado ficaria inalcançável. */}
+      <div className="flex min-h-full items-center justify-center p-4">
+        <div className="w-full max-w-md rounded-lg border border-border bg-background p-4 shadow-xl sm:p-6">
+          {step === "intro" && (
+            <div className="space-y-4">
+              <div>
+                <h2 id="mfa-title" className="text-xl font-semibold">
+                  Configure a verificação em duas etapas
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Sua conta exige 2FA. Use um aplicativo autenticador (Google
+                  Authenticator, 1Password, Authy, Bitwarden) para gerar códigos
+                  de 6 dígitos.
+                </p>
               </div>
-            )}
-            <Button
-              type="button"
-              className="w-full"
-              onClick={() => {
-                setError(null);
-                setStep("scan");
-              }}
-              disabled={isPending}
-            >
-              Iniciar configuração
-            </Button>
-          </div>
-        )}
-
-        {step === "scan" && (
-          <div className="space-y-5">
-            <div>
-              <h2 id="mfa-title" className="text-xl font-semibold">
-                Escaneie o QR code
-              </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Abra seu app autenticador, adicione uma nova conta e digite o
-                código de 6 dígitos abaixo.
-              </p>
+              {error && (
+                <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {error}
+                </div>
+              )}
+              <Button
+                type="button"
+                size="touch"
+                className="w-full"
+                onClick={() => {
+                  setError(null);
+                  setStep("scan");
+                }}
+                disabled={isPending}
+              >
+                Iniciar configuração
+              </Button>
             </div>
+          )}
 
-            {!enrollState ? (
-              <div className="flex h-60 items-center justify-center text-sm text-muted-foreground">
-                Gerando QR code...
+          {step === "scan" && (
+            <div className="space-y-5">
+              <div>
+                <h2 id="mfa-title" className="text-xl font-semibold">
+                  Escaneie o QR code
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Abra seu app autenticador, adicione uma nova conta e digite o
+                  código de 6 dígitos abaixo.
+                </p>
               </div>
-            ) : (
-              <>
-                <div className="flex justify-center">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- inline data URL, no benefit from next/image optimization */}
-                  <img
-                    src={enrollState.qr_data_url}
-                    alt="QR code para configurar autenticador"
-                    width={240}
-                    height={240}
-                    className="rounded border border-border bg-white p-2"
-                  />
-                </div>
-                <details className="text-xs text-muted-foreground">
-                  <summary className="cursor-pointer">
-                    Não consegue escanear? Digite o código manual
-                  </summary>
-                  <code className="mt-2 block break-all rounded bg-muted p-2 font-mono">
-                    {enrollState.secret}
-                  </code>
-                </details>
 
-                <div className="space-y-3">
-                  <p className="text-center text-sm font-medium">
-                    Digite o código de 6 dígitos
-                  </p>
-                  <TOTPInput
-                    value={code}
-                    onChange={setCode}
-                    onComplete={(c) => submitCode(c)}
-                    disabled={isPending}
-                    autoFocus
-                    hasError={!!error}
-                  />
-                  {error && (
-                    <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">
-                      {error}
-                    </div>
-                  )}
-                  <Button
-                    type="button"
-                    className="w-full"
-                    disabled={isPending || code.length !== 6}
-                    onClick={() => submitCode()}
-                  >
-                    {isPending ? "Verificando..." : "Confirmar"}
-                  </Button>
+              {!enrollState ? (
+                <div className="flex h-60 items-center justify-center text-sm text-muted-foreground">
+                  Gerando QR code...
                 </div>
-              </>
-            )}
-          </div>
-        )}
+              ) : (
+                <>
+                  <div className="flex justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- inline data URL, no benefit from next/image optimization */}
+                    <img
+                      src={enrollState.qr_data_url}
+                      alt="QR code para configurar autenticador"
+                      width={240}
+                      height={240}
+                      className="rounded border border-border bg-white p-2"
+                    />
+                  </div>
+                  <details className="text-xs text-muted-foreground">
+                    <summary className="cursor-pointer">
+                      Não consegue escanear? Digite o código manual
+                    </summary>
+                    <code className="mt-2 block break-all rounded bg-muted p-2 font-mono">
+                      {enrollState.secret}
+                    </code>
+                  </details>
 
-        {step === "codes" && recoveryCodes && (
-          <div className="space-y-4">
-            <div>
-              <h2 id="mfa-title" className="text-xl font-semibold">
-                Códigos de recuperação
-              </h2>
+                  <div className="space-y-3">
+                    <p className="text-center text-sm font-medium">
+                      Digite o código de 6 dígitos
+                    </p>
+                    <TOTPInput
+                      value={code}
+                      onChange={setCode}
+                      onComplete={(c) => submitCode(c)}
+                      disabled={isPending}
+                      autoFocus
+                      hasError={!!error}
+                    />
+                    {error && (
+                      <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">
+                        {error}
+                      </div>
+                    )}
+                    <Button
+                      type="button"
+                      size="touch"
+                      className="w-full"
+                      disabled={isPending || code.length !== 6}
+                      onClick={() => submitCode()}
+                    >
+                      {isPending ? "Verificando..." : "Confirmar"}
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
-            <RecoveryCodesPanel
-              codes={recoveryCodes}
-              onAcknowledge={() => {
-                window.location.reload();
-              }}
-            />
-          </div>
-        )}
+          )}
+
+          {step === "codes" && recoveryCodes && (
+            <div className="space-y-4">
+              <div>
+                <h2 id="mfa-title" className="text-xl font-semibold">
+                  Códigos de recuperação
+                </h2>
+              </div>
+              <RecoveryCodesPanel
+                codes={recoveryCodes}
+                onAcknowledge={() => {
+                  window.location.reload();
+                }}
+              />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

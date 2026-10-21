@@ -17,6 +17,11 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { Plus } from "@/lib/ui/icons";
+
 import {
   toReactFlow,
   fromReactFlow,
@@ -191,8 +196,32 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
     [screenToFlowPosition, addNodeAt],
   );
 
+  // Abaixo de `lg` (celular e tablet em pé) a paleta de 224px e o painel de
+  // 384px comiam o canvas inteiro. Lá a paleta abre por "Adicionar passo" e a
+  // configuração do passo/conexão abre em gaveta. Serve para ver o fluxo e
+  // fazer ajustes; montar um fluxo grande continua sendo coisa de desktop.
+  const compacto = useMediaQuery("(max-width: 1023.98px)");
+  const [paletaAberta, setPaletaAberta] = useState(false);
+
+  const painelDoPasso = selectedNode && (
+    <NodeConfigPanel
+      key={selectedNode.id}
+      node={selectedNode}
+      onChange={(patch) => updateNodeData(selectedNode.id, patch)}
+    />
+  );
+  const painelDaConexao = selectedEdge && (
+    <EdgeConfigPanel
+      key={selectedEdge.id}
+      sourceNode={selectedEdgeSource ? toFlowNode(selectedEdgeSource) : undefined}
+      targetNode={selectedEdgeTarget ? toFlowNode(selectedEdgeTarget) : undefined}
+      condition={selectedEdge.data?.condition ?? { type: "always" }}
+      onChange={(condition) => updateEdgeCondition(selectedEdge.id, condition)}
+    />
+  );
+
   return (
-    <div className="flex h-full min-h-[600px] w-full flex-col">
+    <div className="flex h-full min-h-[60dvh] w-full flex-col lg:min-h-[600px]">
       {flow && (
         <PublishBar
           flowId={flowId}
@@ -204,8 +233,14 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
           onPublishSuccess={clearNodeErrors}
         />
       )}
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 lg:hidden">
+        <Button size="sm" variant="secondary" onClick={() => setPaletaAberta(true)}>
+          <Plus size={14} aria-hidden /> Adicionar passo
+        </Button>
+        <p className="text-xs text-muted-foreground">Toque num passo ou numa ligação para configurar.</p>
+      </div>
       <div className="flex flex-1 overflow-hidden">
-        <NodePalette onAdd={onPaletteAdd} />
+        <NodePalette onAdd={onPaletteAdd} className="hidden lg:flex" />
         <div className="relative h-full flex-1" data-testid="flow-canvas" onDragOver={onDragOver} onDrop={onDrop}>
           <ReactFlow
             nodes={nodes}
@@ -224,36 +259,53 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
           </ReactFlow>
         </div>
 
-        {selectedNode && (
+        {painelDoPasso && !compacto && (
           // Docked panel, NOT a modal overlay — the canvas stays fully clickable
           // so switching node selection (or dragging edges) works while it's open.
           <aside
             className="h-full w-96 shrink-0 overflow-y-auto border-l border-border bg-surface p-4"
             data-testid="node-config-sheet"
           >
-            <NodeConfigPanel
-              key={selectedNode.id}
-              node={selectedNode}
-              onChange={(patch) => updateNodeData(selectedNode.id, patch)}
-            />
+            {painelDoPasso}
           </aside>
         )}
 
-        {selectedEdge && (
+        {painelDaConexao && !compacto && (
           <aside
             className="h-full w-96 shrink-0 overflow-y-auto border-l border-border bg-surface p-4"
             data-testid="edge-config-sheet"
           >
-            <EdgeConfigPanel
-              key={selectedEdge.id}
-              sourceNode={selectedEdgeSource ? toFlowNode(selectedEdgeSource) : undefined}
-              targetNode={selectedEdgeTarget ? toFlowNode(selectedEdgeTarget) : undefined}
-              condition={selectedEdge.data?.condition ?? { type: "always" }}
-              onChange={(condition) => updateEdgeCondition(selectedEdge.id, condition)}
-            />
+            {painelDaConexao}
           </aside>
         )}
       </div>
+
+      <Sheet open={paletaAberta} onOpenChange={setPaletaAberta}>
+        <SheetContent side="bottom" aria-describedby={undefined} className="max-h-[75dvh] overflow-y-auto p-0">
+          <SheetTitle className="sr-only">Adicionar passo</SheetTitle>
+          <NodePalette
+            className="w-full border-r-0 pt-12"
+            onAdd={(type) => {
+              onPaletteAdd(type);
+              setPaletaAberta(false);
+            }}
+          />
+        </SheetContent>
+      </Sheet>
+
+      {/* Gaveta modal no celular: fechar = desmarcar o passo/conexão. */}
+      <Sheet open={compacto && Boolean(selectedNode || selectedEdge)} onOpenChange={(aberto) => !aberto && onPaneClick()}>
+        <SheetContent
+          side="right"
+          aria-describedby={undefined}
+          className="w-full overflow-y-auto p-4 pt-12 sm:max-w-md"
+          data-testid={selectedNode ? "node-config-sheet" : "edge-config-sheet"}
+        >
+          <SheetTitle className="sr-only">{selectedNode ? "Configurar passo" : "Configurar ligação"}</SheetTitle>
+          {painelDoPasso}
+          {painelDaConexao}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

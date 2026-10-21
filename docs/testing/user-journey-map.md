@@ -1,6 +1,6 @@
 # Mapa de Jornadas & Testes E2E — Experiência do usuário em VPS fresca
 
-> Fonte da verdade do QA de produto do DeskcommCRM open-source. Cada caso aqui é
+> Fonte da verdade do QA de produto do CEMED Chat. Cada caso aqui é
 > exercitado **pelo frontend real** (Playwright), com contas de teste reais e
 > recursos reais (banco fresco do `baseline.sql`, WAHA local, receiver de webhook
 > real). Curl/API só como diagnóstico, nunca como prova de UX.
@@ -188,7 +188,66 @@ Andar por TODAS as rotas navegáveis logado como admin e como agent: settings, c
 LGPD anonymize, /admin (platform), error pages (403/503/not-found), estados vazios.
 Critério: nenhuma tela quebra, nenhum stack trace, nenhum texto de erro cru.
 
+## J9 — Uso em celular e tablet `[P0]`
+
+Contexto: a equipe da clínica atende pelo celular. Antes desta jornada, 47 de 56 rotas rolavam
+na horizontal em 390px (o trilho de 240px do menu + `ml-60` fixo deixavam ~150px para a
+página). Spec: `tests/e2e/responsivo.spec.ts`, nos projetos de viewport do
+`playwright.config.ts` — `mobile` 390×844, `mobile-sm` 360×740 (só P0), `tablet` 768×1024,
+`desktop` 1440×900 e `webkit-p0` (iPhone 13, Safari; só P0). Medida por ferramenta: nem a página
+nem o `<main>` rolam na horizontal; alvos de toque medidos (primário ≥44px, secundário ≥36px).
+Evidência: `.superpowers/evidence/2026-10-responsivo/<fase>/<projeto>-<tela>.png` e
+`medidas-<projeto>.jsonl`; seleção versionada em `docs/testing/evidence/responsivo/`.
+Pré-requisitos além do `seed-e2e-credentials`: `seed-crm-vivo`, `seed-e2e-queue`,
+`seed-e2e-radar` e o admin da seed como super-admin (ver o passo do `e2e.yml`).
+
+| # | Caso | Expectativa |
+|---|------|-------------|
+| J9.1 | Varredura: 60 rotas (públicas, `/app/*`, `/admin/*`) + telas das jornadas — 84 medidas por viewport | nenhuma rola na horizontal em 390/768/1440; P0 também em 360 e no Safari · **PASS** |
+| J9.2 | Menu no celular e no tablet | hambúrguer de 44px abre a gaveta, navega e fecha; no desktop o trilho de sempre · **PASS** |
+| J9.3 | Login por toque até o app (senha + 6 dígitos) | CTA ≥44px, dígitos dentro da tela, fonte ≥16px (sem zoom do Safari) · **PASS** |
+| J9.4 | Dono de instalação nova (bootstrap-owner) pelo celular | wizard inteiro, MFA obrigatório com QR e códigos de recuperação legíveis, primeira tela do app · **PASS** |
+| J9.5 | Atendente abre o link do convite no celular | tela de convite cabe, "Fazer login" ≥44px · **PASS** |
+| J9.6 | Inbox: abrir conversa, agir, voltar | lista OU conversa no celular; "⋯" com as ações; detalhes do contato em gaveta; voltar pelo botão E pelo voltar do aparelho · **PASS** |
+| J9.7 | Kanban: deslizar entre etapas | uma etapa por tela com encaixe; deslize com toque real sobre um card NÃO move o card de etapa · **PASS** |
+| J9.8 | Kanban: dossiê e novo lead | gaveta e dialog cabem; "Criar lead" alcançável; lead criado aparece · **PASS** |
+| J9.9 | Inbox do admin | lista OU conversa, voltar, detalhes em gaveta · **PASS** |
+| J9.10 | Perfil: editar e salvar pelo celular | uma coluna; toast "Perfil atualizado." · **PASS** |
+| J9.11 | Fluxo de follow-up no celular | criar fluxo, "Adicionar passo" em gaveta, tocar no passo abre a configuração em gaveta; fechar desmarca · **PASS** |
+| J9.12 | Rotas com id (agente, contato, tenant, usuário, audit) | abertas pela própria tela, cabem · **PASS** |
+| J9.13 | Login antes da hidratação (JS desligado) | a senha NUNCA vai para a URL — achado e corrigido nesta jornada (`auth-sem-credencial-na-url.spec.ts`) · **PASS** |
+
+Achados desta jornada:
+- **Corrigido (segurança):** os formulários de auth eram enviados por GET antes da hidratação — `/login?email=…&password=…` na URL. `method="post"` nos seis formulários.
+- **Corrigido (desktop, anterior):** inbox em 1440 com conversa aberta empurrava o painel do contato 89px para fora da tela (coluna `1fr` + cabeçalho de 645px). Medido igual na main.
+- **Corrigido (2026-10-21):** contraste do botão primário (branco sobre `#00909c`, 3.83:1 < 4.5:1) reprovava `auth.spec.ts` e 3 testes de `rbac-roles.spec.ts`. Texto e botão passam a `#007480` (5,51:1); o `#00909c` fica no anel de foco e nas bordas (3,84:1). Escondido na mesma falha havia o cinza secundário `#737373` sobre `#f5f5f5` (4,35:1, badges e chip do ⌘K): passa a `#707070` (4,54:1).
+- **Aberto (fora do escopo):** a lista do inbox de plataforma mostra "Sem nome" para contato que só tem `display_name`.
+- **Fora de propósito:** montar fluxo grande no celular (lá é ver e ajustar); tabelas do admin em cards (rolam na horizontal).
+
 ---
+
+## J10 — Marca CEMED em tudo o que a equipe e o paciente veem `[P0]`
+
+Contexto: o CEMED Chat é fork do DeskcommCRM, e o nome antigo saía por string solta fora do
+`branding()`: e-mails, rodapé do PDF LGPD do paciente, contatos de suporte de outro domínio,
+nome do fator no autenticador, arquivo de códigos de recuperação. Spec:
+`tests/e2e/marca-cemed.spec.ts` (pela tela) + `tests/unit/marca-artefatos.test.ts` (PDF e
+e-mails, que não passam por tela) + a guarda de `tests/unit/branding.test.ts`. Ambiente da
+prova (2026-10-21): Supabase local pg17 fresco com `baseline.sql` + `seed-e2e-credentials`,
+`next build` + `next start`, Playwright em contêiner, **sem** `APP_NAME`, `RESEND_*` e
+`SUPPORT_EMAIL`; segunda rodada com `SUPPORT_EMAIL` só no ambiente do `next start`.
+Evidência: `.superpowers/evidence/marca-cemed/` (`*-com-support-email.png` na segunda rodada).
+
+| # | Caso | Expectativa | Resultado |
+|---|---|---|---|
+| 10.1 | Aba e metadados do `/login` | título termina em `· CEMED Saúde`; descrição da clínica, sem "multi-tenant" | PASS |
+| 10.2 | `/account-suspended` sem `SUPPORT_EMAIL` | "fale com o responsável pelo sistema", nenhum `mailto:` | PASS |
+| 10.3 | `/account-suspended` com `SUPPORT_EMAIL` | link `mailto:` com o valor do `.env`, lido em runtime | PASS |
+| 10.4 | `/app/settings/billing` (admin), com e sem `SUPPORT_EMAIL` | idem 10.2/10.3 | PASS |
+| 10.5 | Enroll do MFA pela tela (admin novo) | fator "CEMED Saúde AAAA-MM-DD"; download `cemed-saude-codigos-de-recuperacao.txt` | PASS |
+| 10.6 | Onboarding (`signup-journey`) | "Boas-vindas — CEMED Saúde"; e-mail de confirmação do Supabase local com a marca | PASS |
+| 10.7 | Convite sem Resend (`invite-lifecycle`) | convite registrado, e-mail não sai; fluxo do link segue | PASS |
+| 10.8 | PDF LGPD (unit, renderizado de verdade) | rodapé "CEMED Saúde · Relatório LGPD…", segue `APP_NAME` | PASS |
 
 ## Achados do mapeamento (pré-execução) — candidatos a correção
 
@@ -285,7 +344,8 @@ espaço e acento, que era o gatilho do defeito #6.
 - Tela de Conexões diz "1 número conectado" mesmo com o número **caído** (conta
   sessões, não conectados).
 - O autenticador registra o nome fixo "DeskcommCRM", ignorando o `APP_NAME` que o
-  instalador vende como marca de toda a interface.
+  instalador vende como marca de toda a interface. **Resolvido em 2026-10-21** (rebrand
+  para CEMED): o fator TOTP usa `branding().name`.
 - `CLAUDE.md` documenta bearer `tok_...`; o token real nasce com prefixo `dsk_`.
 
 ## Segurança — achados após conectar o WhatsApp real (2026-07-30)

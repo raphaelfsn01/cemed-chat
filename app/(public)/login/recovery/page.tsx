@@ -22,7 +22,7 @@ export default async function RecoveryPage({
       <div className="text-center text-sm">
         <Link
           href={next ? `/login?next=${encodeURIComponent(next)}` : "/login"}
-          className="text-muted-foreground underline-offset-4 hover:underline"
+          className="text-muted-foreground underline-offset-4 hover:underline inline-block py-2 lg:py-0"
         >
           Voltar ao login
         </Link>

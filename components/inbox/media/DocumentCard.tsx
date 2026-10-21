@@ -21,7 +21,7 @@ export function DocumentCard({ messageId, mime, sizeBytes, storagePath, isOutbou
       rel="noreferrer"
       aria-label={`Baixar ${label} (${formatBytes(sizeBytes)})`}
       className={cn(
-        "flex w-60 items-center gap-3 rounded-lg p-2 transition-colors",
+        "flex w-60 max-w-full items-center gap-3 rounded-lg p-2 transition-colors",
         isOutbound
           ? "bg-primary-foreground/10 hover:bg-primary-foreground/20"
           : "bg-background/60 hover:bg-background",

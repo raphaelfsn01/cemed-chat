@@ -81,7 +81,7 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
                 <TableCell>
                   <div className="font-medium">{m.full_name ?? m.email ?? m.user_id.slice(0, 8)}</div>
                   {m.email ? (
-                    <div className="text-xs text-muted-foreground">{m.email}</div>
+                    <div className="whitespace-nowrap text-xs text-muted-foreground">{m.email}</div>
                   ) : null}
                 </TableCell>
                 <TableCell>

@@ -112,7 +112,7 @@ Novo`;
   it("lê CHANGELOG.md real e encontra 1.0.0 com requiresAttention", () => {
     // Sem try/catch: se falhar, é informação crítica, não ruído.
     // Usa __dirname do teste, não process.cwd() que é frágil.
-    const realChangelog = readFileSync(join(__dirname, "../../CHANGELOG.md"), "utf8");
+    const realChangelog = readFileSync(join(__dirname, "__fixtures__/changelog-real.md"), "utf8");
     const section = extractChangelogSection(realChangelog, "1.0.0");
     expect(section).not.toBeNull();
     expect(section?.version).toBe("1.0.0");
@@ -129,7 +129,7 @@ Novo`;
   });
 
   it("body NÃO contém o bloco de atenção do CHANGELOG.md real (heading)", () => {
-    const realChangelog = readFileSync(join(__dirname, "../../CHANGELOG.md"), "utf8");
+    const realChangelog = readFileSync(join(__dirname, "__fixtures__/changelog-real.md"), "utf8");
     const section = extractChangelogSection(realChangelog, "1.0.0");
     expect(section?.requiresAttention).toContain("Node 22");
     expect(section?.body).not.toContain("Node 22 é obrigatório");
@@ -150,10 +150,10 @@ Node 22 é obrigatório.
 });
 
 describe("markdownParaTextoSimples", () => {
-  // Contra o CHANGELOG.md REAL, não um fixture inventado — o revisor apontou
+  // Contra o CHANGELOG.md REAL (cópia do último, removido no rebrand), não um fixture inventado — o revisor apontou
   // com razão que um fixture escrito por quem implementa evita justo os
   // casos reais (negrito, crase, lista) que o changelog de verdade usa.
-  const realChangelog = readFileSync(join(__dirname, "../../CHANGELOG.md"), "utf8");
+  const realChangelog = readFileSync(join(__dirname, "__fixtures__/changelog-real.md"), "utf8");
 
   it("limpa negrito e crase do bloco de atenção real, sem sumir com o conteúdo", () => {
     const section = extractChangelogSection(realChangelog, "1.0.0");

@@ -42,7 +42,7 @@ export function NavHub({ group, isPlatformAdmin, role, title, subtitle }: NavHub
   const secoes = hubSections(group, isPlatformAdmin, role);
 
   return (
-    <div className="flex h-full flex-col gap-8 p-6">
+    <div className="flex h-full flex-col gap-8 lg:p-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}

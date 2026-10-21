@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_APP_NAME, resolveBranding } from "@/lib/branding";
+import { DEFAULT_APP_NAME, resolveBranding, resolveSupportEmail } from "@/lib/branding";
 
 const RAIZ = process.cwd();
 
@@ -11,7 +11,7 @@ describe("resolveBranding", () => {
     expect(resolveBranding(undefined, undefined)).toEqual({
       name: DEFAULT_APP_NAME,
       logoUrl: null,
-      initial: "D",
+      initial: "C",
     });
   });
 
@@ -45,6 +45,20 @@ describe("resolveBranding", () => {
   });
 });
 
+describe("resolveSupportEmail", () => {
+  it("sem SUPPORT_EMAIL não há e-mail — a tela manda falar com o responsável", () => {
+    // Vazio chega como string (a chave declarada no .env sem valor), não como
+    // undefined. Um "mailto:" vazio seria um link que não leva a lugar nenhum.
+    expect(resolveSupportEmail(undefined)).toBeNull();
+    expect(resolveSupportEmail("")).toBeNull();
+    expect(resolveSupportEmail("   ")).toBeNull();
+  });
+
+  it("devolve o e-mail configurado, aparado", () => {
+    expect(resolveSupportEmail("  contato@exemplo.com.br  ")).toBe("contato@exemplo.com.br");
+  });
+});
+
 describe("guarda de white-label (self-host)", () => {
   const branding = fs.readFileSync(path.join(RAIZ, "lib/branding.ts"), "utf8");
   const publicEnvScript = fs.readFileSync(
@@ -71,28 +85,46 @@ describe("guarda de white-label (self-host)", () => {
     expect(publicEnvScript).toMatch(/APP_LOGO_URL:\s*env\.APP_LOGO_URL/);
   });
 
-  it("a marca não voltou a ser hardcoded na interface", () => {
-    // Varre as superfícies que o usuário final vê. `app/design/` fica de fora:
-    // é o showcase interno do design system, onde o nome do produto é o assunto.
+  it("o nome do projeto original não volta ao código que vira tela, e-mail, PDF ou arquivo servido", () => {
+    // O CEMED Chat é fork do DeskcommCRM (ver NOTICE). O nome antigo saía em
+    // e-mail, no PDF LGPD do paciente e em contato de suporte por string solta,
+    // fora do branding(). As exceções abaixo são casadas pelo TOKEN, não pelo
+    // arquivo: um "DeskcommCRM" novo num arquivo que já tem o cookie reprova.
+    const IDENTIFICADORES_MANTIDOS: Record<string, string> = {
+      "sb-deskcomm-auth": "cookie de sessão — trocar desloga todo mundo",
+      "deskcomm-impersonate": "cookie de impersonação do super-admin",
+      "deskcomm-theme": "chave do tema no localStorage — trocar zera a preferência de cada pessoa",
+      "deskcomm.show_ai_citations": "chave de debug no localStorage",
+      "deskcomm.designshowcase.v1": "chave do showcase /design no localStorage",
+    };
+    const ARQUIVOS_DE_PROCEDENCIA: Record<string, string> = {
+      "lib/agent-engine/db/repository.ts": "comentário do porte Vendaval → DeskcommCRM",
+      "lib/system/changelog.test.ts": "fixture do CHANGELOG real do projeto original",
+    };
+
     const alvos: string[] = [];
-    const varrer = (dir: string) => {
+    const varrer = (dir: string, aceita: (rel: string) => boolean) => {
       for (const entrada of fs.readdirSync(path.join(RAIZ, dir), { withFileTypes: true })) {
         const rel = path.posix.join(dir, entrada.name);
-        if (rel.startsWith("app/design")) continue;
-        if (entrada.isDirectory()) varrer(rel);
-        else if (rel.endsWith(".tsx")) alvos.push(rel);
+        if (entrada.isDirectory()) varrer(rel, aceita);
+        else if (aceita(rel)) alvos.push(rel);
       }
     };
-    varrer("app");
-    varrer("components");
+    const codigo = (rel: string) => /\.tsx?$/.test(rel);
+    for (const dir of ["app", "components", "lib", "hooks"]) varrer(dir, codigo);
+    varrer("supabase/templates", () => true);
+    varrer("public", (rel) => !/\.(png|jpe?g|gif|webp|ico)$/.test(rel));
 
-    const reincidentes = alvos.filter((f) =>
-      /Deskcomm/.test(fs.readFileSync(path.join(RAIZ, f), "utf8")),
-    );
+    const reincidentes: string[] = [];
+    for (const f of alvos) {
+      if (f in ARQUIVOS_DE_PROCEDENCIA) continue;
+      const tokens = fs.readFileSync(path.join(RAIZ, f), "utf8").match(/[\w.-]*deskcomm[\w.-]*/gi) ?? [];
+      for (const t of tokens) if (!(t in IDENTIFICADORES_MANTIDOS)) reincidentes.push(`${f}: ${t}`);
+    }
     expect(
       reincidentes,
-      `estes arquivos voltaram a fixar a marca na interface — use branding() de lib/branding.ts:\n` +
-        reincidentes.map((f) => `  ${f}`).join("\n"),
+      `o nome do projeto original voltou — para o nome da marca use branding() de lib/branding.ts:\n` +
+        reincidentes.map((r) => `  ${r}`).join("\n"),
     ).toEqual([]);
   });
 });

@@ -160,6 +160,10 @@ const schema = z.object({
   // O <PublicEnvScript/> injeta os valores em runtime.
   APP_NAME: z.string().optional().default(""),
   APP_LOGO_URL: z.string().optional().default(""),
+  // E-mail de suporte mostrado nas telas de conta suspensa e de cobrança. Vazio =
+  // a tela diz "fale com o responsável pelo sistema". Sem validação de formato de
+  // propósito: um erro de digitação aqui não pode derrubar o boot do app.
+  SUPPORT_EMAIL: z.string().optional().default(""),
 });
 
 let parsed = schema.safeParse(process.env);

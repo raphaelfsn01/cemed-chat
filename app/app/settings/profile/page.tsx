@@ -9,7 +9,7 @@ export default async function ProfilePage() {
   // Read locale/timezone from raw user meta if present (loadAuthUser doesn't include them).
   // We pass safe defaults that the form re-syncs on submit.
   return (
-    <div className="flex h-full flex-col gap-6 p-6">
+    <div className="flex h-full flex-col gap-6 lg:p-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Perfil</h1>
         <p className="text-sm text-muted-foreground">

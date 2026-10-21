@@ -9,6 +9,19 @@
    Verde Limão #BDD44A — ver --color-cta). Estrutura de variáveis idêntica
    ao deskcomCRM original, só os valores de cor mudam — nenhum componente
    precisa ser tocado.
+
+   Contraste (WCAG AA, 2026-10-21): o Teal Principal #00909C dá 3,84:1 com
+   branco — passa como ELEMENTO de interface (≥3:1), reprova como TEXTO e como
+   fundo de texto branco (≥4,5:1; o axe derrubava o botão "Entrar"). Por isso:
+   - texto e fundo de botão usam #007480 (--color-accent-600): o tom mais
+     próximo do original (menor distância de cor em OKLab, ΔE 8,6) que passa
+     4,5:1 em TODOS os pares de texto do app — branco sobre ele 5,51; ele sobre branco
+     5,51, sobre #f5f5f5 5,06, sobre o accent-soft 4,52, sobre o próprio teal
+     a 10% (badges) 4,78;
+   - o #00909C original segue no sistema como --color-accent-500, onde basta
+     3:1: anel de foco e bordas (3,84 sobre branco; o #1BAEB4 anterior dava
+     2,71 e reprovava como indicador de foco).
+   Recalcular com qualquer ferramenta de contraste WCAG 2.x antes de mexer.
    Light + dark drawn separately (NOT inverted).
    ───────────────────────────────────────────────────────────────────────── */
 
@@ -21,22 +34,29 @@
 
   /* Text (light) — Texto da marca CEMED */
   --color-text: #333333;
-  --color-text-muted: #737373;
+  /* #707070, não #737373: o cinza anterior dava 4,35:1 sobre o #f5f5f5 das
+     superfícies (badges, chips, linhas) — abaixo dos 4,5:1 de texto AA, e o
+     axe reprovava. #707070 é o tom mais próximo que passa: 4,54 sobre
+     #f5f5f5, 4,95 sobre branco, 4,52 sobre o accent-50. */
+  --color-text-muted: #707070;
   --color-text-subtle: #a3a3a3;
 
   /* Borders (light) */
   --color-border: #e8e8e8;
   --color-border-strong: #d4d4d4;
 
-  /* Accent — Teal CEMED (11 stops). 400 = Teal Claro, 600 = Teal Principal
-     (default), 700 = Teal Escuro (hover/contraste) — valores oficiais da marca. */
+  /* Accent — Teal CEMED (11 stops). 400 = Teal Claro, 500 = Teal Principal
+     oficial (#00909C — anel de foco/bordas, onde 3:1 basta), 600 = default de
+     texto e botão (#007480, versão AA do Teal Principal — ver cabeçalho),
+     700 = Teal Escuro oficial. O hover do light usa o 800: o 700 oficial é
+     um pouco MAIS CLARO que o 600 novo, e o botão clarearia no hover. */
   --color-accent-50:  #eaf7f8;
   --color-accent-100: #d2eef0;
   --color-accent-200: #a6dee2;
   --color-accent-300: #79cdd3;
   --color-accent-400: #3ccccc;
-  --color-accent-500: #1baeb4;
-  --color-accent-600: #00909c;
+  --color-accent-500: #00909c;
+  --color-accent-600: #007480;
   --color-accent-700: #187878;
   --color-accent-800: #135f5f;
   --color-accent-900: #0f4747;
@@ -44,7 +64,7 @@
   --color-accent: var(--color-accent-600);
   --color-accent-fg: #ffffff;
   --color-accent-soft: var(--color-accent-100);
-  --color-accent-hover: var(--color-accent-700);
+  --color-accent-hover: var(--color-accent-800);
 
   /* CTA — Verde Limão da marca CEMED (ex.: botão de WhatsApp), separado do
      accent teal de propósito: a marca usa as duas cores com papéis distintos. */
@@ -176,8 +196,8 @@
   --color-accent-200: #a6dee2;
   --color-accent-300: #79cdd3;
   --color-accent-400: #3ccccc;
-  --color-accent-500: #1baeb4;
-  --color-accent-600: #00909c;
+  --color-accent-500: #00909c;
+  --color-accent-600: #007480;
   --color-accent-700: #187878;
   --color-accent-800: #135f5f;
   --color-accent-900: #0f4747;
@@ -270,6 +290,27 @@
     text-rendering: optimizeLegibility;
   }
 
+  /*
+   * Zoom do iOS: o Safari amplia a página ao focar um campo com fonte menor
+   * que 16px, e não desfaz ao sair — no celular o operador termina com a
+   * inbox cortada dos dois lados. A condição do zoom é o toque, não a largura,
+   * por isso `pointer: coarse` (cobre iPad também) e não um breakpoint.
+   *
+   * É regra global, e não `text-base` nos primitivos, por dois motivos medidos:
+   * 34 campos crus (`<input>`/`<textarea>`/`<select>`) não passam pelos
+   * primitivos, e qualquer `className="text-sm"` de quem consome o primitivo
+   * venceria no tailwind-merge. O `:not(...)` com as classes ≥16px evita
+   * ENCOLHER o que já é grande (os dígitos do MFA são `text-lg`); e a
+   * especificidade dele (0,1,1) é o que faz a regra vencer o `.text-sm`.
+   */
+  @media (pointer: coarse) {
+    input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], .text-base, .text-lg, .text-xl, .text-2xl, .text-3xl),
+    textarea:not(.text-base, .text-lg, .text-xl, .text-2xl, .text-3xl),
+    select {
+      font-size: 16px;
+    }
+  }
+
   code, kbd, pre, samp {
     font-family: var(--font-mono), ui-monospace, "SFMono-Regular", Menlo,
       Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -347,7 +388,7 @@
    desenha para dentro da própria caixa e não depende do overflow do pai.
    Provado na tela nos três cenários (claro, escuro, reduce) —
    `evidence/wave3-pulso/`. */
-@keyframes deskcomm-card-pulse {
+@keyframes card-pulse {
   from {
     border-color: var(--color-accent);
   }
@@ -360,7 +401,7 @@
    evento (key = contador de pulsos), e é a remontagem que faz a animação
    recomeçar. Alternar classe no mesmo nó não reinicia animação em CSS. */
 .card-pulse {
-  animation: deskcomm-card-pulse var(--duration-slow) var(--ease-out) 1;
+  animation: card-pulse var(--duration-slow) var(--ease-out) 1;
   border: 2px solid transparent;
   border-radius: inherit;
   box-sizing: border-box;

@@ -18,7 +18,8 @@ export default function InviteTeamPage() {
           <p className="font-medium">Resend não configurado.</p>
           <p className="mt-1">
             Convites serão registrados localmente, mas o email não será enviado. Configure
-            <code className="mx-1">RESEND_API_KEY</code> para envio real.
+            <code className="mx-1">RESEND_API_KEY</code> e
+            <code className="mx-1">RESEND_FROM_EMAIL</code> para envio real.
           </p>
         </div>
       ) : null}

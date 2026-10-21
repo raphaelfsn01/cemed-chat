@@ -1,8 +1,8 @@
 /**
  * Camada de apresentacao do catalogo de tools — pacotes de capacidade e risco.
  *
- * Existe porque o publico que configura um agente no DeskcommCRM e dono de
- * clinica, de loja, de imobiliaria — nao engenheiro. `crm_move_lead_stage` nao
+ * Existe porque o publico que configura um agente no CEMED Chat e gente da
+ * clinica — recepcao, gestao — nao engenheiro. `crm_move_lead_stage` nao
  * configura nada para essa pessoa.
  *
  * Duas razoes para agrupar em PACOTES em vez de listar tool por tool:

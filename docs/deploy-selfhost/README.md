@@ -1,4 +1,4 @@
-# DeskcommCRM self-hosted — instalação em VPS (com agente de IA)
+# CEMED Chat self-hosted — instalação em VPS (com agente de IA)
 
 > Sistema operacional de vendas open source com agente SDR de IA integrado
 > (WhatsApp via WAHA) — pra qualquer negócio que vende conversando.
@@ -23,7 +23,7 @@
 ## 1. Clonar e configurar
 
 ```bash
-git clone https://github.com/deskcommcrm/deskcommcrm.git && cd deskcommcrm
+git clone https://github.com/raphaelfsn01/cemed-chat.git && cd cemed-chat
 cp .env.hostgator.example .env   # o template de produção (o .env.example é o de dev)
 ```
 
@@ -155,7 +155,7 @@ de `supabase/templates/` (mesmo link `token_hash` acima).
 ## 6. Operação
 
 - **Backup diário** (do seu crontab na VPS):
-  `0 3 * * * /caminho/repo/scripts/backup-db.sh /var/backups/deskcomm`
+  `0 3 * * * /caminho/repo/scripts/backup-db.sh /var/backups/cemed-chat`
   (restaure com `pg_restore --clean --no-owner -d "$SUPABASE_DB_URL" arquivo.dump`)
 - **Flywheel** (auto-melhoria): o worker julga conversas reais a cada 6h
   (`FLYWHEEL_INTERVAL_MS`) e grava PROPOSTAS de melhoria de prompt em

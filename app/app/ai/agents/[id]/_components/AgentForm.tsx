@@ -637,7 +637,7 @@ export function AgentForm(props: Props) {
           {/* Limits */}
           <Card className="space-y-3 p-4">
             <h3 className="text-sm font-medium">Freios de segurança</h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label htmlFor="max_steps">Ações por atendimento (1 a 25)</Label>
                 <Input

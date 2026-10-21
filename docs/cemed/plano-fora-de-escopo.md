@@ -183,6 +183,10 @@ continua útil.
 
 ## 7. Billing placeholder com marca errada (A, inofensivo)
 
+> **E-mail resolvido em 2026-10-21** (rebrand para CEMED): a tela não tem mais endereço fixo; mostra
+> `SUPPORT_EMAIL` do `.env`, ou "fale com o responsável pelo sistema" quando vazio. A pergunta
+> sobre tirar a tela do menu continua aberta.
+
 **O que é:** tela de billing 100% placeholder.
 
 **Onde vive:** `app/app/settings/billing/page.tsx` — texto *"Em breve — Fase 2. Billing entra na

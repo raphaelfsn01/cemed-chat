@@ -12,5 +12,5 @@ services:
       dockerfile: Dockerfile
       # Sem args: a imagem é genérica (NEXT_PUBLIC_* viram placeholder no build
       # e os valores reais entram em runtime via env_file).
-    image: ${APP_IMAGE:-deskcomm-app:local}
+    image: ${APP_IMAGE:-cemed-chat-app:local}
     pull_policy: never

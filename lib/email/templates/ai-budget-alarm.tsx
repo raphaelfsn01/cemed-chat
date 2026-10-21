@@ -4,6 +4,8 @@
  * Triggered by `workers/ai-budget-checker.cron.ts` when the monthly consumption
  * crosses `alarm_threshold_pct` and once per 24h thereafter.
  */
+import { branding } from "@/lib/branding";
+
 export interface BudgetAlarmEmailOptions {
   pct: number;
   consumedCents: number;
@@ -27,7 +29,7 @@ export function buildBudgetAlarmEmail(opts: BudgetAlarmEmailOptions): {
   text: string;
 } {
   const pctStr = `${opts.pct.toFixed(2)}%`;
-  const subject = `Alerta IA: orçamento atingiu ${pctStr} — DeskcommCRM`;
+  const subject = `Alerta IA: orçamento atingiu ${pctStr} — ${branding().name}`;
   const orgLine = opts.orgName
     ? `<p style="margin:0 0 16px;font-size:14px;color:#57534e">Organização: <strong>${escapeHtml(opts.orgName)}</strong></p>`
     : "";

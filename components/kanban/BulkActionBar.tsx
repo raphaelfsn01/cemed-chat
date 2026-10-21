@@ -113,7 +113,9 @@ export function BulkActionBar({
 
   return (
     <>
-      <div className="sticky bottom-4 z-30 mx-auto flex w-fit items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 shadow-md">
+      {/* `max-w-full` + `flex-wrap`: no celular as seis ações não cabem numa
+          linha. O `bottom` respeita a barra de gestos do iPhone (safe-area). */}
+      <div className="sticky bottom-[max(var(--space-4),env(safe-area-inset-bottom))] z-30 mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 shadow-md">
         <span className="text-sm font-medium">
           {selectedIds.length} selecionado{selectedIds.length > 1 ? "s" : ""}
         </span>

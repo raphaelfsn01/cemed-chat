@@ -8,7 +8,7 @@ import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { ConnectionHealthDot } from "@/components/connections/ConnectionHealthDot";
 import { VersionFooter } from "@/components/shell/VersionFooter";
-import { branding } from "@/lib/branding";
+import { BRAND_MARK_SRC, branding } from "@/lib/branding";
 import { GRUPO_NO_RODAPE, NAV_GROUPS, sidebarGroups } from "@/lib/navigation/registry";
 
 /**
@@ -20,6 +20,32 @@ import { GRUPO_NO_RODAPE, NAV_GROUPS, sidebarGroups } from "@/lib/navigation/reg
  * Configurações e das abas de IA, que mantinham suas próprias listas.
  */
 export function Sidebar({ collapsed }: { collapsed: boolean }) {
+  return (
+    // `hidden lg:flex`: abaixo de 1024px o trilho fixo comeria 240px de uma tela
+    // de 390 — o mesmo menu abre como gaveta pelo hambúrguer da TopBar
+    // (MobileNav). Tablet em retrato (768) também fica com a gaveta: com o
+    // trilho, sobram 528px, e o inbox de duas colunas não cabe.
+    <aside
+      className={cn(
+        "fixed inset-y-0 left-0 z-30 hidden flex-col border-r bg-card transition-[width] duration-200 lg:flex",
+        collapsed ? "w-16" : "w-60",
+      )}
+    >
+      <NavegacaoPrincipal collapsed={collapsed} />
+    </aside>
+  );
+}
+
+interface NavegacaoPrincipalProps {
+  collapsed: boolean;
+  /** Dentro da gaveta do celular: alvos de toque maiores e sem o botão de recolher. */
+  naGaveta?: boolean;
+  /** Fecha a gaveta ao tocar num destino — inclusive o da página atual. */
+  aoNavegar?: () => void;
+}
+
+/** Corpo do menu — o mesmo no trilho do desktop e na gaveta do celular. */
+export function NavegacaoPrincipal({ collapsed, naGaveta = false, aoNavegar }: NavegacaoPrincipalProps) {
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
   const { user, activeOrg } = useAuth();
@@ -31,13 +57,11 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
 
   const brand = branding();
 
+  // Toque pede alvo maior que mouse: 40px na gaveta, contra ~32px no trilho.
+  const alvo = naGaveta && "min-h-10";
+
   return (
-    <aside
-      className={cn(
-        "fixed inset-y-0 left-0 z-30 flex flex-col border-r bg-card transition-[width] duration-200",
-        collapsed ? "w-16" : "w-60",
-      )}
-    >
+    <>
       <div className={cn("flex items-center border-b px-4 h-14", collapsed ? "justify-center" : "justify-start")}>
         {brand.logoUrl && !collapsed ? (
           // <img> em vez de next/image de propósito: a URL vem do .env de quem hospeda,
@@ -52,13 +76,13 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
             className="h-7 w-auto max-w-[10rem] object-contain"
           />
         ) : (
-          <span className={cn("font-semibold tracking-tight", collapsed && "sr-only")}>
-            {brand.name}
-          </span>
-        )}
-        {collapsed && (
-          <span aria-hidden className="text-lg font-bold text-primary">
-            {brand.initial}
+          <span className="flex items-center gap-2">
+            {/* alt vazio: o nome ao lado (visível ou sr-only) já é o rótulo. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={BRAND_MARK_SRC} alt="" className="h-6 w-6 shrink-0" />
+            <span className={cn("font-semibold tracking-tight", collapsed && "sr-only")}>
+              {brand.name}
+            </span>
           </span>
         )}
       </div>
@@ -87,6 +111,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                     <li key={item.href}>
                       <Link
                         href={item.href}
+                        onClick={aoNavegar}
                         title={collapsed ? item.label : undefined}
                         aria-current={isActive ? "page" : undefined}
                         className={cn(
@@ -95,6 +120,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                             ? "bg-accent text-accent-foreground"
                             : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
                           collapsed && "justify-center px-2",
+                          alvo,
                         )}
                       >
                         <Icon size={18} weight={isActive ? "fill" : "regular"} aria-hidden />
@@ -112,6 +138,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                   <li>
                     <Link
                       href={group.hub.href}
+                      onClick={aoNavegar}
                       title={collapsed ? group.hub.label : undefined}
                       aria-current={pathname === group.hub.href ? "page" : undefined}
                       className={cn(
@@ -120,6 +147,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                           ? "bg-accent text-accent-foreground"
                           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
                         collapsed && "justify-center px-2",
+                        alvo,
                       )}
                     >
                       <ArrowRight size={18} aria-hidden />
@@ -136,6 +164,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         {rodape && (
           <Link
             href={rodape.href}
+            onClick={aoNavegar}
             title={collapsed ? rodape.label : undefined}
             aria-current={pathname.startsWith(rodape.href) ? "page" : undefined}
             className={cn(
@@ -144,6 +173,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                 ? "bg-accent text-accent-foreground"
                 : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
               collapsed && "justify-center px-2",
+              alvo,
             )}
           >
             <Gear size={18} aria-hidden />
@@ -151,20 +181,22 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
           </Link>
         )}
         <VersionFooter collapsed={collapsed} />
-        <button
-          type="button"
-          onClick={() => startTransition(() => toggleSidebar(collapsed))}
-          disabled={isPending}
-          className={cn(
-            "flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-            collapsed && "justify-center px-2",
-          )}
-          aria-label={collapsed ? "Expandir sidebar" : "Recolher sidebar"}
-        >
-          {collapsed ? <CaretDoubleRight size={14} aria-hidden /> : <CaretDoubleLeft size={14} aria-hidden />}
-          {!collapsed && <span>Recolher</span>}
-        </button>
+        {!naGaveta && (
+          <button
+            type="button"
+            onClick={() => startTransition(() => toggleSidebar(collapsed))}
+            disabled={isPending}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+              collapsed && "justify-center px-2",
+            )}
+            aria-label={collapsed ? "Expandir sidebar" : "Recolher sidebar"}
+          >
+            {collapsed ? <CaretDoubleRight size={14} aria-hidden /> : <CaretDoubleLeft size={14} aria-hidden />}
+            {!collapsed && <span>Recolher</span>}
+          </button>
+        )}
       </div>
-    </aside>
+    </>
   );
 }

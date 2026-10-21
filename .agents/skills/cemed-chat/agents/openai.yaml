@@ -1,0 +1,6 @@
+interface:
+  display_name: "CEMED Chat"
+  short_description: "Repo-specific patterns and workflows for CEMED Chat"
+  default_prompt: "Use the CEMED Chat repo skill to follow existing architecture, testing, and workflow conventions."
+policy:
+  allow_implicit_invocation: true

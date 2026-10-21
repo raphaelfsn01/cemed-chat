@@ -60,6 +60,7 @@ export function MfaForm({ next }: MfaFormProps) {
 
   return (
     <form
+      method="post"
       onSubmit={(e) => {
         e.preventDefault();
         submit();
@@ -89,6 +90,7 @@ export function MfaForm({ next }: MfaFormProps) {
 
       <Button
         type="submit"
+        size="touch"
         className="w-full"
         disabled={isPending || locked || code.length !== 6}
       >
@@ -96,7 +98,7 @@ export function MfaForm({ next }: MfaFormProps) {
       </Button>
 
       <div className="text-center text-sm">
-        <Link href={recoveryHref} className="text-muted-foreground underline-offset-4 hover:underline">
+        <Link href={recoveryHref} className="text-muted-foreground underline-offset-4 hover:underline inline-block py-2 lg:py-0">
           Perdi acesso ao autenticador
         </Link>
       </div>

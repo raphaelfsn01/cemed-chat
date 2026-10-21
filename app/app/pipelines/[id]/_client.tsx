@@ -74,11 +74,11 @@ export function PipelinePageClient({
       data-refetch-divergencias={seguranca.divergencias}
       data-refetch-em={seguranca.ultimaVerificacao ?? ""}
     >
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">
+      <header className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="min-w-0 truncate text-2xl font-semibold tracking-tight">
           {data?.pipeline.name ?? initialName}
         </h1>
-        <Button onClick={() => setNewOpen(true)} disabled={!data}>
+        <Button size="touch" onClick={() => setNewOpen(true)} disabled={!data}>
           <Plus size={16} className="mr-2" /> Novo Lead
         </Button>
       </header>

@@ -8,7 +8,7 @@
  * assim que as jornadas passaram a rodar juntas. Copiar um helper não duplica o
  * código: duplica o defeito, e divide o conserto.
  *
- * Os dois defeitos, ambos medidos com o app carregado na tela:
+ * Os defeitos, todos medidos com o app carregado na tela:
  *
  *   1. **Não percebia o sucesso da tentativa anterior.** Se o MFA já tinha passado,
  *      o campo de dígito não existe mais, e `click()` fica esperando até o timeout
@@ -60,6 +60,11 @@ export async function loginAdmin(page: Page): Promise<void> {
   }
 
   await page.goto("/login");
+  // Defeito 3: clicar antes da hidratação. Sem o React no ar, quem envia o
+  // formulário é o navegador (e não a server action), e a página só recarrega —
+  // o `waitForURL(/login/mfa)` abaixo esperava 30s por nada. No WebKit, que
+  // hidrata mais devagar, isso derrubava o login de vez em quando.
+  await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
   await page.locator("#email").fill(creds.users.admin!.email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
