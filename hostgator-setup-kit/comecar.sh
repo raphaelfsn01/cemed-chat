@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# DeskcommCRM — a porta de entrada.
+# CEMED Chat — a porta de entrada.
 #
 # Diferente do install.sh, este script roda no SEU computador (macOS, Linux ou
 # WSL), antes de existir servidor. Ele responde a única pergunta que trava quem
@@ -34,14 +34,14 @@ c_ylw() { paint 33 "$*"; }
 c_dim() { paint 2  "$*"; }
 die()   { paint 31 "✖ $*"; exit 1; }
 
-LOGO_COLS=71
+LOGO_COLS=43
 banner() {
   local cols linha ch
   cols="$(tput cols 2>/dev/null || echo 80)"
   case "$cols" in ''|*[!0-9]*) cols=80;; esac
   printf '\n'
   if [ "$COLOR" != 1 ] || [ "$cols" -lt $((LOGO_COLS + 2)) ]; then
-    paint 1 "  DESKCOMM"
+    paint 1 "  CEMED"
   else
     [ -t 1 ] && printf '\033[2J\033[H'
     while IFS= read -r linha; do
@@ -49,17 +49,17 @@ banner() {
       for ch in ═ ╗ ║ ╝ ╚ ╔; do linha="${linha//$ch/$'\033[2m'$ch$'\033[0m'}"; done
       printf '  %s\n' "$linha"
     done <<'LOGO'
-██████╗ ███████╗███████╗██╗  ██╗ ██████╗ ██████╗ ███╗   ███╗███╗   ███╗
-██╔══██╗██╔════╝██╔════╝██║ ██╔╝██╔════╝██╔═══██╗████╗ ████║████╗ ████║
-██║  ██║█████╗  ███████╗█████╔╝ ██║     ██║   ██║██╔████╔██║██╔████╔██║
-██║  ██║██╔══╝  ╚════██║██╔═██╗ ██║     ██║   ██║██║╚██╔╝██║██║╚██╔╝██║
-██████╔╝███████╗███████║██║  ██╗╚██████╗╚██████╔╝██║ ╚═╝ ██║██║ ╚═╝ ██║
-╚═════╝ ╚══════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝     ╚═╝
+ ██████╗███████╗███╗   ███╗███████╗██████╗
+██╔════╝██╔════╝████╗ ████║██╔════╝██╔══██╗
+██║     █████╗  ██╔████╔██║█████╗  ██║  ██║
+██║     ██╔══╝  ██║╚██╔╝██║██╔══╝  ██║  ██║
+╚██████╗███████╗██║ ╚═╝ ██║███████╗██████╔╝
+ ╚═════╝╚══════╝╚═╝     ╚═╝╚══════╝╚═════╝
 LOGO
   fi
   printf '\n'
-  c_dim "  Agentes de IA que atendem no WhatsApp, dentro do seu CRM."
-  c_dim "  Open-source · roda no seu servidor · os dados são seus."
+  c_dim "  Central de atendimento por WhatsApp da CEMED Saúde."
+  c_dim "  Roda no servidor da clínica · os dados são da clínica."
 }
 
 # ── Entrada do teclado ──────────────────────────────────────────────────────
