@@ -9,11 +9,11 @@
 #
 # Uso:
 #   bash comecar.sh
-#   curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/hostgator-setup-kit/comecar.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/raphaelfsn01/cemed-chat/main/hostgator-setup-kit/comecar.sh | bash
 #
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/melgarafael/DeskcommCRM.git}"
+REPO_URL="${REPO_URL:-https://github.com/raphaelfsn01/cemed-chat.git}"
 # Link de parceria com a HostGator. Mesma URL e mesmo rótulo do README: uma
 # promessa só, num lugar só — duas redações da mesma oferta viram duas ofertas.
 VPS_URL="https://www.hostgator.com.br/52708-141-3-52.html"
@@ -145,8 +145,8 @@ comando_de_instalacao() {
 
   Já dentro do servidor, cole isto:
 
-       git clone ${REPO_URL} deskcommcrm
-       cd deskcommcrm
+       git clone ${REPO_URL} cemed-chat
+       cd cemed-chat
        bash hostgator-setup-kit/install.sh
 
   O instalador cuida do resto: instala o Docker se faltar, cria o banco,

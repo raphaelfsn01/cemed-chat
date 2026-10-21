@@ -269,7 +269,7 @@ load_env() {
 # Vai pro diretório do projeto (onde está o compose) e carrega o .env.
 enter_project() {
   if [ -f "$COMPOSE" ]; then :;
-  elif [ -f "deskcommcrm/$COMPOSE" ]; then cd deskcommcrm;
+  elif [ -f "cemed-chat/$COMPOSE" ]; then cd cemed-chat;
   else die "Não achei $COMPOSE. Rode a partir da pasta do projeto."; fi
   [ -f .env ] || die "Falta o .env (rode install.sh primeiro)."
   load_env .env
@@ -391,7 +391,7 @@ setup_update_agent_cron() {
 
   # `cd` explícito: o agent.sh chama enter_project(), que acha o projeto pelo
   # DIRETÓRIO CORRENTE. No cron o CWD é o home do dono do crontab — sem o cd,
-  # a linha só funciona por acidente (instalação padrão em /root/deskcommcrm) e
+  # a linha só funciona por acidente (instalação padrão em /root/cemed-chat) e
   # morre calada a cada 5 minutos em qualquer REPO_DIR customizado ou /opt.
   # A assinatura legada inclui o PROJECT_DIR: é o que distingue a linha desta
   # instalação da linha de uma vizinha, que roda o mesmo agent.sh em outra pasta.
