@@ -132,6 +132,16 @@ echo "==> modo INSTALL: aplicando baseline.sql com ON_ERROR_STOP=1"
 psql_install < "$BASELINE"
 echo "    ✓ install ok"
 
+# Banco "sujo" como o de um clone que nasceu no Supabase cloud: lá os default
+# privileges dão EXECUTE de toda função nova a anon e authenticated, e foi assim
+# que a produção ficou com seis `security definer` abertas à anon key enquanto o
+# install limpo daqui passava verde (auditoria de 2026-10-21). O update abaixo
+# tem que curar isso sozinho; os invariantes de varredura conferem depois.
+echo "==> banco SUJO: EXECUTE de toda função de public para anon e authenticated"
+psql_install <<'SQL'
+grant execute on all functions in schema public to anon, authenticated;
+SQL
+
 echo "==> modo UPDATE: re-aplicando baseline.sql sem ON_ERROR_STOP (idempotência)"
 docker exec -i "$CONTAINER" psql -U postgres -d postgres -q -f - < "$BASELINE" >/dev/null
 echo "    ✓ update ok (re-apply terminou; erros tolerados por contrato)"
