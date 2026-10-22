@@ -93,6 +93,9 @@ SNAP_ID=$REPLY_LINE
 snap_query "$(bk_stats_sql)"
 [[ $REPLY_LINE == '{'* ]] || bk_die "contagem falhou: $REPLY_LINE"
 META=$REPLY_LINE
+# O META (com a lista de grants) passa de 128 KiB na produção: maior que o limite
+# do Linux para UM argumento (MAX_ARG_STRLEN). Ele só entra no jq pelo stdin.
+meta() { printf '%s' "$META" | jq "$@"; }
 
 sep="','"
 BUCKETS_SQL="array['${MEDIA_BUCKETS// /$sep}']"
@@ -129,12 +132,13 @@ for f in "${FILES[@]}"; do
   files_json=$(jq -c --arg f "$f" --argjson bytes "$(stat -c %s "$WORK/$f")" \
     --arg sha "$(sha256sum "$WORK/$f" | cut -d' ' -f1)" '.[$f] = {bytes: $bytes, sha256: $sha}' <<<"$files_json")
 done
-jq -n --argjson meta "$META" --slurpfile media "$WORK/media-summary.json" --argjson files "$files_json" \
+# shellcheck disable=SC2016 # o texto entre aspas simples é filtro do jq (meta = jq)
+meta --slurpfile media "$WORK/media-summary.json" --argjson files "$files_json" \
   --arg stamp "$STAMP" --arg rid "$BK_RID" --arg pgdump "$(pg_dump --version)" \
   --arg commit "$(git -C "$HERE" rev-parse --short HEAD 2>/dev/null || echo desconhecido)" \
   --arg buckets "$MEDIA_BUCKETS" \
   '{formato: 1, stamp: $stamp, execucao: $rid, commit: $commit, pg_dump: $pgdump,
-    banco: $meta, midia: ($media[0] + {buckets: ($buckets | split(" "))}), arquivos: $files}' \
+    banco: ., midia: ($media[0] + {buckets: ($buckets | split(" "))}), arquivos: $files}' \
   | age -r "$AGE_RECIPIENT" -o "$WORK/manifest.json.age"
 FILES+=(manifest.json.age)
 
@@ -151,12 +155,12 @@ done
 
 # ── 6. Sucesso ──
 human() { numfmt --to=iec --suffix=B "$1"; }
-tables=$(jq '.tables | length' <<<"$META")
-rows=$(jq '[.tables[]] | add // 0' <<<"$META")
+tables=$(meta '.tables | length')
+rows=$(meta '[.tables[]] | add // 0')
 media=$(cat "$WORK/media-summary.json")
 summary="enviado ${PREFIXES[*]}
 db=$(human "$(stat -c %s "$WORK/db.dump.age")") roles=$(human "$(stat -c %s "$WORK/roles.sql.age")") midia=$(human "$(stat -c %s "$WORK/media.tar.age")")
-tabelas=$tables linhas=$rows policies=$(jq .policies <<<"$META") grants=$(jq '.acl_relations + .acl_functions' <<<"$META")
+tabelas=$tables linhas=$rows policies=$(meta .policies) grants=$(meta '.acl_relations + .acl_functions')
 midia_objetos=$(jq .objetos <<<"$media") midia_ausentes=$(jq .ausentes <<<"$media") midia_erros=$(jq .erros <<<"$media")
 duracao=$(($(date +%s) - T0))s"
 bk_log "$summary"

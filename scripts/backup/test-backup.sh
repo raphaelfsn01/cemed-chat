@@ -151,6 +151,16 @@ insert into storage.objects (bucket_id, name, metadata) values
   ('whatsapp-media', 'org1/conv1/sumiu.jpg', '{"size":10}'),
   ('skill-assets', 'fora.txt', '{"size":15}');
 SQL
+# Volume de produção: a lista de grants do manifest passa de 128 KiB (o limite do
+# Linux para um argumento), como na VPS — o primeiro backup real quebrou aí.
+src_sql postgres <<SQL
+do \$\$ begin
+  for i in 1..150 loop
+    execute format('create table public.volume_%s (id int)', i);
+    execute format('grant all on public.volume_%s to anon, authenticated, service_role', i);
+  end loop;
+end \$\$;
+SQL
 src_sql postgres <<SQL
 create table public.pacientes (
   id uuid primary key default gen_random_uuid(),
@@ -234,6 +244,8 @@ check "dump tem o REVOKE/GRANT da função" grep -q 'ACL public FUNCTION fn_test
 check "dump mantém o dono supabase_auth_admin" grep -q 'OWNER TO supabase_auth_admin' "$T/out/dump.sql"
 check "roles.sql cria supabase_auth_admin" grep -q 'CREATE ROLE supabase_auth_admin' "$T/out/roles.sql"
 check "roles.sql sem senha" bash -c "! grep -qi 'PASSWORD ' '$T/out/roles.sql'"
+check "manifest: lista de grants maior que 128 KiB (volume de produção)" \
+  test "$(jq -c .banco.acl "$T/out/manifest.json" | wc -c)" -gt 131072
 check "manifest: 250 linhas em public.pacientes" test "$(jq '.banco.tables["public.pacientes"]' "$T/out/manifest.json")" = 250
 check "manifest: 1 linha em auth.users" test "$(jq '.banco.tables["auth.users"]' "$T/out/manifest.json")" = 1
 check "manifest: policies e grants contados" test "$(jq '.banco.policies >= 1 and .banco.acl_relations > 0 and .banco.acl_functions > 0' "$T/out/manifest.json")" = true
