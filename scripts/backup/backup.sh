@@ -22,7 +22,7 @@
 # Mídia que não baixa não segura o banco: o conjunto sobe inteiro, o INDICE.json
 # lista os objetos com erro e o /fail dispara assim mesmo (código 3).
 #
-#   scripts/backup/backup.sh
+#   bash scripts/backup/backup.sh
 #
 # Teste ponta a ponta (sem tocar em nada externo): scripts/backup/test-backup.sh
 set -Eeuo pipefail

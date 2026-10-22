@@ -128,7 +128,7 @@ permissão não for 600 ou se ele tiver chave desconhecida.
 
 ```bash
 free -h
-~/dev/cemed-chat/scripts/backup/backup.sh
+bash ~/dev/cemed-chat/scripts/backup/backup.sh
 ```
 
 Confira três coisas: os 4 arquivos em `daily/<UTC>/` e em `monthly/<mês>/` no painel do R2,
@@ -141,14 +141,40 @@ Faça a seção 5 uma vez agora. Ela prova a chave do gerenciador e o caminho in
 
 ### 4.7 Agendamento
 
-```bash
-crontab -e
-15 8 * * * nice -n 10 ionice -c3 timeout 30m /home/raphael/dev/cemed-chat/scripts/backup/backup.sh >> /home/raphael/.config/cemed-backup/backup.log 2>&1
+Os scripts são chamados **sempre com `bash`**: funciona com ou sem o bit de execução no
+checkout (um `git` com `core.fileMode=false` ou uma cópia por zip perde o `+x`).
+
+Rotação do log, no próprio usuário (sem root), em `~/.config/cemed-backup/logrotate.conf`:
+
+```
+/home/raphael/.config/cemed-backup/backup.log {
+  weekly
+  rotate 8
+  compress
+  missingok
+  notifempty
+  create 0600 raphael raphael
+}
 ```
 
-O relógio da VPS está em Europe/Berlin, e o `cron` do Ubuntu não respeita `CRON_TZ`. 08:15
-de Berlim cai na madrugada da clínica (03:15 ou 04:15 BRT), longe do
-`kb-conversations-batch` (00:30 BRT). Na manhã seguinte, confirme o 2º ping verde.
+Linha do crontab (`crontab -e`), uma só, marcada com `# cemed-backup`:
+
+```
+15 8 * * * /usr/sbin/logrotate -s /home/raphael/.config/cemed-backup/logrotate.state /home/raphael/.config/cemed-backup/logrotate.conf; flock -n /home/raphael/.config/cemed-backup/cron.lock nice -n 10 ionice -c3 timeout 30m bash /home/raphael/dev/cemed-chat/scripts/backup/backup.sh >> /home/raphael/.config/cemed-backup/backup.log 2>&1 # cemed-backup
+```
+
+- **Horário.** O relógio da VPS está em Europe/Berlin, e o `cron` do Ubuntu
+  (3.0pl1) não respeita `CRON_TZ`. 08:15 de Berlim = **03:15 BRT** no horário de verão
+  europeu e **04:15 BRT** no inverno. As duas caem na faixa de tráfego mínimo (02h–08h BRT
+  no log do Caddy) e longe do `kb-conversations-batch` (00:30 BRT).
+- **Dois locks.** O `flock` da linha usa `cron.lock`, e o `backup.sh` tem o próprio
+  (`backup.lock`). Não use o mesmo arquivo nos dois: o script acharia que já há outro
+  backup rodando e sairia sem fazer nada.
+- **Desfazer.** `crontab -l | grep -v '# cemed-backup' | crontab -`, ou restaure a cópia
+  do crontab feita antes da instalação.
+- **Na manhã seguinte:** `tail -n 15 ~/.config/cemed-backup/backup.log` termina com
+  `enviado daily/<UTC>`, o R2 tem o conjunto novo em `daily/`, e o `cemed-backup-diario`
+  está verde no horário certo.
 
 Antes de dar a instalação por encerrada, crie um lembrete trimestral no calendário
 (janeiro, abril, julho e outubro) para o teste da seção 5.
@@ -156,9 +182,9 @@ Antes de dar a instalação por encerrada, crie um lembrete trimestral no calend
 ## 5. Teste trimestral de restauração
 
 ```bash
-~/dev/cemed-chat/scripts/backup/restore-test.sh           # o diário completo mais recente
+bash ~/dev/cemed-chat/scripts/backup/restore-test.sh      # o diário completo mais recente
 # ou um conjunto específico:
-~/dev/cemed-chat/scripts/backup/restore-test.sh monthly/2026-11/2026-11-01T071500Z
+bash ~/dev/cemed-chat/scripts/backup/restore-test.sh monthly/2026-11/2026-11-01T071500Z
 ```
 
 O script pede a **chave privada** (cole do gerenciador). Ela não aparece na tela, não vai
@@ -205,7 +231,7 @@ Storage dependem do GoTrue e do Storage do Supabase.
    do gerenciador de senhas (seção 4.1).
 3. **Restaure** (pede `RESTAURAR` e a chave privada):
    ```bash
-   ~/dev/cemed-chat/scripts/backup/restore-supabase.sh       # ou com o PREFIXO do conjunto
+   bash ~/dev/cemed-chat/scripts/backup/restore-supabase.sh  # ou com o PREFIXO do conjunto
    ```
    O script recusa destino que não esteja vazio. Depois:
    - carrega os **dados** de `auth` (usuários, hashes de senha, fatores de MFA);

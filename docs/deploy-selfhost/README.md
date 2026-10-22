@@ -159,7 +159,8 @@ de `supabase/templates/` (mesmo link `token_hash` acima).
   e a mídia do Storage, cifra com [age](https://age-encryption.org) **antes** de
   sair da VPS e sobe para um bucket S3/R2, avisando o healthchecks.io.
   Credenciais num arquivo 600 fora do repo (modelo: `scripts/backup/backup.env.example`);
-  agende no crontab, por exemplo `15 8 * * * nice -n 10 ionice -c3 timeout 30m /caminho/repo/scripts/backup/backup.sh`.
+  agende no crontab chamando com `bash` (funciona mesmo sem o bit de execução), por exemplo
+  `15 8 * * * nice -n 10 ionice -c3 timeout 30m bash /caminho/repo/scripts/backup/backup.sh`.
   Restauração: `scripts/backup/restore-test.sh` (teste num Postgres descartável, sem rede)
   e `scripts/backup/restore-supabase.sh` (desastre: carrega num projeto Supabase novo).
   Roteiro completo em [`docs/runbooks/backup-e-restauracao.md`](../runbooks/backup-e-restauracao.md).
