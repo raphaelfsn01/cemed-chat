@@ -241,9 +241,19 @@ export async function sendMessageHandler(
   // consulta certa (ver lib/channels/archived).
   const convSelect = (comArchived: boolean) =>
     `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, contacts:contact_id(phone_number, wa_identity, is_blocked), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
+  // `organization_id` do CONTEXTO, não da linha: o MCP, a automação e o agente
+  // chamam com o service role, e sem este filtro um token da org A enviava
+  // WhatsApp numa conversa da org B pelo número dela (auditoria de 2026-10-21, A6).
+  const buscarConversa = (comArchived: boolean) =>
+    supabase
+      .from("conversations")
+      .select(convSelect(comArchived))
+      .eq("id", input.conversation_id)
+      .eq("organization_id", ctx.organization_id)
+      .maybeSingle();
   const { data: conv, error: convErr } = await queryTolerantToMissingArchived(
-    () => supabase.from("conversations").select(convSelect(true)).eq("id", input.conversation_id).maybeSingle(),
-    () => supabase.from("conversations").select(convSelect(false)).eq("id", input.conversation_id).maybeSingle(),
+    () => buscarConversa(true),
+    () => buscarConversa(false),
   );
 
   if (convErr) {
