@@ -16,7 +16,7 @@
 #   TARGET_SUPABASE_URL=https://<ref-novo>.supabase.co
 #   TARGET_SERVICE_ROLE_KEY=...
 #
-#   scripts/backup/restore-supabase.sh [PREFIXO]     # padrão: diário mais recente
+#   bash scripts/backup/restore-supabase.sh [PREFIXO]     # padrão: diário mais recente
 set -Eeuo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"

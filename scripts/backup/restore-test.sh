@@ -13,8 +13,8 @@
 # A chave privada NÃO fica na VPS: o script pede para colar (não aparece na tela,
 # não vai para o histórico nem para o disco; só passa pelo stdin do contêiner).
 #
-#   scripts/backup/restore-test.sh                    # diário mais recente
-#   scripts/backup/restore-test.sh monthly/2026-11/2026-11-01T081500Z
+#   bash scripts/backup/restore-test.sh                    # diário mais recente
+#   bash scripts/backup/restore-test.sh monthly/2026-11/2026-11-01T081500Z
 #
 # Precisa só de docker, curl, python3 e jq no host — o age roda no contêiner.
 set -Eeuo pipefail
