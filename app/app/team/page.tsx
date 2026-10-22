@@ -21,7 +21,7 @@ export default async function TeamPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Equipe</h1>
           <p className="text-sm text-muted-foreground">
-            Gestão de membros, roles e atendimento do tenant.
+            Quem trabalha aqui, com qual papel, e como o atendimento é dividido.
           </p>
         </div>
         {isAdmin ? (

@@ -10,7 +10,7 @@ export default function InviteTeamPage() {
       <header>
         <h2 className="text-2xl font-semibold tracking-tight">Convidar time</h2>
         <p className="text-sm text-muted-foreground">
-          Cole até 20 emails (um por linha) e escolha a role compartilhada.
+          Cole até 20 emails (um por linha) e escolha o papel que todos vão ter.
         </p>
       </header>
       {!emailReady ? (

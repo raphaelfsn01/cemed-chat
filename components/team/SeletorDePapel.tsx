@@ -55,10 +55,11 @@ export function SeletorDePapel<P extends Role>({
         </SelectTrigger>
         <SelectContent className="w-80 max-w-[calc(100vw-2rem)]">
           {papeis.map((papel) => (
-            <SelectItem key={papel} value={papel} className="py-2">
+            <SelectItem key={papel} value={papel} className="group py-2">
               <span className="flex flex-col items-start gap-0.5">
                 <span className="font-medium">{ROTULO_DO_PAPEL[papel]}</span>
-                <span className="whitespace-normal text-xs text-muted-foreground">
+                {/* Na opção destacada o fundo é a cor de destaque: a frase acompanha o texto dela. */}
+                <span className="whitespace-normal text-xs text-muted-foreground group-focus:text-accent-foreground">
                   {DESCRICAO_DO_PAPEL[papel]}
                 </span>
               </span>
