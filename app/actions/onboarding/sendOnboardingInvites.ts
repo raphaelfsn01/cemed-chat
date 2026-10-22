@@ -14,6 +14,7 @@ import { z } from "zod";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 import { signInviteToken, INVITE_TTL_SECONDS } from "@/lib/auth/invite-token";
+import { ROTULO_DO_PAPEL } from "@/lib/auth/types";
 import { buildInviteEmail } from "@/lib/email/templates/invite";
 import { sendEmail } from "@/lib/email/resend";
 import { inviteOnboardingSchema } from "@/lib/schemas/onboarding";
@@ -93,7 +94,7 @@ export async function sendOnboardingInvites(payload: InvitePayload): Promise<Sen
       inviterName,
       orgName: ctx.orgName,
       acceptUrl,
-      role: inv.role,
+      role: ROTULO_DO_PAPEL[inv.role],
       expiresAt,
     });
     const result = await sendEmail({

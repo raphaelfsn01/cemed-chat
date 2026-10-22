@@ -29,14 +29,36 @@ export const ROLE_RANK: Record<Role, number> = {
 /** Papéis que uma PESSOA pode ter. Espelha `user_organizations_role_check`. */
 export const PAPEIS_HUMANOS: ReadonlyArray<Role> = ["viewer", "agent", "manager", "admin"];
 
-/** Rótulo pt-BR para quem configura. `ai_operator` nunca aparece em seletor de time. */
+/**
+ * Nome do papel em português leigo — a ÚNICA fonte de rótulo da interface
+ * (convite, Equipe, transferência, admin, e-mail de convite). O valor gravado
+ * no banco não muda; só o que a equipe lê. `ai_operator` nunca aparece em
+ * seletor de time.
+ */
 export const ROTULO_DO_PAPEL: Record<Role, string> = {
-  viewer: "Somente leitura",
+  viewer: "Consulta",
   agent: "Atendente",
-  ai_operator: "Assistente com autonomia de operação",
+  ai_operator: "Operador de IA (técnico)",
   manager: "Gerente",
   admin: "Administrador",
 };
+
+/** Uma frase do que o papel pode fazer, mostrada ao escolher o papel. */
+export const DESCRICAO_DO_PAPEL: Record<Role, string> = {
+  viewer: "Só vê as conversas e os dados, não altera nada.",
+  agent: "Responde pacientes e trabalha nos contatos e no funil.",
+  ai_operator: "Papel do robô de atendimento publicado. Não é para pessoas.",
+  manager: "Atendente + distribui o atendimento, configura o robô de atendimento, vê a auditoria.",
+  admin: "Controle total (equipe, WhatsApp, LGPD, organização).",
+};
+
+/**
+ * Rótulo de um papel que chegou como texto livre (token de convite, linha do
+ * banco). Papel desconhecido aparece cru em vez de sumir.
+ */
+export function rotuloDoPapel(papel: string): string {
+  return Object.hasOwn(ROTULO_DO_PAPEL, papel) ? ROTULO_DO_PAPEL[papel as Role] : papel;
+}
 
 /**
  * Escopo de visualização de conversas por atendente (G4-01, spec 13 §3.5).

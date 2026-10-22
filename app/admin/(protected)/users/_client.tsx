@@ -10,6 +10,8 @@ import {
 } from "@/components/ui/select";
 import { useAdminUsers, type AdminUsersFilters } from "@/hooks/useAdminUsers";
 import { useAdminTenants } from "@/hooks/useAdminTenants";
+import { ROTULO_DO_PAPEL } from "@/lib/auth/types";
+import { ROLES } from "@/lib/schemas/team";
 import {
   UsersTableAdmin,
   UsersTableAdminSkeleton,
@@ -104,15 +106,16 @@ export function UsersClient() {
         </Select>
 
         <Select value={filters.role ?? "all"} onValueChange={handleRole}>
-          <SelectTrigger className="sm:w-40" aria-label="Filtrar por role">
-            <SelectValue placeholder="Role" />
+          <SelectTrigger className="sm:w-40" aria-label="Filtrar por papel">
+            <SelectValue placeholder="Papel" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Todos os roles</SelectItem>
-            <SelectItem value="admin">Admin</SelectItem>
-            <SelectItem value="manager">Manager</SelectItem>
-            <SelectItem value="agent">Agente</SelectItem>
-            <SelectItem value="viewer">Viewer</SelectItem>
+            <SelectItem value="all">Todos os papéis</SelectItem>
+            {[...ROLES].reverse().map((papel) => (
+              <SelectItem key={papel} value={papel}>
+                {ROTULO_DO_PAPEL[papel]}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>

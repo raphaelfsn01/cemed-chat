@@ -20,6 +20,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { inviteMemberSchema, validateRequest } from "@/lib/schemas";
 import { signInviteToken, INVITE_TTL_SECONDS } from "@/lib/auth/invite-token";
+import { ROTULO_DO_PAPEL } from "@/lib/auth/types";
 import { buildInviteEmail } from "@/lib/email/templates/invite";
 import { sendEmail } from "@/lib/email/resend";
 
@@ -108,7 +109,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       inviterName,
       orgName: activeOrg.name,
       acceptUrl,
-      role: inv.role,
+      role: ROTULO_DO_PAPEL[inv.role],
       expiresAt,
     });
 
