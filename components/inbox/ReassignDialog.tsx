@@ -21,18 +21,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useTransferConversation } from "@/hooks/inbox/useTransferConversation";
+import { rotuloDoPapel } from "@/lib/auth/types";
 
 interface Props {
   conversationId: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }
-
-const ROLE_LABEL: Record<string, string> = {
-  agent: "Atendente",
-  manager: "Gestor",
-  admin: "Admin",
-};
 
 /**
  * G3-01 — transferência imediata (decisão G1-06d): reatribui a conversa a
@@ -81,7 +76,7 @@ export function ReassignDialog({ conversationId, open, onOpenChange }: Props) {
                   <SelectItem key={m.user_id} value={m.user_id}>
                     {m.full_name ?? `Atendente ${m.user_id.slice(0, 8)}`}
                     <span className="ml-1 text-muted-foreground">
-                      · {ROLE_LABEL[m.role] ?? m.role}
+                      · {rotuloDoPapel(m.role)}
                     </span>
                   </SelectItem>
                 ))}

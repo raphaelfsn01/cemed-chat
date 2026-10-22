@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { CaretLeft } from "@/lib/ui/icons";
 import { useAdminUser } from "@/hooks/useAdminUser";
+import { rotuloDoPapel } from "@/lib/auth/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -32,17 +33,10 @@ const ROLE_VARIANTS: Record<
   viewer: "neutral",
 };
 
-const ROLE_LABELS: Record<string, string> = {
-  admin: "Admin",
-  manager: "Manager",
-  agent: "Agente",
-  viewer: "Viewer",
-};
-
 function RoleBadge({ role }: { role: string }) {
   return (
     <Badge variant={ROLE_VARIANTS[role] ?? "neutral"}>
-      {ROLE_LABELS[role] ?? role}
+      {rotuloDoPapel(role)}
     </Badge>
   );
 }

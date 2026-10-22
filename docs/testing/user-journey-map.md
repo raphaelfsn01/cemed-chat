@@ -116,6 +116,7 @@ MFA obrigatório pra admin logo após o wizard (`MfaEnrollGate`).
 | J5.7 | Revogar atendente | perde acesso na hora (próxima navegação) |
 | J5.8 | Revogar último admin | bloqueado com explicação |
 | J5.9 | Link de convite expirado/adulterado | tela clara, sem stack |
+| J5.10 | Admin escolhe o papel no convite e confere a Equipe | nomes leigos (Consulta, Atendente, Gerente, Administrador) com a frase de cada um; nunca `viewer/agent/manager/admin`; a lista aberta cabe em 360px e a frase da opção destacada fica legível. **PASS** (local, 2026-10-22, `tests/e2e/papeis-rotulos.spec.ts`, desktop + 360px) |
 
 ## J6 — Webhooks: receber, automatizar, provar `[P0]`
 

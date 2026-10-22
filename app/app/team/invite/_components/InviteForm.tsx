@@ -6,13 +6,7 @@ import { useInviteMembers } from "@/hooks/team/useInviteMembers";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SeletorDePapel } from "@/components/team/SeletorDePapel";
 import { ROLES, type Role } from "@/lib/schemas/team";
 
 interface ResultState {
@@ -69,19 +63,8 @@ export function InviteForm() {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="role">Role</Label>
-          <Select value={role} onValueChange={(v) => setRole(v as Role)}>
-            <SelectTrigger id="role">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ROLES.map((r) => (
-                <SelectItem key={r} value={r}>
-                  {r}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Label htmlFor="role">Papel</Label>
+          <SeletorDePapel id="role" papeis={ROLES} value={role} onChange={setRole} mostrarDescricao />
         </div>
         <Button type="submit" disabled={invite.isPending}>
           {invite.isPending ? "Enviando…" : "Enviar convites"}

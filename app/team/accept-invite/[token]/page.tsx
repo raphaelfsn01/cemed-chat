@@ -14,6 +14,7 @@
 import Link from "next/link";
 
 import { verifyInviteToken } from "@/lib/auth/invite-token";
+import { rotuloDoPapel } from "@/lib/auth/types";
 import { authRateLimited, AUTH_LIMITS } from "@/lib/auth/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 import { AceitarConviteForm } from "@/components/team/AceitarConviteForm";
@@ -67,7 +68,7 @@ export default async function AcceptInvitePage({ params }: PageProps) {
       <Shell>
         <h1 className="text-xl font-semibold">Você foi convidado</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Para aceitar o convite como <strong>{payload.role}</strong>, entre com o email{" "}
+          Para aceitar o convite como <strong>{rotuloDoPapel(payload.role)}</strong>, entre com o email{" "}
           <strong>{payload.email}</strong>.
         </p>
         <p className="mt-4 text-sm">Já tem conta?</p>
@@ -113,7 +114,7 @@ export default async function AcceptInvitePage({ params }: PageProps) {
     <Shell>
       <h1 className="text-xl font-semibold">Aceitar convite</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        Você foi convidado para entrar como <strong>{payload.role}</strong>. Confirme abaixo para
+        Você foi convidado para entrar como <strong>{rotuloDoPapel(payload.role)}</strong>. Confirme abaixo para
         ativar seu acesso.
       </p>
       <AceitarConviteForm token={token} />

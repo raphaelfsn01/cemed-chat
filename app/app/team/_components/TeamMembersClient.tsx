@@ -22,13 +22,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -36,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { RotuloDoPapel, SeletorDePapel } from "@/components/team/SeletorDePapel";
 import { ROLES, type Role } from "@/lib/schemas/team";
 import { DotsThree } from "@/lib/ui/icons";
 
@@ -69,7 +63,7 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
           <TableHeader>
             <TableRow>
               <TableHead>Membro</TableHead>
-              <TableHead>Role</TableHead>
+              <TableHead>Papel</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Última atividade</TableHead>
               {canManage ? <TableHead className="w-[80px]" /> : null}
@@ -86,28 +80,15 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
                 </TableCell>
                 <TableCell>
                   {canManage && m.user_id !== currentUserId ? (
-                    <Select
-                      value={m.role}
-                      onValueChange={(v) =>
-                        changeRole.mutate({ userId: m.user_id, role: v as Role })
-                      }
-                    >
-                      <SelectTrigger
-                        className="w-[130px]"
-                        aria-label={`Papel de ${m.full_name ?? m.email ?? m.user_id}`}
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ROLES.map((r) => (
-                          <SelectItem key={r} value={r}>
-                            {r}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <SeletorDePapel
+                      papeis={ROLES}
+                      value={m.role as Role}
+                      onChange={(papel) => changeRole.mutate({ userId: m.user_id, role: papel })}
+                      aria-label={`Papel de ${m.full_name ?? m.email ?? m.user_id}`}
+                      triggerClassName="w-[150px]"
+                    />
                   ) : (
-                    <Badge variant="secondary">{m.role}</Badge>
+                    <RotuloDoPapel papel={m.role} />
                   )}
                 </TableCell>
                 <TableCell>
