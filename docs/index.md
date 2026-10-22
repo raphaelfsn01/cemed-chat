@@ -111,6 +111,7 @@ acessibilidade).
 | [`runbooks/deploy.md`](runbooks/deploy.md) | **Deploy em produção — os dois `-f` do compose, verificação pós-deploy** |
 | [`runbooks/waha-hostgator.md`](runbooks/waha-hostgator.md) | Runbook do WAHA na VPS do **projeto original** (WAHA Plus) — legado, seção 10. A produção da CEMED está no `CLAUDE.md` ("Infraestrutura desta VPS") e em `runbooks/deploy.md` |
 | [`runbooks/ai-credentials-rotation.md`](runbooks/ai-credentials-rotation.md) | Rotação de credenciais de IA |
+| [`runbooks/backup-e-restauracao.md`](runbooks/backup-e-restauracao.md) | **Backup externo cifrado (R2 + age), teste trimestral e restore de desastre num Supabase novo** |
 | [`../SECURITY.md`](../SECURITY.md) | Política de reporte de vulnerabilidade |
 
 ## 7. Testes e QA

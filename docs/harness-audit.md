@@ -121,6 +121,16 @@ O script existe e não é exercitado.
 
 ---
 
+### 6. Teste do backup/restauração fora do CI 🟡 · custo: ~20 linhas
+
+`bash scripts/backup/test-backup.sh` (2026-10-22) prova o backup externo e os dois
+restores ponta a ponta, com mais de 130 verificações e as sabotagens. Ele roda **só
+localmente**: precisa de Docker e de ~1,5 GB de RAM, e sobe o Postgres do Supabase,
+um gateway S3 e dublês. Um job não obrigatório no CI (ou nightly) pegaria regressão
+em `scripts/backup/`. Até lá, quem mexer ali roda o teste antes do PR. O R2 real e o
+healthchecks.io real só são provados na instalação (runbook
+`docs/runbooks/backup-e-restauracao.md`).
+
 ## Não pôde ser confirmado
 
 - Se `typecheck`/`lint`/`test:unit` **passam hoje** — o `node_modules` deste checkout está

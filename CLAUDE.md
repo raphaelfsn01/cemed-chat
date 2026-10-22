@@ -166,6 +166,7 @@ A equipe da clínica atende pelo celular. Toda tela nova nasce cabendo em 360px 
 | `supabase/migrations/` | Schema versionado |
 | `docs/runbooks/deploy.md` | **Deploy em produção — leia ANTES de mexer na VPS** (topologia Caddy × Traefik) |
 | `docs/runbooks/caddy-log-de-acesso.md` | Log de acesso do proxy: onde fica, o que é redigido, como consultar |
+| `docs/runbooks/backup-e-restauracao.md` | Backup externo cifrado (R2), teste trimestral de restauração e restore de desastre num Supabase novo |
 
 ---
 
@@ -232,6 +233,12 @@ operar a produção, valem estes fatos (levantados em 2026-10-20):
   - IA: sem `OPENAI_API_KEY`, RAG/embeddings e transcrição de áudio ficam
     desligados; AI Gateway e Anthropic só valem se as chaves estiverem
     preenchidas. O boot do app lista o que está faltando (`[env] No ...`).
+- **Backup do banco: externo e cifrado** (`scripts/backup/`, runbook
+  `docs/runbooks/backup-e-restauracao.md`): diário para o R2 com age, alerta no
+  healthchecks.io, teste de restauração trimestral. A chave privada **não** fica
+  na VPS. Instalação na VPS (apt `age`, chave, `backup.env`, cron) só por etapa,
+  com OK do Raphael. Até o cron rodar, o RPO segue infinito: o Supabase Free não
+  faz backup.
 - **Assinatura do webhook do WAHA não é exigida** (`WAHA_WEBHOOK_REQUIRE_SIGNATURE=false`,
   decisão tomada) — ver a seção WAHA acima.
 - **Atualização pela tela:** cron de 5 em 5 min roda `hostgator-setup-kit/agent.sh`
