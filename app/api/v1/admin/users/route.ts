@@ -4,6 +4,7 @@ import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { ROLES } from "@/lib/schemas/team";
 import { randomUUID } from "node:crypto";
 
 // ---------------------------------------------------------------------------
@@ -12,7 +13,7 @@ import { randomUUID } from "node:crypto";
 
 const querySchema = z.object({
   tenant_id: z.string().uuid().optional(),
-  role: z.enum(["viewer", "agent", "manager", "admin"]).optional(),
+  role: z.enum(ROLES).optional(),
   q: z.string().optional(),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),

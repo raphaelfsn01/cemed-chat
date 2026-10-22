@@ -7,7 +7,12 @@
  */
 import { z } from "zod";
 
-export const ROLES = ["viewer", "agent", "manager", "admin"] as const;
+/**
+ * Papéis que uma PESSOA recebe por convite ou troca de papel, na ordem da escala
+ * (`ROLE_RANK`). Igual a `PAPEIS_HUMANOS` de lib/auth/types.ts (um teste vigia);
+ * `ai_operator` fica de fora de propósito.
+ */
+export const ROLES = ["viewer", "agent", "coordinator", "manager", "admin"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const inviteMemberSchema = z.object({
