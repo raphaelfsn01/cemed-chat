@@ -4,6 +4,8 @@
  */
 import { z } from "zod";
 
+import { ROLES } from "@/lib/schemas/team";
+
 export const welcomeSchema = z.object({
   display_name: z.string().min(2).max(120),
   timezone: z.string().min(1).default("America/Sao_Paulo"),
@@ -70,7 +72,7 @@ export const inviteOnboardingSchema = z.object({
     .array(
       z.object({
         email: z.string().email(),
-        role: z.enum(["viewer", "agent", "manager", "admin"]),
+        role: z.enum(ROLES),
       }),
     )
     .min(1)

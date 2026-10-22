@@ -18,9 +18,10 @@ import { ROTULO_DO_PAPEL } from "@/lib/auth/types";
 import { buildInviteEmail } from "@/lib/email/templates/invite";
 import { sendEmail } from "@/lib/email/resend";
 import { inviteOnboardingSchema } from "@/lib/schemas/onboarding";
+import type { Role as RoleHumano } from "@/lib/schemas/team";
 import { requireOnboardingCtx, patchOnboardingState, OnboardingError } from "./_shared";
 
-type PapelHumano = "viewer" | "agent" | "manager" | "admin";
+type PapelHumano = RoleHumano;
 
 export type SendInvitesResult =
   | {

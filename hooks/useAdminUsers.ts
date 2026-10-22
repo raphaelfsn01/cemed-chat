@@ -1,6 +1,7 @@
 "use client";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
+import type { Role } from "@/lib/schemas/team";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,7 +24,7 @@ export interface AdminUserRow {
 export interface AdminUsersFilters {
   q?: string;
   tenant_id?: string;
-  role?: "viewer" | "agent" | "manager" | "admin";
+  role?: Role;
 }
 
 interface ListResponse {

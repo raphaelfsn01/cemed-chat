@@ -445,7 +445,7 @@ const listTeamShape = {};
 export const crmListTeamMembers: McpToolDefinition<typeof listTeamShape> = {
   name: "crm_list_team_members",
   description:
-    "Lista quem trabalha na organização: user_id, papel (viewer|agent|manager|admin) e se o convite ainda está pendente. " +
+    "Lista quem trabalha na organização: user_id, papel (viewer|agent|coordinator|manager|admin) e se o convite ainda está pendente. " +
     "É o user_id que crm_assign_conversation consome. Não devolve e-mail nem nome — o agente precisa saber a quem " +
     "direcionar, não a identidade pessoal de cada um. Somente leitura: mudar papel não é possível por aqui.",
   inputSchema: listTeamShape,

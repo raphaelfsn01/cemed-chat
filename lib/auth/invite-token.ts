@@ -25,6 +25,8 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { PAPEIS_HUMANOS, type Role } from "@/lib/auth/types";
+
 const ROTULO_DERIVACAO = "cemed-chat/invite-token/v1";
 
 function segredo(): string {
@@ -97,6 +99,11 @@ export function verifyInviteToken(token: string): InvitePayload | null {
   ) {
     return null;
   }
+
+  // Convite é para PESSOA: papel fora de PAPEIS_HUMANOS (ex.: `ai_operator`, papel
+  // de máquina) é recusado aqui, antes de qualquer escrita, em vez de depender só
+  // do CHECK de user_organizations.role.
+  if (!PAPEIS_HUMANOS.includes(payload.role as Role)) return null;
 
   if (payload.exp * 1000 < Date.now()) return null;
   return payload;
