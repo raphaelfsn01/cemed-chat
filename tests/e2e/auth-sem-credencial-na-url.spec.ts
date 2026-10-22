@@ -16,16 +16,6 @@ test.use({ javaScriptEnabled: false });
 
 const FORMULARIOS = [
   { rota: "/login", campos: { "#email": "alguem@exemplo.test", "#password": "SenhaSecreta123" }, botao: /entrar/i },
-  {
-    rota: "/signup",
-    campos: {
-      "#org_name": "Clinica Exemplo",
-      "#email": "alguem@exemplo.test",
-      "#password": "SenhaSecreta123",
-      "#password_confirm": "SenhaSecreta123",
-    },
-    botao: /criar conta/i,
-  },
 ];
 
 for (const f of FORMULARIOS) {

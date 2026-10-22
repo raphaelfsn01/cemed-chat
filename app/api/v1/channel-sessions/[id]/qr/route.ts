@@ -38,6 +38,10 @@ export async function GET(
   if (!user) return new NextResponse(null, { status: 401 });
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) return new NextResponse(null, { status: 403 });
+  // O QR pareia o número da clínica com o celular de quem o lê: só o admin o vê
+  // (auditoria de 2026-10-21, C4). Papel da membership, não requireRole: este QR
+  // também aparece no onboarding, antes do cadastro do TOTP.
+  if (activeOrg.role !== "admin") return new NextResponse(null, { status: 403 });
 
   const supabase = await createClient();
   const buscar = (colunas: string) =>

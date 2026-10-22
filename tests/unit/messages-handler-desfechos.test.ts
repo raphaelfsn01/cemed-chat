@@ -81,7 +81,7 @@ function conversationRow(shape: ConversationShape = {}): Row {
 
 /**
  * Fake de `SupabaseClient` com o mínimo que o handler encadeia:
- *   conversations: select().eq().maybeSingle() · update().eq()
+ *   conversations: select().eq(id).eq(organization_id).maybeSingle() · update().eq()
  *   messages:      insert().select().single() · update().eq().select().maybeSingle()
  *   rpc('emit_event')
  * O update é merge raso — igual ao que o Postgres faz com um SET de colunas.
@@ -99,7 +99,8 @@ function makeSupabase(
       if (table === 'conversations') {
         return {
           select: (cols?: string) => ({
-            eq: () => ({
+            // id e organization_id (o handler filtra a org do contexto — A6).
+            eq: () => ({ eq: () => ({
               maybeSingle: async () =>
                 opts.semColunaArquivada === true && (cols ?? '').includes('archived_at')
                   ? {
@@ -110,7 +111,7 @@ function makeSupabase(
                       },
                     }
                   : { data: conversation, error: null },
-            }),
+            }) }),
           }),
           update: () => ({ eq: async () => ({ error: null }) }),
         };

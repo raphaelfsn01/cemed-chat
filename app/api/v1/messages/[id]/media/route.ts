@@ -45,7 +45,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // Filtro explícito de organization_id por doutrina (defense-in-depth).
   const { data: msg, error } = await supabase
     .from("messages")
-    .select("id, media_url, media_mime, media_storage_path")
+    .select("id, direction, media_url, media_mime, media_storage_path")
     .eq("id", messageId)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
@@ -72,8 +72,9 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
 
   // Fallback: worker ainda não persistiu — proxy server-side do WAHA
-  // (o browser não alcança o WAHA nem tem a api key).
-  if (msg.media_url) {
+  // (o browser não alcança o WAHA nem tem a api key). Só para mídia RECEBIDA: a
+  // `media_url` de saída é escolhida por quem envia, e o WAHA não é a origem dela.
+  if (msg.media_url && msg.direction === "inbound") {
     try {
       const media = await fetchWahaMedia(msg.media_url, msg.media_mime);
       return new Response(new Uint8Array(media.buffer), {

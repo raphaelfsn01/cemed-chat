@@ -3,17 +3,21 @@
  *
  * Behavior matrix:
  *  - Invalid/expired token         → render error
- *  - Unauthenticated user          → render CTA → /login?next=...
+ *  - Unauthenticated user          → CTA → /login?next=... (já tem conta) E o
+ *                                    formulário de primeiro acesso (cria a senha;
+ *                                    substitui o /signup removido na auditoria C3)
  *  - Authenticated, email mismatch → render mismatch + sign-out CTA
- *  - Authenticated, email match    → form posts to Server Action which inserts
- *                                    membership and redirects to /app/inbox
+ *  - Authenticated, email match    → AceitarConviteForm → Server Action aplica o
+ *                                    convite (lib/team/aplicar-convite.ts) e
+ *                                    redireciona para /app/inbox
  */
 import Link from "next/link";
 
 import { verifyInviteToken } from "@/lib/auth/invite-token";
 import { authRateLimited, AUTH_LIMITS } from "@/lib/auth/rate-limit";
 import { createClient } from "@/lib/supabase/server";
-import { acceptInviteAction } from "@/app/actions/team/acceptInvite";
+import { AceitarConviteForm } from "@/components/team/AceitarConviteForm";
+import { CriarContaPeloConviteForm } from "@/components/team/CriarContaPeloConviteForm";
 
 export const dynamic = "force-dynamic";
 
@@ -63,15 +67,23 @@ export default async function AcceptInvitePage({ params }: PageProps) {
       <Shell>
         <h1 className="text-xl font-semibold">Você foi convidado</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Para aceitar o convite como <strong>{payload.role}</strong>, faça login com o email{" "}
+          Para aceitar o convite como <strong>{payload.role}</strong>, entre com o email{" "}
           <strong>{payload.email}</strong>.
         </p>
+        <p className="mt-4 text-sm">Já tem conta?</p>
         <Link
           href={`/login?next=${next}`}
-          className="mt-4 inline-flex h-11 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground lg:h-9"
+          className="mt-2 inline-flex h-11 items-center rounded-md border px-4 text-sm font-medium hover:bg-accent lg:h-9"
         >
           Fazer login
         </Link>
+        <div className="mt-6 border-t pt-6">
+          <h2 className="text-base font-semibold">Primeiro acesso</h2>
+          <p className="mb-4 mt-1 text-sm text-muted-foreground">
+            Crie sua senha para entrar. Ela vale para os próximos acessos.
+          </p>
+          <CriarContaPeloConviteForm token={token} email={payload.email} />
+        </div>
       </Shell>
     );
   }
@@ -97,11 +109,6 @@ export default async function AcceptInvitePage({ params }: PageProps) {
     );
   }
 
-  async function accept() {
-    "use server";
-    await acceptInviteAction(token);
-  }
-
   return (
     <Shell>
       <h1 className="text-xl font-semibold">Aceitar convite</h1>
@@ -109,14 +116,7 @@ export default async function AcceptInvitePage({ params }: PageProps) {
         Você foi convidado para entrar como <strong>{payload.role}</strong>. Confirme abaixo para
         ativar seu acesso.
       </p>
-      <form action={accept} className="mt-4">
-        <button
-          type="submit"
-          className="inline-flex h-11 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground lg:h-9"
-        >
-          Aceitar convite
-        </button>
-      </form>
+      <AceitarConviteForm token={token} />
     </Shell>
   );
 }

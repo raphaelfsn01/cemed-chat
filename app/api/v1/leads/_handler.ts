@@ -44,6 +44,28 @@ async function ownerPatchOrThrow(
   }
   if (!result.patch) return null;
 
+  if (result.patch.owner_user_id !== null) {
+    const { data: membro, error: membroErr } = await supabase
+      .from("user_organizations")
+      .select("user_id")
+      .eq("user_id", result.patch.owner_user_id)
+      .eq("organization_id", ctx.organization_id)
+      .is("revoked_at", null)
+      .maybeSingle();
+    if (membroErr) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, membroErr.message);
+    }
+    if (!membro) {
+      throw new ApiError(
+        422,
+        "validation_failed",
+        undefined,
+        ctx.requestId,
+        "Usuário não encontrado nesta organização.",
+      );
+    }
+  }
+
   if (result.patch.owner_agent_id !== null) {
     const { data: agent, error: agentErr } = await supabase
       .from("ai_agents")
@@ -68,6 +90,29 @@ async function ownerPatchOrThrow(
   }
 
   return result.patch;
+}
+
+/**
+ * `contact_id` do body tem que ser contato DESTA organização: com o service role
+ * (MCP, automação) nada mais impedia ligar o lead a um contato de outra org.
+ */
+async function contatoDaOrgOrThrow(supabase: SB, ctx: HandlerCtx, contactId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from("contacts")
+    .select("id")
+    .eq("id", contactId)
+    .eq("organization_id", ctx.organization_id)
+    .maybeSingle();
+  if (error) throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+  if (!data) {
+    throw new ApiError(
+      422,
+      "validation_failed",
+      undefined,
+      ctx.requestId,
+      "Contato não encontrado nesta organização.",
+    );
+  }
 }
 
 function actorAuditPayload(actor: Actor): {
@@ -138,6 +183,9 @@ export async function listLeadsHandler(
   let query = supabase
     .from("crm_leads")
     .select(LEAD_COLS)
+    // Sempre a org do contexto: pelo MCP (service role) a lista saía de TODAS as
+    // organizações (auditoria de 2026-10-21, A6).
+    .eq("organization_id", ctx.organization_id)
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(limit + 1);
@@ -185,6 +233,7 @@ export async function getLeadHandler(
     .from("crm_leads")
     .select(LEAD_COLS)
     .eq("id", leadId)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
   if (error) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
@@ -231,6 +280,8 @@ export async function createLeadHandler(
       "Stage não pertence ao pipeline informado.",
     );
   }
+
+  if (input.contact_id) await contatoDaOrgOrThrow(supabase, ctx, input.contact_id);
 
   // next position_in_stage = MAX + 1000.
   const { data: maxRow, error: maxErr } = await supabase
@@ -343,6 +394,7 @@ export async function updateLeadHandler(
     .from("crm_leads")
     .select("*")
     .eq("id", leadId)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
 
   if (selErr) {
@@ -351,6 +403,7 @@ export async function updateLeadHandler(
   if (!existing) {
     throw new ApiError(404, "not_found", undefined, ctx.requestId, "Lead não encontrado.");
   }
+  if (input.contact_id) await contatoDaOrgOrThrow(supabase, ctx, input.contact_id);
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (input.title !== undefined) patch.title = input.title;
@@ -376,6 +429,7 @@ export async function updateLeadHandler(
     .from("crm_leads")
     .update(patch)
     .eq("id", leadId)
+    .eq("organization_id", ctx.organization_id)
     .select(LEAD_COLS)
     .maybeSingle();
 

@@ -2,7 +2,7 @@
  * Rate limit da superfície de autenticação (issue #64).
  *
  * O `checkRateLimit` já existia e era usado em dois pontos (webhook de captação
- * e dispatcher de IA); login, signup, recuperação de senha e aceite de convite
+ * e dispatcher de IA); login, criação de conta, recuperação de senha e aceite de convite
  * ficaram sem nenhum limite — força bruta de senha e enumeração de token saíam
  * de graça. Aqui só se aplica o que já existe.
  *
@@ -58,7 +58,7 @@ function opaque(value: string): string {
 /**
  * `true` = barre a tentativa.
  *
- * @param action rótulo do bucket (`login`, `signup`, `reset`, `invite_accept`)
+ * @param action rótulo do bucket (`login`, `invite_account`, `reset`, `invite_accept`, `mfa`, `recovery`)
  * @param identifier e-mail ou token da tentativa; hasheado antes de virar chave
  */
 export async function authRateLimited(
@@ -107,7 +107,12 @@ export async function authRateLimited(
  * normal e ainda assim tirar o custo-zero do ataque:
  *  - login: quem erra a senha 5 vezes na mesma conta em 5 min quase sempre é
  *    script; o teto por IP é mais folgado por causa de NAT corporativo.
- *  - signup e convite: fluxos raros por pessoa, teto baixo.
+ *  - conta pelo convite e aceite: fluxos raros por pessoa, teto baixo.
+ *  - mfa: o código tem 6 dígitos (10⁶ combinações) — 5 erros por conta em 15 min
+ *    tiram a força bruta do alcance; o contador mora no Redis, não num cookie
+ *    que o cliente apaga (auditoria de 2026-10-21, M15).
+ *  - recovery: o código de recuperação APAGA o autenticador quando acerta, então
+ *    o teto é baixo por IP e por e-mail.
  */
 /** Teto de produção por IP no login. Congelado por teste — ver `LOGIN_IP_DEFAULT` abaixo. */
 const LOGIN_IP_DEFAULT = 60;
@@ -135,9 +140,11 @@ function loginIpLimit(): number {
 
 export const AUTH_LIMITS = {
   login: { ip: loginIpLimit(), id: 5, windowSec: 300 },
-  signup: { ip: 20, windowSec: 3600 },
+  invite_account: { ip: 20, id: 5, windowSec: 3600 },
   reset: { ip: 30, id: 3, windowSec: 3600 },
   invite_accept: { ip: 60, windowSec: 3600 },
+  mfa: { ip: 30, id: 5, windowSec: 900 },
+  recovery: { ip: 10, id: 5, windowSec: 3600 },
 } satisfies Record<string, AuthRateLimits>;
 
 export const __LOGIN_IP_DEFAULT_PARA_TESTE = LOGIN_IP_DEFAULT;
@@ -154,13 +161,33 @@ export const __LOGIN_IP_DEFAULT_PARA_TESTE = LOGIN_IP_DEFAULT;
  * distribui as tentativas por muitos IPs. Acertar na 3ª não custa nada.
  */
 export async function contaBloqueadaPorFalhas(email: string, limits: AuthRateLimits): Promise<boolean> {
-  if (limits.id === undefined) return false;
-  const atual = await peekRateLimit(`auth:login_fail:id:${opaque(email)}`, limits.windowSec);
-  return atual >= limits.id;
+  return bloqueadoPorFalhas("login", email, limits);
 }
 
 /** Registra uma senha errada no contador da conta. */
 export async function registrarFalhaDeLogin(email: string, limits: AuthRateLimits): Promise<void> {
+  await registrarFalha("login", email, limits);
+}
+
+/**
+ * O mesmo bloqueio por falha, para qualquer superfície (`mfa`, …): a consulta
+ * vem antes da verificação e o incremento só quando ela falha.
+ */
+export async function bloqueadoPorFalhas(
+  action: string,
+  identifier: string,
+  limits: AuthRateLimits,
+): Promise<boolean> {
+  if (limits.id === undefined) return false;
+  const atual = await peekRateLimit(`auth:${action}_fail:id:${opaque(identifier)}`, limits.windowSec);
+  return atual >= limits.id;
+}
+
+export async function registrarFalha(
+  action: string,
+  identifier: string,
+  limits: AuthRateLimits,
+): Promise<void> {
   if (limits.id === undefined) return;
-  await checkRateLimit(`auth:login_fail:id:${opaque(email)}`, limits.id, limits.windowSec);
+  await checkRateLimit(`auth:${action}_fail:id:${opaque(identifier)}`, limits.id, limits.windowSec);
 }

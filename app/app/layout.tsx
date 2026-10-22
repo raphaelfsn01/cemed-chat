@@ -78,7 +78,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         // Gate always mounted for MFA-required roles; it latches the blocking
         // decision client-side so the enroll Server Action's revalidation
         // can't tear down the recovery-codes screen mid-flow.
-        <MfaEnrollGate enrolled={enrolled}>{shell}</MfaEnrollGate>
+        //
+        // Sem autenticador, a PÁGINA não é renderizada (antes ela renderizava por
+        // trás do modal e o conteúdo ia no payload do RSC — o bloqueio era só
+        // visual). Depois do cadastro o gate segue travado até o modal recarregar.
+        <MfaEnrollGate enrolled={enrolled}>{enrolled ? shell : null}</MfaEnrollGate>
       ) : (
         shell
       )}

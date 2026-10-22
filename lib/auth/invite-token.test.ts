@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { beforeAll, describe, it, expect, vi } from "vitest";
 import { signInviteToken, verifyInviteToken, INVITE_TTL_SECONDS } from "./invite-token";
 
 const base = () => ({
@@ -10,11 +10,17 @@ const base = () => ({
 });
 
 describe("invite-token", () => {
+  beforeAll(() => {
+    vi.stubEnv("INVITE_TOKEN_SECRET", "s".repeat(64));
+  });
+
   it("sign+verify roundtrip recovers payload", () => {
     const payload = base();
     const token = signInviteToken(payload);
     const out = verifyInviteToken(token);
-    expect(out).toEqual(payload);
+    // `iat` entra na assinatura (emissão), além do payload original.
+    expect(out).toMatchObject(payload);
+    expect(typeof out?.iat).toBe("number");
   });
 
   it("returns null for expired token", () => {

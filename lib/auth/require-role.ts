@@ -20,6 +20,7 @@ import type { NextResponse } from "next/server";
 
 import { fail, type ApiError } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { precisaCadastrarMfa } from "@/lib/auth/mfa-gate";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK, type ActiveOrg, type AuthUser, type Role } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
@@ -79,6 +80,7 @@ export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promis
   }
 
   if (allowPlatformAdmin && user.is_platform_admin) {
+    if (precisaCadastrarMfa(user, undefined)) return mfaPendente(requestId);
     return { ok: true, user, org };
   }
 
@@ -110,5 +112,21 @@ export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promis
     };
   }
 
+  // O papel exige autenticador e ele não foi cadastrado: a senha sozinha não
+  // abre a API de admin (antes o cadastro era cobrado só por um modal na tela).
+  if (precisaCadastrarMfa(user, effectiveRole as Role)) return mfaPendente(requestId);
+
   return { ok: true, user, org: { ...org, role: effectiveRole as Role } };
+}
+
+function mfaPendente(requestId: string | undefined): RoleCheck {
+  return {
+    ok: false,
+    response: fail(
+      "mfa_enrollment_required",
+      "Cadastre o autenticador (verificação em duas etapas) para continuar.",
+      403,
+      { requestId },
+    ),
+  };
 }

@@ -4,6 +4,7 @@
  * UPDATEs scoped explicitly by `organization_id` resolved from the validated
  * session — no body-derived ids ever).
  */
+import { precisaCadastrarMfa } from "@/lib/auth/mfa-gate";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { OnboardingState } from "@/lib/schemas/onboarding";
@@ -32,11 +33,32 @@ export interface OnboardingCtx {
   email: string;
 }
 
+/**
+ * Contexto das actions de onboarding: SÓ admin da organização ativa.
+ *
+ * Antes (auditoria de 2026-10-21, C4) bastava estar logado: estas actions usam o
+ * service role e fazem coisas de admin — convidar com qualquer papel (o link de
+ * aceite volta na resposta quando não há e-mail configurado), renomear a org,
+ * criar e publicar agente. Um `viewer` se convidava como admin e virava admin.
+ *
+ * Antes de concluir o onboarding basta ser admin: é o primeiro acesso do dono,
+ * que ainda não cadastrou o autenticador (o cadastro é cobrado ao entrar no app).
+ * Depois de concluído, vale o mesmo de qualquer ação de admin: com autenticador.
+ */
 export async function requireOnboardingCtx(): Promise<OnboardingCtx> {
   const user = await loadAuthUser();
   if (!user) throw new OnboardingError("auth_required", "Auth required.");
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) throw new OnboardingError("no_active_org", "Sem organização ativa.");
+  if (activeOrg.role !== "admin") {
+    throw new OnboardingError("forbidden", "Só o admin da organização configura o início.");
+  }
+  if (precisaCadastrarMfa(user, activeOrg.role)) {
+    const { onboardedAt } = await loadOnboardingState(activeOrg.orgId);
+    if (onboardedAt) {
+      throw new OnboardingError("forbidden", "Cadastre o autenticador para continuar.");
+    }
+  }
   return {
     userId: user.id,
     orgId: activeOrg.orgId,

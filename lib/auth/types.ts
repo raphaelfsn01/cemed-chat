@@ -58,6 +58,12 @@ export interface AuthUser {
   avatar_url: string | null;
   is_platform_admin: boolean;
   organizations: UserOrgMembership[];
+  /**
+   * Tem fator TOTP verificado? Vem do `getUser()` (validado no GoTrue, não do
+   * cookie). `loadAuthUser` sempre preenche; ausente só em dublê de teste — e
+   * por isso o gate só barra o `false` explícito (`precisaCadastrarMfa`).
+   */
+  mfa_verificado?: boolean;
 }
 
 export interface ActiveOrg {

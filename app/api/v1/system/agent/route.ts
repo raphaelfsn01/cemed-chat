@@ -9,17 +9,16 @@
  * Auth: `Authorization: Bearer <INTERNAL_CRON_SECRET|INTERNAL_SECRET>`, mesmo
  * esquema das demais rotas de cron. Nunca em query string.
  */
-import { timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { CHANGELOG_MAX_BYTES } from "@/lib/system/changelog";
 import { canTransition, type RunStatus } from "@/lib/system/update-run";
 import { logger } from "@/lib/logger";
+import { cronAutorizado } from "@/lib/auth/cron-secret";
 
 export const dynamic = "force-dynamic";
 
@@ -60,22 +59,8 @@ const runResult = z.object({
 
 const body = z.discriminatedUnion("kind", [heartbeat, runProgress, runResult]);
 
-function secretMatches(provided: string): boolean {
-  const accepted = [env.INTERNAL_CRON_SECRET, env.INTERNAL_SECRET].filter(Boolean);
-  return accepted.some((expected) => {
-    const a = Buffer.from(provided);
-    const b = Buffer.from(expected);
-    // timingSafeEqual LANÇA se os tamanhos diferirem — o curto-circuito aqui
-    // evita que um segredo de tamanho errado vire 500 em vez de 401.
-    return a.length === b.length && timingSafeEqual(a, b);
-  });
-}
-
 export async function POST(req: NextRequest): Promise<Response> {
-  const auth = req.headers.get("authorization") ?? "";
-  const bearer = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : "";
-  const provided = bearer || (req.headers.get("x-cron-secret")?.trim() ?? "");
-  if (!provided || !secretMatches(provided)) {
+  if (!cronAutorizado(req)) {
     return fail("unauthorized", "Credencial inválida.", 401);
   }
 

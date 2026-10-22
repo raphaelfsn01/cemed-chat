@@ -39,9 +39,9 @@ describe("fetchWahaMedia", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    await fetchWahaMedia("http://evil.example.com/api/files/x.jpg?q=1");
+    await fetchWahaMedia("http://evil.example.com/api/files/x.jpg");
     expect(fetchMock).toHaveBeenCalledWith(
-      `${WAHA_BASE}/api/files/x.jpg?q=1`,
+      `${WAHA_BASE}/api/files/x.jpg`,
       expect.anything(),
     );
   });

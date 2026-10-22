@@ -17,12 +17,12 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import { triggerSlaAlarm } from "@/lib/lgpd/sla-alarm";
 import type { LgpdRequest } from "@/lib/lgpd/types";
 import type { AlarmThreshold } from "@/lib/lgpd/sla-alarm";
+import { cronAutorizado } from "@/lib/auth/cron-secret";
 
 export const dynamic = "force-dynamic";
 
@@ -43,16 +43,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   // ────────────────────────────────────────────────────────────────────────
   // Auth — Bearer INTERNAL_CRON_SECRET or INTERNAL_SECRET (fail-closed)
   // ────────────────────────────────────────────────────────────────────────
-  const auth = req.headers.get("authorization") ?? "";
-  const provided = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : "";
-
-  const cronSecret = env.INTERNAL_CRON_SECRET;
-  const fallbackSecret = env.INTERNAL_SECRET;
-  const accepted: string[] = [];
-  if (cronSecret) accepted.push(cronSecret);
-  if (fallbackSecret) accepted.push(fallbackSecret);
-
-  if (accepted.length === 0 || !provided || !accepted.includes(provided)) {
+  if (!cronAutorizado(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 

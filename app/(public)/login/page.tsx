@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { LoginForm } from "@/components/auth/LoginForm";
+import { destinoSeguro } from "@/lib/auth/safe-next";
 import { BRAND_MARK_SRC, branding } from "@/lib/branding";
 
 export const metadata = { title: "Entrar" };
@@ -10,7 +11,9 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ next?: string; reset?: string; error?: string }>;
 }) {
-  const { next, reset, error } = await searchParams;
+  const { next: nextBruto, reset, error } = await searchParams;
+  // Só caminho local segue adiante: `next` vem da URL e é escolhido por quem montou o link.
+  const next = nextBruto ? destinoSeguro(nextBruto) : undefined;
   return (
     <div className="space-y-6">
       <div className="space-y-1.5 text-center">
@@ -32,17 +35,15 @@ export default async function LoginPage({
           className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           role="alert"
         >
-          Link inválido ou expirado. Peça um novo em Recuperar senha ou refaça o
-          cadastro.
+          Link inválido ou expirado. Peça um novo em Esqueci minha senha.
         </div>
       )}
-      {error === "provisionamento" && (
+      {error === "sem_acesso" && (
         <div
           className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           role="alert"
         >
-          Sua conta foi confirmada, mas houve um erro ao preparar seu ambiente.
-          Tente entrar novamente em instantes.
+          Este e-mail ainda não tem acesso ao sistema. Peça um convite ao responsável.
         </div>
       )}
       <LoginForm next={next} />
@@ -56,13 +57,7 @@ export default async function LoginPage({
           </Link>
         </p>
         <p className="text-muted-foreground">
-          Não tem conta?{" "}
-          <Link
-            href="/signup"
-            className="font-medium text-foreground underline underline-offset-4 inline-block py-2 lg:py-0"
-          >
-            Criar conta
-          </Link>
+          Ainda não tem acesso? Peça um convite ao responsável pelo sistema.
         </p>
       </div>
     </div>

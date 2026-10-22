@@ -108,6 +108,7 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
     avatar_url: avatarUrl,
     is_platform_admin: !!paRow,
     organizations: memberships,
+    mfa_verificado: (user.factors ?? []).some((f) => f.status === "verified"),
   };
 }
 
@@ -158,3 +159,4 @@ export async function isMfaEnrolled(): Promise<boolean> {
 export function requiresMfa(role: Role | undefined, isPlatformAdmin: boolean): boolean {
   return isPlatformAdmin || role === "admin";
 }
+

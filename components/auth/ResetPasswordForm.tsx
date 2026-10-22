@@ -38,6 +38,8 @@ export function ResetPasswordForm() {
       } else if (res.error === "mfa_invalid") {
         setNeedsMfa(true);
         setServerError("Código de verificação inválido. Tente de novo.");
+      } else if (res.error === "rate_limited") {
+        setServerError("Muitas tentativas com o código. Aguarde alguns minutos.");
       } else if (res.error === "session_expired") {
         setServerError(
           "Sessão de redefinição expirada. Peça um novo link em Recuperar senha.",

@@ -45,8 +45,18 @@ const schema = z.object({
 
   // Cron / interno
   INTERNAL_SECRET: required("INTERNAL_SECRET"),
-  /** Optional dedicated secret for cron endpoints (S-06.07 onwards). */
+  /**
+   * Segredo dos crons e do heartbeat do agente do host. Definido, é o ÚNICO que
+   * abre `/api/v1/cron/*`; vazio, eles aceitam `INTERNAL_SECRET` (compatibilidade
+   * com clones antigos). Ver lib/auth/cron-secret.ts.
+   */
   INTERNAL_CRON_SECRET: z.string().optional().default(""),
+  /**
+   * Assina o link de convite (≥ 32 caracteres). Vazio, a chave é DERIVADA de
+   * `INTERNAL_SECRET` — funciona, mas quem tem um tem o outro. Ver
+   * lib/auth/invite-token.ts.
+   */
+  INVITE_TOKEN_SECRET: z.string().optional().default(""),
 
   // Encryption keys (pgcrypto)
   CPF_ENCRYPTION_KEY: required("CPF_ENCRYPTION_KEY"),
@@ -207,6 +217,19 @@ if (!env.OPENAI_API_KEY) {
 if (!env.IMPERSONATE_COOKIE_SECRET || env.IMPERSONATE_COOKIE_SECRET.length < 32) {
   console.warn(
     "[env] IMPERSONATE_COOKIE_SECRET not set or shorter than 32 chars — impersonate flow will return 503 at runtime.",
+  );
+}
+
+if (!env.INVITE_TOKEN_SECRET || env.INVITE_TOKEN_SECRET.length < 32) {
+  console.warn(
+    "[env] INVITE_TOKEN_SECRET not set (or < 32 chars) — invite links are signed with a key derived " +
+      "from INTERNAL_SECRET. Set INVITE_TOKEN_SECRET (openssl rand -hex 32) to separate them.",
+  );
+}
+if (!env.INTERNAL_CRON_SECRET) {
+  console.warn(
+    "[env] INTERNAL_CRON_SECRET not set — cron endpoints accept INTERNAL_SECRET. Set INTERNAL_CRON_SECRET " +
+      "(openssl rand -hex 32) so the cron bearer is not the internal secret.",
   );
 }
 
