@@ -390,7 +390,7 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     icon: UsersThree,
     group: "organizacao",
     section: "Sua empresa",
-    minRole: "manager",
+    minRole: "coordinator",
   },
   {
     href: "/app/settings/tenant",

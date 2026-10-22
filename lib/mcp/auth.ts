@@ -39,7 +39,8 @@ export class McpAuthError extends Error {
   }
 }
 
-const VALID_ROLES = new Set<Role>(["viewer", "agent", "ai_operator", "manager", "admin"]);
+// Derivado da escala única: um papel novo em ROLE_RANK vale aqui sem lembrar de copiar.
+const VALID_ROLES = new Set<Role>(Object.keys(ROLE_RANK) as Role[]);
 
 function parseScopes(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];

@@ -2,7 +2,7 @@
  * G3-04 — atribuição em massa de leads (spec 04 §6.5).
  *
  * Prova, contra o Route Handler REAL (auth e Supabase mockados):
- *  - gate ≥manager por-action: agent tentando `assign` → 403 forbidden_role,
+ *  - gate ≥coordinator por-action (0124): agent tentando `assign` → 403 forbidden_role,
  *    sem UPDATE nem audit agregado (move/tag/delete continuam agent+, fora daqui);
  *  - sucesso (manager): UPDATE único de owner_user_id, retorna updated_count e
  *    audita UMA entrada agregada `leads.bulk_assigned` com count + owner_user_id;
@@ -144,7 +144,7 @@ beforeEach(() => {
   vi.mocked(isServiceRoleConfigured).mockReturnValue(false);
 });
 
-describe("POST /api/v1/leads/bulk — assign gate ≥manager", () => {
+describe("POST /api/v1/leads/bulk — assign gate ≥coordinator", () => {
   it("agent tentando assign → 403 forbidden_role, sem UPDATE", async () => {
     const state = stubState();
     session("agent", state);
@@ -157,12 +157,22 @@ describe("POST /api/v1/leads/bulk — assign gate ≥manager", () => {
     expect(vi.mocked(audit).mock.calls.some(([e]) => e.action === "leads.bulk_assigned")).toBe(
       false,
     );
-    // A negação passa pelo requireRole("manager") da G2-01 (que emite o
+    // A negação passa pelo requireRole("coordinator") da G2-01 (que emite o
     // authz.denied internamente) — não por um fail(403) na mão.
     expect(vi.mocked(requireRole)).toHaveBeenCalledWith(
-      "manager",
+      "coordinator",
       expect.objectContaining({ resource: "crm_leads" }),
     );
+  });
+
+  it("coordinator (quem distribui) → 200 com UPDATE", async () => {
+    vi.mocked(isServiceRoleConfigured).mockReturnValue(true);
+    const state = stubState({ targetMember: { role: "agent" } });
+    session("coordinator", state);
+    const { POST } = await import("@/app/api/v1/leads/bulk/route");
+    const res = await POST(postReq(assignBody(OWNER_ID)));
+    expect(res.status).toBe(200);
+    expect(state.updateCalled).toBe(true);
   });
 
   it("manager → 200, UPDATE único, audit agregado leads.bulk_assigned com count", async () => {

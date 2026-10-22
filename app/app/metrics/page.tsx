@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic";
 export default async function MetricsPage() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
-  // spec 13 §6.1: agent vê as próprias (RLS); a comparação por atendente é manager+.
-  const canCompare = !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
+  // spec 13 §6.1: agent vê as próprias (RLS); a comparação por atendente é coordinator+.
+  const canCompare = !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.coordinator;
 
   return (
     <div className="flex h-full flex-col gap-6 lg:p-6">

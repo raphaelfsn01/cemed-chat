@@ -1,33 +1,48 @@
 /**
  * Papéis dentro do tenant.
  *
+ * `coordinator` (Coordenador, migration 0124) é um Atendente que também
+ * distribui o atendimento: vê a fila de todos, redistribui conversas e leads,
+ * muda a disponibilidade dos colegas e lê a lista da Equipe. Nada do que pede
+ * `manager` (robô, follow-ups, funis, webhooks, auditoria) é dele.
+ *
  * `ai_operator` é o papel do AGENTE PUBLICADO, e existe SÓ no escopo do token
  * efêmero — nunca em `user_organizations`. Nenhuma pessoa o recebe, e o CHECK
- * daquela tabela segue com os quatro papéis humanos de propósito: é isso que
+ * daquela tabela segue só com os papéis humanos de propósito: é isso que
  * garante que ninguém ganhe autonomia de máquina por acidente de configuração.
  *
- * Ele senta ENTRE `agent` e `manager` porque descreve exatamente a faixa que
+ * Ele senta ENTRE `coordinator` e `manager` porque descreve exatamente a faixa que
  * faltava: capacidades que um atendente humano não tem (configurar a operação,
  * mexer na régua de retorno) mas que o agente precisa para cumprir o invariante
  * 4 da doutrina — nenhuma demanda sem próximo passo. Abrir essas capacidades
  * para `agent` daria a uma PESSOA um poder que o produto não lhe dá pela tela;
- * fechá-las em `manager` tira do agente o que ele existe para fazer.
+ * fechá-las em `manager` tira do agente o que ele existe para fazer. E fica
+ * ACIMA do Coordenador para que nenhuma pessoa herde capacidade de máquina:
+ * gate de `coordinator` é de gente; o agente passaria por ele, e por isso
+ * nenhuma tool do MCP usa esse gate (tests/unit/papel-coordenador-codigo).
  *
  * `fn_role_at_least` no banco NÃO conhece este papel, e está certo assim: ela
  * consulta `fn_user_role_in_org`, que lê `user_organizations`. O agente não é
  * usuário. A RLS segue intacta.
  */
-export type Role = "viewer" | "agent" | "ai_operator" | "manager" | "admin";
+export type Role = "viewer" | "agent" | "coordinator" | "ai_operator" | "manager" | "admin";
 export const ROLE_RANK: Record<Role, number> = {
   viewer: 1,
   agent: 2,
-  ai_operator: 3,
-  manager: 4,
-  admin: 5,
+  coordinator: 3,
+  ai_operator: 4,
+  manager: 5,
+  admin: 6,
 };
 
 /** Papéis que uma PESSOA pode ter. Espelha `user_organizations_role_check`. */
-export const PAPEIS_HUMANOS: ReadonlyArray<Role> = ["viewer", "agent", "manager", "admin"];
+export const PAPEIS_HUMANOS: ReadonlyArray<Role> = [
+  "viewer",
+  "agent",
+  "coordinator",
+  "manager",
+  "admin",
+];
 
 /**
  * Nome do papel em português leigo — a ÚNICA fonte de rótulo da interface
@@ -38,6 +53,7 @@ export const PAPEIS_HUMANOS: ReadonlyArray<Role> = ["viewer", "agent", "manager"
 export const ROTULO_DO_PAPEL: Record<Role, string> = {
   viewer: "Consulta",
   agent: "Atendente",
+  coordinator: "Coordenador",
   ai_operator: "Operador de IA (técnico)",
   manager: "Gerente",
   admin: "Administrador",
@@ -47,8 +63,9 @@ export const ROTULO_DO_PAPEL: Record<Role, string> = {
 export const DESCRICAO_DO_PAPEL: Record<Role, string> = {
   viewer: "Só vê as conversas e os dados, não altera nada.",
   agent: "Responde pacientes e trabalha nos contatos e no funil.",
+  coordinator: "Atendente + distribui o atendimento.",
   ai_operator: "Papel do robô de atendimento publicado. Não é para pessoas.",
-  manager: "Atendente + distribui o atendimento, configura o robô de atendimento, vê a auditoria.",
+  manager: "Coordenador + configura o robô de atendimento, vê a auditoria.",
   admin: "Controle total (equipe, WhatsApp, LGPD, organização).",
 };
 
@@ -62,7 +79,7 @@ export function rotuloDoPapel(papel: string): string {
 
 /**
  * Escopo de visualização de conversas por atendente (G4-01, spec 13 §3.5).
- * Só restringe o role `agent`; viewer/manager/admin seguem org-wide.
+ * Só restringe o role `agent`; viewer/coordinator/manager/admin seguem org-wide.
  */
 export type VisibilityMode = "all" | "own_and_unassigned" | "own";
 export const DEFAULT_VISIBILITY_MODE: VisibilityMode = "own_and_unassigned"; // G1-06a

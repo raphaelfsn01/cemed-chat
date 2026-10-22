@@ -60,6 +60,7 @@ describe("nome e frase de cada papel", () => {
     expect(ROTULO_DO_PAPEL).toEqual({
       viewer: "Consulta",
       agent: "Atendente",
+      coordinator: "Coordenador",
       ai_operator: "Operador de IA (técnico)",
       manager: "Gerente",
       admin: "Administrador",
@@ -72,6 +73,8 @@ describe("nome e frase de cada papel", () => {
     }
     expect(DESCRICAO_DO_PAPEL.viewer).toBe("Só vê as conversas e os dados, não altera nada.");
     expect(DESCRICAO_DO_PAPEL.agent).toBe("Responde pacientes e trabalha nos contatos e no funil.");
+    expect(DESCRICAO_DO_PAPEL.coordinator).toBe("Atendente + distribui o atendimento.");
+    expect(DESCRICAO_DO_PAPEL.manager).toBe("Coordenador + configura o robô de atendimento, vê a auditoria.");
     expect(DESCRICAO_DO_PAPEL.admin).toBe("Controle total (equipe, WhatsApp, LGPD, organização).");
   });
 

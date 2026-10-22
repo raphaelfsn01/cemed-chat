@@ -134,7 +134,7 @@ create table public.user_organizations (
   user_id         uuid not null references auth.users(id) on delete cascade,
   organization_id uuid not null references public.organizations(id) on delete cascade,
   role            text not null
-                  check (role in ('viewer','agent','manager','admin')),
+                  check (role in ('viewer','agent','coordinator','manager','admin')),  -- coordinator: migration 0124
   -- Para 'agent', restringe leads visíveis a owner_user_id = self quando aplicável
   invited_by      uuid references auth.users(id) on delete set null,
   invited_at      timestamptz,
@@ -152,7 +152,7 @@ create trigger trg_user_orgs_touch
 create index idx_user_orgs_user      on public.user_organizations(user_id) where revoked_at is null;
 create index idx_user_orgs_org_role  on public.user_organizations(organization_id, role) where revoked_at is null;
 
-comment on column public.user_organizations.role is '4 roles canônicos: viewer (1) < agent (2) < manager (3) < admin (4). Hierarquia.';
+comment on column public.user_organizations.role is '5 roles canônicos: viewer (1) < agent (2) < coordinator (3) < manager (4) < admin (5). Hierarquia (coordinator: migration 0124).';
 ```
 
 ### 2.3 `platform_admins` (tabela separada — decisão registrada)
@@ -332,7 +332,7 @@ security definer
 set search_path = public
 as $$
   with levels(role, lvl) as (
-    values ('viewer',1),('agent',2),('manager',3),('admin',4)
+    values ('viewer',1),('agent',2),('coordinator',3),('manager',4),('admin',5)
   )
   select coalesce(
     (select user_lvl.lvl >= min_lvl.lvl
@@ -773,42 +773,44 @@ create unique index idx_recovery_unique on public.user_recovery_codes(user_id, c
 
 ## 5. RBAC: matriz de permissões
 
-| Resource | Ação | viewer | agent | manager | admin | platform_admin |
-|---|---|:---:|:---:|:---:|:---:|:---:|
-| **organizations** | read (self) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| organizations | update | ❌ | ❌ | ❌ | ✅ (settings) | ✅ |
-| organizations | delete/archive | ❌ | ❌ | ❌ | ❌ | ✅ |
-| **user_organizations** | read | ❌ | ❌ | ✅ (own org) | ✅ | ✅ |
-| user_organizations | invite/role change | ❌ | ❌ | ❌ | ✅ | ✅ |
-| user_organizations | revoke | ❌ | ❌ | ❌ | ✅ | ✅ |
-| **api_tokens** | list | ❌ | ❌ | ❌ | ✅ | ✅ |
-| api_tokens | create | ❌ | ❌ | ❌ | ✅ | ✅ |
-| api_tokens | revoke | ❌ | ❌ | ❌ | ✅ | ✅ |
-| **leads** (Spec 02/04) | read | ✅ (all) | ✅ (own) | ✅ (all) | ✅ | ✅ |
-| leads | create | ❌ | ✅ | ✅ | ✅ | ✅ |
-| leads | update | ❌ | ✅ (own) | ✅ | ✅ | ✅ |
-| leads | delete | ❌ | ❌ | ✅ | ✅ | ✅ |
-| leads | reassign | ❌ | ❌ | ✅ | ✅ | ✅ |
-| **pipelines** | read | ✅ | ✅ | ✅ | ✅ | ✅ |
-| pipelines | create/update | ❌ | ❌ | ✅ | ✅ | ✅ |
-| pipelines | delete | ❌ | ❌ | ❌ | ✅ | ✅ |
-| **stages** | read | ✅ | ✅ | ✅ | ✅ | ✅ |
-| stages | mutate | ❌ | ❌ | ✅ | ✅ | ✅ |
-| **contacts** | read | ✅ | ✅ | ✅ | ✅ | ✅ |
-| contacts | create/update | ❌ | ✅ | ✅ | ✅ | ✅ |
-| contacts | delete | ❌ | ❌ | ✅ | ✅ | ✅ |
-| contacts.consent | update | ❌ | ✅ | ✅ | ✅ | ✅ |
-| **conversations** | read | ✅ | ✅ (own claim) | ✅ | ✅ | ✅ |
-| conversations | claim | ❌ | ✅ | ✅ | ✅ | ✅ |
-| conversations | reassign | ❌ | ❌ | ✅ | ✅ | ✅ |
-| conversations | observe (read-only) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **messages** | send | ❌ | ✅ (own claim) | ✅ | ✅ | ✅ |
-| **audit_log** | read | ❌ | ❌ | ❌ | ✅ | ✅ |
-| **lgpd.data_request** | execute | ❌ | ❌ | ❌ | ✅ | ✅ |
-| **lgpd.redact** | execute | ❌ | ❌ | ❌ | ✅ | ✅ |
-| **webhooks** (Spec 06) | manage | ❌ | ❌ | ❌ | ✅ | ✅ |
-| **platform_admins** | read | ❌ | ❌ | ❌ | ❌ | ✅ |
-| platform_admins | mutate | ❌ | ❌ | ❌ | ❌ | ❌ (DBA only) |
+> `coordinator` (Coordenador) entrou na migration 0124: Atendente que distribui o atendimento. A coluna dele reflete a RLS aplicada; a matriz operacional de referência é a spec 13 §4.
+
+| Resource | Ação | viewer | agent | coordinator | manager | admin | platform_admin |
+|---|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **organizations** | read (self) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| organizations | update | ❌ | ❌ | ❌ | ❌ | ✅ (settings) | ✅ |
+| organizations | delete/archive | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| **user_organizations** | read | ❌ | ❌ | ✅ (own org) | ✅ (own org) | ✅ | ✅ |
+| user_organizations | invite/role change | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
+| user_organizations | revoke | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
+| **api_tokens** | list | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
+| api_tokens | create | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
+| api_tokens | revoke | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
+| **leads** (Spec 02/04) | read | ✅ (all) | ✅ (own) | ✅ (all) | ✅ (all) | ✅ | ✅ |
+| leads | create | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| leads | update | ❌ | ✅ (own) | ✅ (all) | ✅ | ✅ | ✅ |
+| leads | delete | ❌ | ❌ | ✅ (all) | ✅ | ✅ | ✅ |
+| leads | reassign | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| **pipelines** | read | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| pipelines | create/update | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ |
+| pipelines | delete | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
+| **stages** | read | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| stages | mutate | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ |
+| **contacts** | read | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| contacts | create/update | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| contacts | delete | ❌ | ❌ | = agent | ✅ | ✅ | ✅ |
+| contacts.consent | update | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **conversations** | read | ✅ | ✅ (own claim) | ✅ (all) | ✅ | ✅ | ✅ |
+| conversations | claim | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| conversations | reassign | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| conversations | observe (read-only) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **messages** | send | ❌ | ✅ (own claim) | ✅ | ✅ | ✅ | ✅ |
+| **audit_log** | read | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
+| **lgpd.data_request** | execute | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
+| **lgpd.redact** | execute | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
+| **webhooks** (Spec 06) | manage | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
+| **platform_admins** | read | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| platform_admins | mutate | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ (DBA only) |
 
 **Implementação**: middleware `requirePermission(resource, action)` checa role via `fn_user_role_in_org(orgId)` + `fn_is_platform_admin()`. Falha → 403 com `error.code='forbidden_role'`.
 

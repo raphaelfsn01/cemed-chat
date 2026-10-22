@@ -51,12 +51,13 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("bulk_too_large", `Máximo ${MAX_BULK} leads por bulk.`, 422, { requestId });
   }
 
-  // G3-04: assign é reatribuição de dono em lote → piso ≥manager (spec 04 §6.5,
-  // INB-03). Gate por-action: move/tag/delete continuam agent+ (piso acima);
-  // só o assign exige manager. Reusa o helper (nada de ROLE_RANK na mão).
+  // G3-04: assign é reatribuição de dono em lote → piso ≥coordinator (spec 04
+  // §6.5, INB-03; o Coordenador, 0124, é quem distribui). Gate por-action:
+  // move/tag/delete continuam agent+ (piso acima); só o assign sobe o piso.
+  // Reusa o helper (nada de ROLE_RANK na mão).
   if (input.action === "assign") {
-    const mgr = await requireRole("manager", { requestId, resource: "crm_leads" });
-    if (!mgr.ok) return mgr.response;
+    const coord = await requireRole("coordinator", { requestId, resource: "crm_leads" });
+    if (!coord.ok) return coord.response;
 
     // Novo dono tem que ser membro ativo agent+ da MESMA org (org de fonte
     // confiável = authz, nunca body). owner_user_id null = desatribuir (válido).

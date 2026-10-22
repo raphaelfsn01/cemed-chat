@@ -13,8 +13,9 @@
  * ligar era `UPDATE` à mão no Postgres. É o anti-exemplo literal de "toda
  * configuração tem superfície" (`docs/doctrine/restricao-de-canal.md`).
  *
- * Gate = manager+, que é o que a matriz da spec 13 §4 dá para
- * "atendimento/routing" — a mesma linha cobre as duas chaves.
+ * Gate = coordinator+ (0124): distribuir o atendimento é o que define o
+ * Coordenador. A matriz da spec 13 §4 dá "atendimento/routing" a esse piso —
+ * a mesma linha cobre as duas chaves.
  */
 import { redirect } from "next/navigation";
 
@@ -30,7 +31,7 @@ export default async function AtendimentoSettingsPage() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/app");
-  if (!user.is_platform_admin && ROLE_RANK[activeOrg.role] < ROLE_RANK.manager) {
+  if (!user.is_platform_admin && ROLE_RANK[activeOrg.role] < ROLE_RANK.coordinator) {
     redirect("/403");
   }
 
