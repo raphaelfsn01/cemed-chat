@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
 import { createClient } from "@/lib/supabase/server";
-import { ensureTenantForUser } from "@/lib/auth/provision";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 
 /**
@@ -11,10 +11,14 @@ import { audit } from "@/lib/audit";
  * É o destino único dos links de e-mail do GoTrue (templates customizados em
  * supabase/templates/): confirmação de signup E redefinição de senha.
  *
- * - type=signup  → provisiona o tenant (org + membership admin) e entra no
- *                  onboarding. Provisionamento é idempotente (link clicado 2x).
  * - type=recovery → sessão de recovery estabelecida; segue para /login/reset
  *                  onde o usuário define a senha nova.
+ * - qualquer outro tipo (confirmação de e-mail) → entra SÓ quem já é membro de
+ *                  alguma organização. Não existe mais cadastro público: esta
+ *                  rota criava uma organização nova para todo e-mail confirmado,
+ *                  e com o signup do GoTrue aberto qualquer pessoa da internet
+ *                  ganhava um tenant no banco da clínica (auditoria de
+ *                  2026-10-21, C3). Equipe nova entra pelo convite.
  *
  * Fluxo canônico do @supabase/ssr: verifyOtp grava os cookies de sessão via
  * cookies() do next/headers; o Next anexa os Set-Cookie ao redirect retornado.
@@ -47,24 +51,27 @@ export async function GET(request: NextRequest) {
     return redirectTo("/login/reset");
   }
 
-  try {
-    await ensureTenantForUser(data.user);
-  } catch (e) {
+  // Membership de fonte confiável: o usuário vem do token já verificado pelo
+  // GoTrue (nunca do body), e a leitura é por `user_id`.
+  const admin = createAdminClient();
+  const { data: membro, error: membroErr } = await admin
+    .from("user_organizations")
+    .select("organization_id")
+    .eq("user_id", data.user.id)
+    .is("revoked_at", null)
+    .limit(1)
+    .maybeSingle();
+
+  if (membroErr || !membro) {
     await audit({
-      action: "auth.signup_provision_failed",
+      action: "auth.email_confirmed_without_access",
       actorUserId: data.user.id,
-      metadata: { reason: e instanceof Error ? e.message : String(e) },
+      metadata: { type, reason: membroErr ? "membership_lookup_failed" : "no_membership" },
       requestId,
     });
-    return redirectTo("/login?error=provisionamento");
+    await supabase.auth.signOut();
+    return redirectTo("/login?error=sem_acesso");
   }
 
-  void audit({
-    action: "auth.signup_confirmed",
-    actorUserId: data.user.id,
-    metadata: {},
-    requestId,
-  });
-
-  return redirectTo("/onboarding/welcome");
+  return redirectTo("/app/inbox");
 }

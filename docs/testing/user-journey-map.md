@@ -245,9 +245,30 @@ Evidência: `.superpowers/evidence/marca-cemed/` (`*-com-support-email.png` na s
 | 10.3 | `/account-suspended` com `SUPPORT_EMAIL` | link `mailto:` com o valor do `.env`, lido em runtime | PASS |
 | 10.4 | `/app/settings/billing` (admin), com e sem `SUPPORT_EMAIL` | idem 10.2/10.3 | PASS |
 | 10.5 | Enroll do MFA pela tela (admin novo) | fator "CEMED Saúde AAAA-MM-DD"; download `cemed-saude-codigos-de-recuperacao.txt` | PASS |
-| 10.6 | Onboarding (`signup-journey`) | "Boas-vindas — CEMED Saúde"; e-mail de confirmação do Supabase local com a marca | PASS |
+| 10.6 | Onboarding (`signup-journey`) | "Boas-vindas — CEMED Saúde"; e-mail de confirmação do Supabase local com a marca | PASS — spec **removida** em 2026-10-21 junto com o `/signup` (ver J11) |
 | 10.7 | Convite sem Resend (`invite-lifecycle`) | convite registrado, e-mail não sai; fluxo do link segue | PASS |
 | 10.8 | PDF LGPD (unit, renderizado de verdade) | rodapé "CEMED Saúde · Relatório LGPD…", segue `APP_NAME` | PASS |
+
+## J11 — Entrar na equipe sem cadastro público `[P0]`
+
+Auditoria de segurança de 2026-10-21 (C3, C4, M5). O `/signup` deixava qualquer pessoa
+criar conta **e organização** no banco da clínica, e o `/auth/confirm` provisionava um
+tenant novo para todo e-mail confirmado. Saíram os dois. Conta nova agora só nasce de um
+convite: quem não tem conta cria a senha na própria página do convite (o e-mail vem do
+link assinado; não depende do SMTP do Supabase). Prova: `tests/e2e/convite-primeiro-acesso.spec.ts`
+(parte 1 do `e2e.yml`), mais os unitários `criar-conta-pelo-convite`, `convite-e-onboarding-por-papel`
+e `sem-cadastro-publico`. Evidência: `.superpowers/evidence/fase1-app/`.
+
+| # | Caso | Expectativa | Resultado |
+|---|---|---|---|
+| 11.1 | `/signup` | 404 | no CI |
+| 11.2 | Convidado sem conta abre o link | cria a senha, entra no `/app/inbox` com o papel do convite | no CI |
+| 11.3 | O mesmo link de novo | "já tem conta": não cria outra nem troca senha | no CI |
+| 11.4 | Ex-membro com o link ANTERIOR à remoção | recusado ("anterior à sua remoção"); continua removido | no CI |
+| 11.5 | Ex-membro com convite NOVO | volta com o papel do convite | no CI |
+| 11.6 | Membro ativo aceitando convite de papel maior | papel não muda (unit) | PASS (unit) |
+| 11.7 | `viewer`/`agent`/`manager` chamando action de onboarding | `forbidden` (unit) | PASS (unit) |
+| 11.8 | E-mail confirmado de quem não é membro | sai com "sem acesso", nenhuma organização criada (unit) | PASS (unit) |
 
 ## Achados do mapeamento (pré-execução) — candidatos a correção
 

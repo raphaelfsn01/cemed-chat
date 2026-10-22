@@ -195,7 +195,7 @@ jobs:
         run: |
           pnpm exec playwright test --workers=1 \
             smoke.spec.ts auth.spec.ts error-pages.spec.ts \
-            password-recovery.spec.ts signup-journey.spec.ts \
+            password-recovery.spec.ts convite-primeiro-acesso.spec.ts \
             rbac-roles.spec.ts inbox-scope.spec.ts reset-password-mfa.spec.ts mfa-pulo.spec.ts \
             degradacao-silenciosa.spec.ts vps-webhook-outbound-ssrf.spec.ts \
             kanban-owner-filter.spec.ts queue-assign.spec.ts \
@@ -272,7 +272,7 @@ jobs:
             echo ""
             echo "**Rodou (32 de 36 specs; a responsivo.spec.ts roda na outra perna da matriz):**"
             echo "smoke, auth, auth-sem-credencial-na-url, error-pages, password-recovery,"
-            echo "signup-journey, rbac-roles, inbox-scope, reset-password-mfa,"
+            echo "convite-primeiro-acesso, rbac-roles, inbox-scope, reset-password-mfa,"
             echo "degradacao-silenciosa, vps-webhook-outbound-ssrf, kanban-owner-filter,"
             echo "queue-assign, risk-radar, invite-lifecycle, system-update, marca-cemed,"
             echo "agente-novo-e-uso, agente-organiza-operacao, central-de-avisos-capacidades,"

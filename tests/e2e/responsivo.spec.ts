@@ -48,7 +48,6 @@ interface Rota {
 const ROTAS_PUBLICAS: Rota[] = [
   { path: "/login", fase: "2", p0: true },
   { path: "/login/forgot", fase: "2" },
-  { path: "/signup", fase: "2", p0: true },
   { path: "/403", fase: "2" },
   { path: "/account-suspended", fase: "2" },
   { path: "/rota-que-nao-existe", fase: "2" },
@@ -267,7 +266,6 @@ test.describe("rotas públicas", () => {
     const entrar = page.getByRole("button", { name: /^entrar$/i });
     await exigirAlvo(page, entrar, 44, "botão Entrar");
     await exigirAlvo(page, page.getByRole("link", { name: "Esqueci minha senha" }), 36, "link Esqueci minha senha");
-    await exigirAlvo(page, page.getByRole("link", { name: "Criar conta" }), 36, "link Criar conta");
 
     await tocar(page.locator("#email"));
     await page.locator("#email").fill(creds.users.admin!.email);

@@ -117,6 +117,11 @@ export async function GET() {
   if (!user) return fail("unauthenticated", "Sessão expirada", 401);
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) return fail("tenant_not_found", "Sem organização ativa", 404);
+  // Conectar o número é ato de admin (auditoria de 2026-10-21, C4). Sem
+  // requireRole de propósito: o onboarding acontece antes do cadastro do TOTP.
+  if (activeOrg.role !== "admin") {
+    return fail("forbidden_role", "Só o admin conecta o WhatsApp.", 403);
+  }
   const waha = getWahaClient();
   if (!waha) return ok({ status: "WAHA_NOT_CONFIGURED", session: null });
   const sessionName = defaultSessionName(activeOrg.orgId);
@@ -136,6 +141,11 @@ export async function POST(req: Request) {
   if (!user) return fail("unauthenticated", "Sessão expirada", 401);
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) return fail("tenant_not_found", "Sem organização ativa", 404);
+  // Conectar o número é ato de admin (auditoria de 2026-10-21, C4). Sem
+  // requireRole de propósito: o onboarding acontece antes do cadastro do TOTP.
+  if (activeOrg.role !== "admin") {
+    return fail("forbidden_role", "Só o admin conecta o WhatsApp.", 403);
+  }
   const waha = getWahaClient();
   if (!waha) return fail("waha_not_configured", "Suba o Docker (docker compose up -d waha) e tente novamente.", 503);
   const sessionName = defaultSessionName(activeOrg.orgId);

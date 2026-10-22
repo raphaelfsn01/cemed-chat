@@ -7,13 +7,9 @@ export const loginSchema = z.object({
 
 export type LoginInput = z.infer<typeof loginSchema>;
 
-export const signupSchema = z
+/** Primeiro acesso pelo convite: o e-mail vem do token, então só a senha. */
+export const contaPeloConviteSchema = z
   .object({
-    org_name: z
-      .string()
-      .min(2, "Nome da empresa deve ter pelo menos 2 caracteres")
-      .max(120, "Nome da empresa deve ter no máximo 120 caracteres"),
-    email: z.string().email("Email inválido"),
     password: z.string().min(8, "Senha deve ter pelo menos 8 caracteres"),
     password_confirm: z.string(),
   })
@@ -22,7 +18,7 @@ export const signupSchema = z
     message: "As senhas não coincidem",
   });
 
-export type SignupInput = z.infer<typeof signupSchema>;
+export type ContaPeloConviteInput = z.infer<typeof contaPeloConviteSchema>;
 
 export const forgotPasswordSchema = z.object({
   email: z.string().email("Email inválido"),
