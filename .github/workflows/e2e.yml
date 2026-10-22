@@ -200,7 +200,8 @@ jobs:
             degradacao-silenciosa.spec.ts vps-webhook-outbound-ssrf.spec.ts \
             kanban-owner-filter.spec.ts queue-assign.spec.ts \
             risk-radar.spec.ts invite-lifecycle.spec.ts system-update.spec.ts \
-            auth-sem-credencial-na-url.spec.ts marca-cemed.spec.ts
+            auth-sem-credencial-na-url.spec.ts marca-cemed.spec.ts \
+            papeis-rotulos.spec.ts
         env:
           INTERNAL_SECRET: ci-placeholder-nao-e-segredo
           CPF_ENCRYPTION_KEY: ci-placeholder-nao-e-segredo
