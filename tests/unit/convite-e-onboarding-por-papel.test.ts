@@ -153,7 +153,7 @@ describe("requireOnboardingCtx", () => {
     resolveActiveOrg.mockReset();
   });
 
-  it.each(["viewer", "agent", "manager"])("%s → forbidden (não configura o início nem convida)", async (role) => {
+  it.each(["viewer", "agent", "coordinator", "manager"])("%s → forbidden (não configura o início nem convida)", async (role) => {
     const { requireOnboardingCtx } = await import("@/app/actions/onboarding/_shared");
     loadAuthUser.mockResolvedValue(usuario(true));
     resolveActiveOrg.mockResolvedValue({ orgId: ORG, name: "Org", role });
