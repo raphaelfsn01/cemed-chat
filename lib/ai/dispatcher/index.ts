@@ -543,14 +543,23 @@ function strOrNull(value: unknown): string | null {
 // Runner invocation (fire-and-forget)
 // ---------------------------------------------------------------------------
 
+/**
+ * URL do runner. Pela rede interna (`INTERNAL_APP_URL`) sempre que existe: o
+ * Caddy recusa `/api/internal/*` vindo do domínio público, então chamar pelo
+ * `NEXT_PUBLIC_APP_URL` no compose daria 403 e o run ficaria sem executar.
+ */
+export function runnerUrl(e: { INTERNAL_APP_URL?: string; NEXT_PUBLIC_APP_URL?: string }): string {
+  const baseUrl = e.INTERNAL_APP_URL || e.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  return `${baseUrl.replace(/\/$/, "")}/api/internal/agents/run`;
+}
+
 async function invokeRunner(runId: string): Promise<void> {
   const secret = env.INTERNAL_SECRET;
   if (!secret) {
     logger.warn("[agent-dispatcher] INTERNAL_SECRET missing — runner not invoked", { run_id: runId });
     return;
   }
-  const baseUrl = env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  const url = `${baseUrl.replace(/\/$/, "")}/api/internal/agents/run`;
+  const url = runnerUrl(env);
 
   // Fire-and-forget: do not await the response. Best-effort logging only.
   void fetch(url, {

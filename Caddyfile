@@ -8,6 +8,15 @@
 {$DOMAIN} {
 	encode gzip
 
+	# HSTS: o navegador que já entrou por HTTPS não volta a tentar HTTP por 6
+	# meses (15768000 s) — fecha o downgrade num Wi-Fi hostil, que o redirect
+	# HTTP→HTTPS sozinho não fecha (o primeiro pedido ainda sai em claro).
+	# Sem includeSubDomains: outros subdomínios do mesmo domínio não são deste
+	# servidor e não podem herdar a regra. Sem preload: entrar na lista dos
+	# navegadores é praticamente irreversível. O Caddy só envia o header nas
+	# respostas HTTPS; o redirect da porta 80 não o leva, como pede a RFC 6797.
+	header Strict-Transport-Security "max-age=15768000"
+
 	# Log de ACESSO (uma linha JSON por requisição). Sem ele não havia como
 	# auditar nada pelo servidor — nem responder "alguma senha passou na URL?".
 	# Como consultar: docs/runbooks/caddy-log-de-acesso.md.
@@ -81,15 +90,21 @@
 		@waha_global path /api/v1/webhooks/waha
 		respond @waha_global 403
 
-		# O runner de agente de IA (ToolLoop) pode levar até ~5min por requisição.
-		# Timeout estendido só nessa rota pra o proxy não cortar a resposta longa.
-		@agentrun path /api/internal/agents/run*
-		reverse_proxy @agentrun app:3000 {
-			transport http {
-				read_timeout 320s
-				write_timeout 320s
-			}
-		}
+		# Rotas de máquina não são publicadas na internet: /api/internal/* (o
+		# runner do agente) e /api/v1/cron/* (os crons). Quem as chama está na
+		# rede interna do compose e fala direto com http://app:3000: o `scheduler`
+		# (crontab em docker-compose.prod.yml) e o próprio app (INTERNAL_APP_URL,
+		# em lib/ai/dispatcher). Abertas, a única barreira era o segredo no
+		# header — vazou o segredo, qualquer um disparava os crons de fora.
+		#
+		# O agente de atualização do host (hostgator-setup-kit/agent.sh) usa
+		# /api/v1/system/agent, que continua passando: o host não enxerga a rede
+		# interna e só chega ao app pelo domínio.
+		#
+		# O matcher de caminho do Caddy ignora maiúsculas e compara o caminho já
+		# decodificado: /API/internal/... e /api/%69nternal/... caem aqui também.
+		@maquina path /api/internal /api/internal/* /api/v1/cron /api/v1/cron/*
+		respond @maquina 403
 
 		# Todo o resto do app.
 		reverse_proxy app:3000

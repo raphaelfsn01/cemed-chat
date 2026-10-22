@@ -163,6 +163,13 @@ const schema = z.object({
     .string()
     .url()
     .default("http://localhost:3000"),
+  /**
+   * Endereço do app na rede INTERNA, para o app chamar a si mesmo sem passar
+   * pelo proxy. No compose é `http://app:3000` (docker-compose.prod.yml). Vazio,
+   * cai no `NEXT_PUBLIC_APP_URL` (Vercel, dev). Necessário porque o Caddy
+   * recusa `/api/internal/*` e `/api/v1/cron/*` vindos do domínio público.
+   */
+  INTERNAL_APP_URL: z.string().optional().default(""),
 
   // Marca da instalação (white-label) — ver lib/branding.ts.
   // Sem prefixo NEXT_PUBLIC_ de propósito: essas seriam queimadas no bundle

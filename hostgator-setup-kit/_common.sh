@@ -309,11 +309,6 @@ owner_id_by_email() {
     | grep -o '"id":"[0-9a-f-]\{36\}"' | head -1 | sed 's/.*:"//;s/"//'
 }
 
-# Ativa (idempotente) o cron que dispara o drain de eventos a cada minuto. SEM
-# isso, nenhuma automação/webhook roda num self-host: neste kit os workers são
-# lidos por cron, não por trigger→HTTP nem fila gerenciada (doutrina do
-# projeto: trigger Postgres nunca faz HTTP). Chamada por install.sh e
-# update.sh — re-rodar não duplica a linha do crontab.
 # ── Cron: uma instalação nunca mexe na linha de outra ────────────────────────
 # O filtro era `crontab -l | grep -v 'event-log-drain' | crontab -`: casava com
 # a linha de QUALQUER instalação do host. Instalar uma segunda instância na
@@ -335,46 +330,40 @@ cron_tag() { printf '# deskcomm:%s:%s' "${PROJECT_DIR:-$PWD}" "${1:?papel da lin
 # imprime o novo. Tira as linhas DESTA instalação — pelo marcador, e também
 # pela `assinatura` para as linhas legadas, escritas antes de o marcador
 # existir, que sem isso ficariam duplicadas a cada re-execução.
-cron_merge() {  # cron_merge <marcador> <assinatura_legada> <linha_nova>
-  local marcador="$1" legado="$2" nova="$3"
-  { grep -vF -e "$marcador" | grep -vF -e "$legado"; } || true
-  printf '%s\n' "$nova"
+cron_drop() {  # cron_drop <marcador> <assinatura_legada>
+  { grep -vF -e "$1" | grep -vF -e "$2"; } || true
 }
 
-setup_event_log_drain_cron() {
-  command -v crontab >/dev/null 2>&1 || { c_ylw "⚠ 'crontab' não encontrado — instale o pacote 'cron' e rode de novo pra ativar as automações."; return 0; }
+cron_merge() {  # cron_merge <marcador> <assinatura_legada> <linha_nova>
+  cron_drop "$1" "$2"
+  printf '%s\n' "$3"
+}
 
-  local secret="${INTERNAL_CRON_SECRET:-}"
-  [ -n "$secret" ] || secret="${INTERNAL_SECRET:-}"
-  [ -n "$secret" ] || { c_ylw "⚠ falta INTERNAL_SECRET/INTERNAL_CRON_SECRET — não ativei o cron das automações."; return 0; }
-  [ -n "${NEXT_PUBLIC_APP_URL:-}" ] || { c_ylw "⚠ falta NEXT_PUBLIC_APP_URL — não ativei o cron das automações."; return 0; }
-
-  local url_drain="${NEXT_PUBLIC_APP_URL}/api/v1/cron/event-log-drain"
+# Tira do crontab do HOST a linha do drain de eventos que versões anteriores do
+# kit instalavam. Ela chamava `${NEXT_PUBLIC_APP_URL}/api/v1/cron/event-log-drain`
+# pelo domínio público, e o Caddy agora recusa /api/v1/cron/* vindo de fora
+# (403): a linha passaria a falhar a cada minuto, calada pelo `>/dev/null`.
+# Ninguém perde o drain com isso: desde que o `scheduler` do
+# docker-compose.prod.yml passou a chamá-lo pela rede interna, todo minuto, a
+# linha do host era só uma segunda chamada da mesma coisa.
+#
+# Com ela vai a "higienização da 1ª ativação" (marcar como concluídos os eventos
+# pendentes com mais de 7 dias), que dependia de a linha ainda não existir. O
+# install.sh e o update.sh sobem o compose ANTES de chegar aqui, então o
+# `scheduler` já drenou a fila quando ela rodava; e sem a linha, ela rodaria a
+# cada atualização, escondendo evento travado em vez de pular o atrasado.
+remove_host_drain_cron() {
+  command -v crontab >/dev/null 2>&1 || return 0
+  crontab -l >/dev/null 2>&1 || return 0
   local marcador; marcador="$(cron_tag drain)"
-
-  # "primeira vez" é sobre ESTA instalação, não sobre o host: com o teste antigo
-  # ('existe alguma linha de event-log-drain?'), uma instalação nova numa VPS
-  # que já roda outra se achava veterana e pulava a higienização de eventos.
-  local first_time=1
-  if crontab -l 2>/dev/null | grep -qF -e "$url_drain"; then first_time=0; fi
-
-  local cron_line="* * * * * curl -fsS -H \"Authorization: Bearer ${secret}\" \"${url_drain}\" >/dev/null 2>&1 ${marcador}"
-  ( crontab -l 2>/dev/null | cron_merge "$marcador" "$url_drain" "$cron_line" ) | crontab -
-  c_grn "✓ automações ativas (cron do event-log-drain, a cada minuto)"
-
-  if [ "$first_time" = 1 ]; then
-    # 1ª ativação do cron (inclusive numa instalação já existente que nunca
-    # teve o drain rodando): pode haver eventos 'pending' antigos acumulados.
-    # Se o 1º drain os processasse, dispararia efeitos colaterais atrasados
-    # (ex.: webhook de dias/semanas atrás) — surpresa indesejada pro dono do
-    # CRM. Marcamos como 'done' só os realmente velhos (>7 dias); os recentes
-    # continuam 'pending' e processam normalmente no próximo drain.
-    step "Higienizando eventos pendentes antigos (1ª ativação do cron)"
-    psql_run -c "update event_log set status='done', updated_at=now() where status='pending' and created_at < now() - interval '7 days';" \
-      >/dev/null 2>&1 \
-      && c_grn "✓ eventos pendentes com mais de 7 dias marcados como concluídos" \
-      || c_ylw "⚠ não consegui higienizar eventos antigos — confira manualmente a tabela event_log se necessário."
-  fi
+  # A assinatura legada é a URL DESTA instalação. Sem a URL, só o marcador: o
+  # caminho sozinho casaria com o drain de uma instalação vizinha.
+  local legado="$marcador"
+  [ -n "${NEXT_PUBLIC_APP_URL:-}" ] && legado="${NEXT_PUBLIC_APP_URL}/api/v1/cron/event-log-drain"
+  local atual; atual="$(crontab -l 2>/dev/null || true)"
+  printf '%s\n' "$atual" | grep -qF -e "$marcador" -e "$legado" || return 0
+  printf '%s\n' "$atual" | cron_drop "$marcador" "$legado" | crontab -
+  c_grn "✓ linha antiga do drain de eventos tirada do crontab (o scheduler do compose já o roda a cada minuto)"
 }
 
 # Ativa (idempotente) o cron do agente de atualização: a cada 5 minutos ele

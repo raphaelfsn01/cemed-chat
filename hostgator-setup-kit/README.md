@@ -133,14 +133,14 @@ declare `REVERSE_PROXY=traefik` no `.env` — aí a escolha é sua e ele segue s
 
 ## Automações e webhooks
 
-O `install.sh` (e o `update.sh`, a cada atualização) já ativa sozinho um cron que roda todo minuto e "puxa" a fila de eventos pendentes (`/api/v1/cron/event-log-drain`) — é isso que faz uma automação disparar de verdade no seu servidor (ex.: enviar uma mensagem de WhatsApp quando um pedido muda de status). **Sem esse cron, as automações ficam paradas na fila e nunca rodam** — é um requisito, não um extra.
+Quem faz as automações dispararem de verdade no seu servidor (ex.: enviar uma mensagem de WhatsApp quando um pedido muda de status) é o serviço `scheduler` do `docker-compose.prod.yml`: um cron que chama todo minuto as rotas `/api/v1/cron/*` — entre elas o drain da fila de eventos (`/api/v1/cron/event-log-drain`) — pela rede interna do Docker. Ele sobe junto com o resto; não há nada para ativar.
 
-Rodar de novo o `install.sh`/`update.sh` não duplica a linha do cron (ele mesmo substitui a antiga). Na 1ª vez que o cron é ativado numa instalação que já existia há um tempo, o script também limpa eventos pendentes com mais de 7 dias (marcando como concluídos, sem apagar histórico) — assim o primeiro drain não sai disparando efeitos atrasados de semanas atrás.
+Essas rotas **não** respondem pelo domínio: o Caddy devolve 403 para `/api/v1/cron/*` e `/api/internal/*` vindos da internet. Versões anteriores do kit punham no crontab do servidor uma linha que chamava o drain pelo domínio; o `install.sh` e o `update.sh` agora a tiram (só a desta instalação), porque ela passaria a falhar a cada minuto e o `scheduler` já faz o mesmo trabalho.
 
-Pra testar na mão, rode no próprio VPS (usa o `INTERNAL_SECRET` do seu `.env`):
+Pra testar na mão, rode na pasta do projeto (usa o segredo que o `scheduler` já tem, sem você digitar):
 
 ```bash
-source .env && curl -s -H "Authorization: Bearer ${INTERNAL_SECRET}" "${NEXT_PUBLIC_APP_URL}/api/v1/cron/event-log-drain"
+docker compose -f docker-compose.prod.yml exec scheduler sh -c 'curl -s -H "Authorization: Bearer $CRON_BEARER" http://app:3000/api/v1/cron/event-log-drain'
 ```
 
 Resposta esperada: `{"data":{"scanned":N,...}}` (N pode ser 0 se não houver eventos na fila — o importante é receber esse formato, não um erro de autenticação ou de conexão).
