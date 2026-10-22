@@ -1292,10 +1292,10 @@ else
   [ -n "$health_body" ] && c_dim "  última resposta: $(printf '%s' "$health_body" | head -c 200 || true)"
 fi
 
-# ── 11. Automações (cron do drain de eventos) ───────────────────────────────
+# ── 11. Automações (o drain roda no scheduler; aqui só o agente da tela) ────
 step "Ativando as automações"
 ensure_encryption_key .env
-setup_event_log_drain_cron
+remove_host_drain_cron
 setup_update_agent_cron
 
 # ── Final ───────────────────────────────────────────────────────────────────
