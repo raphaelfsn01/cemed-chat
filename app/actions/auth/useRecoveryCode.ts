@@ -7,9 +7,11 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit, isServiceRoleConfigured } from "@/lib/audit";
 import { hashRecoveryCode } from "@/lib/auth/recovery-codes";
+import { authRateLimited, AUTH_LIMITS } from "@/lib/auth/rate-limit";
 
 export type UseRecoveryCodeResult =
   | { ok: false; error: "invalid_or_used" }
+  | { ok: false; error: "rate_limited" }
   | { ok: false; error: "service_unavailable" };
 
 const inputSchema = z.object({
@@ -24,6 +26,9 @@ const inputSchema = z.object({
  *
  * Security:
  *  - 200ms artificial delay on miss (timing leak protection).
+ *  - Teto por IP e por e-mail ANTES de qualquer consulta (auditoria de
+ *    2026-10-21, M15): a rota é pública e o acerto APAGA o autenticador — sem
+ *    teto, adivinhar o código era só questão de volume.
  *  - hashRecoveryCode = sha256 → bytea match.
  *  - Audit emits with masked code (`AB****YZ`).
  */
@@ -43,6 +48,10 @@ export async function useRecoveryCode(
   if (!parsed.success) {
     await delay(200);
     return { ok: false, error: "invalid_or_used" };
+  }
+
+  if (await authRateLimited("recovery", parsed.data.email, AUTH_LIMITS.recovery)) {
+    return { ok: false, error: "rate_limited" };
   }
 
   if (!isServiceRoleConfigured()) {

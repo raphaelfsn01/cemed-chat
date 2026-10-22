@@ -26,6 +26,8 @@ export const ApiErrorCodes = {
   forbidden: "forbidden",
   forbidden_role: "forbidden_role",
   forbidden_tenant: "forbidden_tenant",
+  // admin/platform admin sem autenticador cadastrado: o papel exige TOTP (auditoria 2026-10-21)
+  mfa_enrollment_required: "mfa_enrollment_required",
   lgpd_anonymization_irreversible: "lgpd_anonymization_irreversible",
 
   // 404

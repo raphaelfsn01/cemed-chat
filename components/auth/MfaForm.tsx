@@ -44,7 +44,7 @@ export function MfaForm({ next }: MfaFormProps) {
         setLocked(true);
         setSecondsLeft(res.retry_in_seconds ?? 60);
         setError(
-          `Muitas tentativas. Aguarde ${res.retry_in_seconds ?? 60}s e tente novamente.`,
+          `Muitas tentativas. Aguarde ${tempoRestante(res.retry_in_seconds ?? 60)} e tente novamente.`,
         );
         setCode("");
       } else {
@@ -83,7 +83,7 @@ export function MfaForm({ next }: MfaFormProps) {
           className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-center text-sm text-destructive"
         >
           {locked && secondsLeft > 0
-            ? `Muitas tentativas. Tente novamente em ${secondsLeft}s.`
+            ? `Muitas tentativas. Tente novamente em ${tempoRestante(secondsLeft)}.`
             : error}
         </div>
       )}
@@ -104,4 +104,10 @@ export function MfaForm({ next }: MfaFormProps) {
       </div>
     </form>
   );
+}
+
+/** O bloqueio dura até 15 min: em minutos fica legível, em segundos não. */
+function tempoRestante(segundos: number): string {
+  if (segundos < 120) return `${segundos}s`;
+  return `${Math.ceil(segundos / 60)} min`;
 }

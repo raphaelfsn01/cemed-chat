@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useTransition, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { destinoSeguro } from "@/lib/auth/safe-next";
 import { loginSchema, type LoginInput } from "@/lib/auth/schemas";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,7 +34,7 @@ export function LoginForm({ next }: { next?: string }) {
       const res = await signInWithPassword(values, next);
       if (!res) {
         // Should be unreachable (redirect throws), but guard anyway.
-        router.replace(next || "/app/inbox");
+        router.replace(destinoSeguro(next));
         return;
       }
       if (res.error === "mfa_required") {

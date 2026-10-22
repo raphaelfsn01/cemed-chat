@@ -1,28 +1,30 @@
 "use server";
 
-import { cookies, headers } from "next/headers";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { audit } from "@/lib/audit";
-import { cookieSecure } from "@/lib/supabase/cookie-secure";
+import { destinoSeguro } from "@/lib/auth/safe-next";
+import {
+  AUTH_LIMITS,
+  authRateLimited,
+  bloqueadoPorFalhas,
+  registrarFalha,
+} from "@/lib/auth/rate-limit";
 
 export type VerifyMfaResult =
   | { ok: false; error: "mfa_invalid" }
   | { ok: false; error: "mfa_locked"; retry_in_seconds: number };
 
-const ATTEMPT_COOKIE = "mfa_attempts";
-const ATTEMPT_TTL_SECONDS = 60;
-const MAX_ATTEMPTS = 3;
-
 /**
  * Verifies a TOTP code against the user's verified factor and (on success)
- * elevates the session to AAL2. On failure, increments an attempt counter
- * stored in a short-lived cookie. After 3 failures within 60s, the user is
- * locked out and must wait.
+ * elevates the session to AAL2.
  *
- * Note: per-cookie counter is MVP. Hardening = Upstash Redis sliding window
- * keyed on user_id + IP.
+ * Teto de tentativas no SERVIDOR (auditoria de 2026-10-21, M15): 5 códigos
+ * errados por conta em 15 min trancam a verificação, inclusive contra quem
+ * distribui as tentativas por IPs; mais o teto por IP. Antes o contador morava
+ * num cookie `mfa_attempts` — o cliente o apagava e tentava de novo, sem fim.
  */
 export async function verifyMfa(code: string, next?: string): Promise<VerifyMfaResult> {
   const supabase = await createClient();
@@ -41,16 +43,12 @@ export async function verifyMfa(code: string, next?: string): Promise<VerifyMfaR
   const totp = factorsData?.totp?.find((f) => f.status === "verified");
   if (!totp) redirect("/app/inbox");
 
-  // Lockout check (cookie counter).
-  const store = await cookies();
-  const raw = store.get(ATTEMPT_COOKIE)?.value;
-  let attempts = 0;
-  if (raw) {
-    const parsed = parseInt(raw, 10);
-    if (!Number.isNaN(parsed)) attempts = parsed;
-  }
-  if (attempts >= MAX_ATTEMPTS) {
-    return { ok: false, error: "mfa_locked", retry_in_seconds: ATTEMPT_TTL_SECONDS };
+  // Lockout check: antes do provedor, para barrar a tentativa antes de acontecer.
+  if (
+    (await bloqueadoPorFalhas("mfa", user.id, AUTH_LIMITS.mfa)) ||
+    (await authRateLimited("mfa", null, AUTH_LIMITS.mfa))
+  ) {
+    return { ok: false, error: "mfa_locked", retry_in_seconds: AUTH_LIMITS.mfa.windowSec };
   }
 
   if (!/^\d{6}$/.test(code)) {
@@ -72,31 +70,22 @@ export async function verifyMfa(code: string, next?: string): Promise<VerifyMfaR
   });
 
   if (verifyErr) {
-    const newAttempts = attempts + 1;
-    store.set(ATTEMPT_COOKIE, String(newAttempts), {
-      httpOnly: true,
-      sameSite: "strict",
-      secure: cookieSecure(),
-      maxAge: ATTEMPT_TTL_SECONDS,
-      path: "/",
-    });
-    const locked = newAttempts >= MAX_ATTEMPTS;
+    await registrarFalha("mfa", user.id, AUTH_LIMITS.mfa);
+    const locked = await bloqueadoPorFalhas("mfa", user.id, AUTH_LIMITS.mfa);
     await audit({
       action: "auth.mfa_failed",
       actorUserId: user.id,
-      metadata: { locked, attempts: newAttempts },
+      metadata: { locked },
       requestId,
       ip,
       userAgent,
     });
     if (locked) {
-      return { ok: false, error: "mfa_locked", retry_in_seconds: ATTEMPT_TTL_SECONDS };
+      return { ok: false, error: "mfa_locked", retry_in_seconds: AUTH_LIMITS.mfa.windowSec };
     }
     return { ok: false, error: "mfa_invalid" };
   }
 
-  // Reset attempt counter and audit success.
-  store.delete(ATTEMPT_COOKIE);
   await audit({
     action: "auth.mfa_success",
     actorUserId: user.id,
@@ -106,5 +95,5 @@ export async function verifyMfa(code: string, next?: string): Promise<VerifyMfaR
     userAgent,
   });
 
-  redirect(next || "/app/inbox");
+  redirect(destinoSeguro(next));
 }

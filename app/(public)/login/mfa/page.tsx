@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { MfaForm } from "@/components/auth/MfaForm";
+import { destinoSeguro } from "@/lib/auth/safe-next";
 
 export const metadata = { title: "Verificação em duas etapas" };
 
@@ -10,7 +11,8 @@ export default async function MfaChallengePage({
 }: {
   searchParams: Promise<{ next?: string }>;
 }) {
-  const { next } = await searchParams;
+  const { next: nextBruto } = await searchParams;
+  const next = nextBruto ? destinoSeguro(nextBruto) : undefined;
   const supabase = await createClient();
   const {
     data: { user },

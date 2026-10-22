@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { loginSchema, type LoginInput } from "@/lib/auth/schemas";
 import { audit, hashEmail } from "@/lib/audit";
+import { destinoSeguro } from "@/lib/auth/safe-next";
 import {
   authRateLimited,
   contaBloqueadaPorFalhas,
@@ -105,5 +106,5 @@ export async function signInWithPassword(
   });
 
   // Server-side redirect ensures fresh session cookie is sent to browser.
-  redirect(next || "/app/inbox");
+  redirect(destinoSeguro(next));
 }
