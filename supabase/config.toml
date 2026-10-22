@@ -50,9 +50,15 @@ additional_redirect_urls = [
 jwt_expiry = 3600
 enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10
-enable_signup = true # Signup self-service (/signup) — provisiona tenant em /auth/confirm
+# Cadastro público DESLIGADO, como deve estar em produção (auditoria de 2026-10-21, C3):
+# conta nova só nasce do convite, pela API admin (service role). Com isto, o e2e do
+# CI prova em toda execução que o primeiro acesso pelo convite funciona sem signup.
+enable_signup = false
 
 [auth.email]
+# NÃO desligar: aqui esta chave liga o PROVEDOR de e-mail (login com senha). O que
+# barra cadastro novo é o `enable_signup` de [auth], acima. Medido: com false aqui,
+# o GoTrue responde "Email logins are disabled" a todo login.
 enable_signup = true
 double_confirm_changes = true
 enable_confirmations = true

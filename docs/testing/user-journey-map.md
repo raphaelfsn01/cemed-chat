@@ -258,14 +258,16 @@ convite: quem não tem conta cria a senha na própria página do convite (o e-ma
 link assinado; não depende do SMTP do Supabase). Prova: `tests/e2e/convite-primeiro-acesso.spec.ts`
 (parte 1 do `e2e.yml`), mais os unitários `criar-conta-pelo-convite`, `convite-e-onboarding-por-papel`
 e `sem-cadastro-publico`. Evidência: `.superpowers/evidence/fase1-app/`.
+Rodado em 2026-10-22 num Supabase local fresco (pg17 + `baseline.sql`) com `[auth] enable_signup = false`
+— o mesmo estado que a produção deve ter — `next build` + `next start`, Playwright em contêiner: 4/4.
 
 | # | Caso | Expectativa | Resultado |
 |---|---|---|---|
-| 11.1 | `/signup` | 404 | no CI |
-| 11.2 | Convidado sem conta abre o link | cria a senha, entra no `/app/inbox` com o papel do convite | no CI |
-| 11.3 | O mesmo link de novo | "já tem conta": não cria outra nem troca senha | no CI |
-| 11.4 | Ex-membro com o link ANTERIOR à remoção | recusado ("anterior à sua remoção"); continua removido | no CI |
-| 11.5 | Ex-membro com convite NOVO | volta com o papel do convite | no CI |
+| 11.1 | `/signup` sem sessão | 307 para `/login?next=%2Fsignup`, tela de login sem formulário de cadastro (com sessão seria 404: a página não existe) | PASS (local, 2026-10-22, signup do GoTrue desligado) |
+| 11.2 | Convidado sem conta abre o link | cria a senha, entra no `/app/inbox` com o papel do convite | PASS (local, 2026-10-22, signup do GoTrue desligado) |
+| 11.3 | O mesmo link de novo | "já tem conta": não cria outra nem troca senha | PASS (local, 2026-10-22, signup do GoTrue desligado) |
+| 11.4 | Ex-membro com o link ANTERIOR à remoção | recusado ("anterior à sua remoção"); continua removido | PASS (local, 2026-10-22, signup do GoTrue desligado) |
+| 11.5 | Ex-membro com convite NOVO | volta com o papel do convite | PASS (local, 2026-10-22, signup do GoTrue desligado) |
 | 11.6 | Membro ativo aceitando convite de papel maior | papel não muda (unit) | PASS (unit) |
 | 11.7 | `viewer`/`agent`/`manager` chamando action de onboarding | `forbidden` (unit) | PASS (unit) |
 | 11.8 | E-mail confirmado de quem não é membro | sai com "sem acesso", nenhuma organização criada (unit) | PASS (unit) |

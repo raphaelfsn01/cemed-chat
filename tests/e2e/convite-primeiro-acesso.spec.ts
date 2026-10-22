@@ -5,7 +5,7 @@
  * organização no banco da clínica. Sem ele, quem é convidado e ainda não tem conta
  * cria a senha na própria página do convite — é a única porta de conta nova.
  *
- *   1. `/signup` não existe mais.
+ *   1. `/signup` não mostra cadastro: sem sessão, redireciona para o login.
  *   2. Convidado sem conta abre o link, cria a senha e cai no app com o papel do
  *      convite (pela tela, como a pessoa faria).
  *   3. O MESMO link de novo não cria segunda conta nem troca a senha: manda fazer login.
@@ -86,9 +86,20 @@ test.describe("primeiro acesso pelo convite", () => {
     }
   });
 
-  test("1. /signup não existe mais", async ({ page }) => {
-    const res = await page.goto("/signup");
-    expect(res?.status()).toBe(404);
+  test("1. /signup não mostra mais cadastro: sem sessão, vai para o login", async ({ page }) => {
+    // Sem sessão, rota que não é pública leva ao login (proxy.ts): 307 para
+    // /login?next=/signup. Com sessão daria 404 — a página não existe mais. O que
+    // importa nos dois casos é não haver formulário de cadastro.
+    const direto = await page.request.get("/signup", { maxRedirects: 0 });
+    expect(direto.status()).toBe(307);
+    expect(direto.headers()["location"]).toMatch(/\/login\?next=%2Fsignup$/);
+
+    await page.goto("/signup");
+    expect(new URL(page.url()).pathname).toBe("/login");
+    await expect(page.getByRole("heading", { name: /entrar/i })).toBeVisible();
+    await expect(page.locator("#org_name")).toHaveCount(0);
+    await expect(page.locator("#password_confirm")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /criar conta/i })).toHaveCount(0);
   });
 
   test("2. convidado sem conta cria a senha e entra com o papel do convite", async ({ page }) => {
@@ -106,7 +117,9 @@ test.describe("primeiro acesso pelo convite", () => {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
     await criarSenha(page, primeiroToken);
-    await expect(page.getByRole("alert")).toContainText(/já tem conta/i);
+    // Filtrado pelo texto: o Next mantém um `role="alert"` vazio na página (o
+    // anunciador de rota, #__next-route-announcer__).
+    await expect(page.getByRole("alert").filter({ hasText: /já tem conta/i })).toBeVisible();
     await page.screenshot({ path: path.join(EVIDENCIA, "primeiro-acesso-reuso.png") });
     await ctx.close();
   });
@@ -129,7 +142,7 @@ test.describe("primeiro acesso pelo convite", () => {
 
     await page.goto(`/team/accept-invite/${primeiroToken}`);
     await page.getByRole("button", { name: /Aceitar convite/i }).click();
-    await expect(page.getByRole("alert")).toContainText(/anterior à sua remoção/i);
+    await expect(page.getByRole("alert").filter({ hasText: /anterior à sua remoção/i })).toBeVisible();
     await page.screenshot({ path: path.join(EVIDENCIA, "ex-membro-link-antigo.png") });
     expect((await membership(id))?.revoked_at, "o link antigo reativou o ex-membro").not.toBeNull();
 
