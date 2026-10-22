@@ -75,7 +75,7 @@ PREFIXES=("daily/$STAMP")
 
 bk_hc "$HC_PING_URL" /start
 bk_log "backup $STAMP (execução $BK_RID)"
-bk_pg_env
+bk_pg_env "$SUPABASE_DB_URL"
 
 # ── 1. Snapshot: contagens e lista de mídia na MESMA transação que o pg_dump ──
 coproc SNAP { exec psql -qAtX -v ON_ERROR_STOP=1 2>&1; }
@@ -90,21 +90,7 @@ snap_query "begin isolation level repeatable read read only; select pg_export_sn
 [[ $REPLY_LINE =~ ^[0-9A-F]+-[0-9A-F]+-[0-9]+$ ]] || bk_die "snapshot não exportado: $REPLY_LINE"
 SNAP_ID=$REPLY_LINE
 
-SCHEMAS="'public','auth','storage'"
-snap_query "select json_build_object(
-  'taken_at', to_char(now() at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),
-  'server_version', current_setting('server_version'),
-  'tables', (select json_object_agg(format('%I.%I', n.nspname, c.relname),
-      (xpath('/row/n/text()', query_to_xml(format('select count(*) as n from only %I.%I', n.nspname, c.relname), false, true, '')))[1]::text::bigint
-      order by n.nspname, c.relname)
-    from pg_class c join pg_namespace n on n.oid = c.relnamespace
-    where c.relkind in ('r','p') and n.nspname in ($SCHEMAS)),
-  'policies', (select count(*) from pg_policy p join pg_class c on c.oid = p.polrelid
-    join pg_namespace n on n.oid = c.relnamespace where n.nspname in ($SCHEMAS)),
-  'acl_relations', (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace,
-    aclexplode(c.relacl) where n.nspname in ($SCHEMAS)),
-  'acl_functions', (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
-    aclexplode(p.proacl) where n.nspname in ($SCHEMAS)));"
+snap_query "$(bk_stats_sql)"
 [[ $REPLY_LINE == '{'* ]] || bk_die "contagem falhou: $REPLY_LINE"
 META=$REPLY_LINE
 
