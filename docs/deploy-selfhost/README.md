@@ -154,9 +154,15 @@ de `supabase/templates/` (mesmo link `token_hash` acima).
 
 ## 6. Operação
 
-- **Backup diário** (do seu crontab na VPS):
-  `0 3 * * * /caminho/repo/scripts/backup-db.sh /var/backups/cemed-chat`
-  (restaure com `pg_restore --clean --no-owner -d "$SUPABASE_DB_URL" arquivo.dump`)
+- **Backup diário externo e cifrado** (o Supabase Free não faz backup):
+  `scripts/backup/backup.sh` despeja `public`+`auth`+`storage` (com donos e grants)
+  e a mídia do Storage, cifra com [age](https://age-encryption.org) **antes** de
+  sair da VPS e sobe para um bucket S3/R2, avisando o healthchecks.io.
+  Credenciais num arquivo 600 fora do repo (modelo: `scripts/backup/backup.env.example`);
+  agende no crontab, por exemplo `15 8 * * * nice -n 10 ionice -c3 timeout 30m /caminho/repo/scripts/backup/backup.sh`.
+  Para restaurar, decifre com a chave privada (`age -d -i chave.txt -o db.dump db.dump.age`)
+  e use `pg_restore`. Prova do script sem tocar em nada externo:
+  `bash scripts/backup/test-backup.sh`.
 - **Flywheel** (auto-melhoria): o worker julga conversas reais a cada 6h
   (`FLYWHEEL_INTERVAL_MS`) e grava PROPOSTAS de melhoria de prompt em
   `flywheel_distiller_proposals`. Nada é aplicado sozinho: revise e cole o
