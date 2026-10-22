@@ -234,7 +234,11 @@ consequência natural de trabalho em branches paralelas, mas ilustra a regra:
 4. **Dependência de credencial de terceiro para provar IA**: se Anthropic segue com credencial
    placeholder e Google com chave de gateway inválida, o caminho multimodal está provado em um
    único provider (OpenAI) apesar de o design ser model-agnostic. **A CONFIRMAR** se ainda vale.
-5. **`lib/agent-engine/agent/inbound-turn.ts` com 1789 linhas** — 2,4× o segundo maior arquivo
+5. **Backup do banco (auditoria 2026-10-21, A1)** — o Supabase Free não faz backup. Os
+   scripts existem (`scripts/backup/`: diário cifrado para o R2, teste trimestral, restore
+   de desastre ensaiado num Supabase local) e o runbook é `docs/runbooks/backup-e-restauracao.md`.
+   **Até a instalação na VPS (cron + chave + `backup.env`) o RPO segue infinito.**
+6. **`lib/agent-engine/agent/inbound-turn.ts` com 1789 linhas** — 2,4× o segundo maior arquivo
    de lógica (`AgentForm.tsx`, 746), e é o hot path do produto. Cresceu ~200 linhas desde a
    primeira medição desta auditoria.
 

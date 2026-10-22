@@ -160,9 +160,10 @@ de `supabase/templates/` (mesmo link `token_hash` acima).
   sair da VPS e sobe para um bucket S3/R2, avisando o healthchecks.io.
   Credenciais num arquivo 600 fora do repo (modelo: `scripts/backup/backup.env.example`);
   agende no crontab, por exemplo `15 8 * * * nice -n 10 ionice -c3 timeout 30m /caminho/repo/scripts/backup/backup.sh`.
-  Para restaurar, decifre com a chave privada (`age -d -i chave.txt -o db.dump db.dump.age`)
-  e use `pg_restore`. Prova do script sem tocar em nada externo:
-  `bash scripts/backup/test-backup.sh`.
+  Restauração: `scripts/backup/restore-test.sh` (teste num Postgres descartável, sem rede)
+  e `scripts/backup/restore-supabase.sh` (desastre: carrega num projeto Supabase novo).
+  Roteiro completo em [`docs/runbooks/backup-e-restauracao.md`](../runbooks/backup-e-restauracao.md).
+  Prova sem tocar em nada externo: `bash scripts/backup/test-backup.sh`.
 - **Flywheel** (auto-melhoria): o worker julga conversas reais a cada 6h
   (`FLYWHEEL_INTERVAL_MS`) e grava PROPOSTAS de melhoria de prompt em
   `flywheel_distiller_proposals`. Nada é aplicado sozinho: revise e cole o

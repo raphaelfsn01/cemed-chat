@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # SC2016: os trechos entre aspas simples são expandidos DENTRO do contêiner, de propósito.
 # shellcheck disable=SC2016
-# Prova ponta a ponta do backup.sh SEM tocar em nada externo nem na produção.
+# Prova ponta a ponta do backup.sh e do restore-test.sh SEM tocar em nada externo
+# nem na produção.
 #
 # Numa rede Docker isolada sobe:
 #   origem   supabase/postgres 17 (o Postgres do Supabase, com os roles reais:
@@ -11,9 +12,13 @@
 #   stubs    Storage do Supabase (mídia) e healthchecks.io (registra os pings)
 # e roda o backup.sh dentro do mesmo Ubuntu da VPS (test/runner.Dockerfile).
 #
-# Casos: caminho feliz (inclui o mensal do dia 1), 2ª execução no mês, e as
-# sabotagens: senha do banco errada, chave do Storage errada, R2 fora do ar,
-# backup.env 644, chave age inválida, execução concorrente.
+# Backup: caminho feliz (inclui o mensal do dia 1), 2ª execução no mês, e as
+# sabotagens: senha do banco errada, chave do Storage errada, objeto 500, R2 fora
+# do ar, backup.env 644, chave age inválida, execução concorrente.
+# Restauração (restore-test.sh roda no HOST, como na VPS; o R2 e o healthchecks
+# ficam expostos só em 127.0.0.1): restaura diário e mensal, e as sabotagens
+# contagem/grant/RLS adulterados no manifest, cifrado corrompido, mídia trocada,
+# chave errada e entrada que não é chave.
 #
 #   bash scripts/backup/test-backup.sh
 set -euo pipefail
@@ -34,6 +39,7 @@ T=$(mktemp -d "${TMPDIR:-/tmp}/cemed-backup-test.XXXXXX")
 chmod 700 "$T"
 cleanup() {
   docker rm -f "$ID-src" "$ID-s3" "$ID-stubs" >/dev/null 2>&1 || true
+  docker ps -aq --filter name=cemed-restore- | xargs -r docker rm -f >/dev/null 2>&1 || true
   docker network rm "$NET" >/dev/null 2>&1 || true
   rm -rf "$T"
 }
@@ -96,10 +102,10 @@ head -c 200000 /dev/urandom >"$T/media/whatsapp-media/org1/conv1/msg1.jpg"
 printf 'áudio de teste' >"$T/media/whatsapp-media/org1/conv1/ação-ç.ogg"
 echo fora-do-escopo >"$T/media/skill-assets/fora.txt"
 
-docker run -d --name "$ID-s3" --network "$NET" "$S3_IMAGE" \
+docker run -d --name "$ID-s3" --network "$NET" -p 127.0.0.1::7070 "$S3_IMAGE" \
   --access testkey --secret segredo-s3-teste --region auto posix /tmp >/dev/null
 docker run -d --name "$ID-src" --network "$NET" -e POSTGRES_PASSWORD=senha-src-teste "$SRC_IMAGE" >/dev/null
-docker run -d --name "$ID-stubs" --network "$NET" --user "$UGID" \
+docker run -d --name "$ID-stubs" --network "$NET" -p 127.0.0.1::8000 --user "$UGID" \
   -e STUB_KEY=chave-service-teste -e MEDIA_DIR=/media -e HC_LOG=/hc/hc.log \
   -v "$T/media:/media:ro" -v "$T/hc:/hc" -v "$HERE/test/stubs.py:/stubs.py:ro" \
   "$RUNNER" python3 -I /stubs.py >/dev/null
@@ -134,6 +140,8 @@ do \$\$ declare r record; begin
       case r.nspname when 'auth' then 'supabase_auth_admin' else 'supabase_storage_admin' end);
   end loop;
 end \$\$;
+-- Como na produção: vector em public (o restore recria pelo manifest).
+create extension if not exists vector with schema public;
 insert into auth.users (id, email) values ('11111111-1111-1111-1111-111111111111', '$CANARIO');
 insert into storage.buckets (id, name, public) values ('whatsapp-media','whatsapp-media',false), ('skill-assets','skill-assets',false);
 insert into storage.objects (bucket_id, name, metadata) values
@@ -149,7 +157,8 @@ create table public.pacientes (
   organization_id uuid not null,
   nome text,
   email text,
-  user_id uuid references auth.users(id));
+  user_id uuid references auth.users(id),
+  embedding public.vector(3) default '[1,2,3]');
 alter table public.pacientes enable row level security;
 create policy tenant_isolation_pacientes_all on public.pacientes for all to authenticated
   using (user_id = auth.uid());
@@ -163,6 +172,15 @@ insert into public.pacientes (organization_id, nome, email, user_id)
   select gen_random_uuid(), 'Paciente ' || g, 'p' || g || '@exemplo.test', null from generate_series(1, 249) g;
 insert into public.pacientes (organization_id, nome, email, user_id)
   values (gen_random_uuid(), 'Canário', '$CANARIO', '11111111-1111-1111-1111-111111111111');
+SQL
+# Como na produção: tabela na publicação do Realtime (o pg_dump com --schema não a exporta).
+src_sql supabase_admin <<SQL
+do \$\$ begin
+  if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    create publication supabase_realtime;
+  end if;
+end \$\$;
+alter publication supabase_realtime add table public.pacientes;
 SQL
 
 write_env cfg
@@ -313,6 +331,108 @@ check "saiu com 0 sem rodar" test "$(cat "$T/rc-lock")" = 0
 check "avisou que há outro em andamento" grep -q 'outro backup em andamento' "$T/out.log"
 check "nenhum ping (quem está rodando é quem pinga)" test "$(hc_lines)" = "$h0"
 check "nenhum arquivo enviado" test -z "$(keys daily/2026-11-07)"
+
+# ───────────────────────────────────────────────────────────────────────────
+# Restauração. O restore-test.sh roda no host (como na VPS) e enxerga o R2 e o
+# healthchecks pelas portas publicadas em 127.0.0.1.
+S3P=$(docker port "$ID-s3" 7070/tcp | head -n 1 | sed 's/.*://')
+HCP=$(docker port "$ID-stubs" 8000/tcp | head -n 1 | sed 's/.*://')
+write_env cfg-host "R2_ENDPOINT=http://127.0.0.1:$S3P" "HC_RESTORE_PING_URL=http://127.0.0.1:$HCP/hc/trimestral"
+mkdir -p "$T/rtmp"
+
+# run_restore [PREFIXO] < chave — código em $RC, saída em $T/rout.log
+run_restore() {
+  set +e
+  BACKUP_ENV="$T/cfg-host/backup.env" RESTORE_TMPDIR="$T/rtmp" bash "$HERE/restore-test.sh" "$@" >"$T/rout.log" 2>&1
+  RC=$?
+  set -e
+}
+restore_containers() { docker ps -aq --filter name=cemed-restore- | wc -l; }
+
+# tamper ORIGEM DESTINO MODO [EXPR_JQ] — copia um conjunto adulterado para DESTINO.
+#   manifest  aplica EXPR_JQ ao manifest     cifra  vira 1 byte do db.dump.age
+#   midia     troca 1 byte de um arquivo de mídia e recalcula o sha do tar no manifest
+tamper() {
+  runner -e SRC="$1" -e DST="$2" -e MODE="$3" -e JQ="${4:-.}" "$RUNNER" bash -c '
+    set -e; . /bk/_lib.sh; bk_load_env /t/cfg/backup.env
+    WORK=$(mktemp -d); cd "$WORK"
+    for f in manifest.json db.dump roles.sql media.tar; do bk_s3_get "$SRC/$f.age" "$f.age"; done
+    age -d -i /t/key -o manifest.json manifest.json.age
+    case $MODE in
+      manifest) jq "$JQ" manifest.json >m2 && mv m2 manifest.json ;;
+      cifra) python3 -I -c "import sys; b=bytearray(open(sys.argv[1],\"rb\").read()); b[300]^=0xFF; open(sys.argv[1],\"wb\").write(b)" db.dump.age ;;
+      midia)
+        mkdir x && age -d -i /t/key media.tar.age | tar -x -C x
+        python3 -I -c "import sys; p=sys.argv[1]; b=bytearray(open(p,\"rb\").read()); b[10]^=0xFF; open(p,\"wb\").write(b)" x/whatsapp-media/org1/conv1/msg1.jpg
+        tar -C x -cf - whatsapp-media INDICE.json | age -r "$AGE_RECIPIENT" -o media.tar.age
+        jq --arg s "$(sha256sum media.tar.age | cut -d" " -f1)" ".arquivos[\"media.tar.age\"].sha256 = \$s" manifest.json >m2 && mv m2 manifest.json ;;
+    esac
+    age -r "$AGE_RECIPIENT" -o manifest.json.age manifest.json
+    for f in db.dump roles.sql media.tar manifest.json; do bk_s3_put "$DST/$f.age" "$f.age"; done'
+}
+
+# restore_fails NOME PREFIXO MOTIVO_REGEX [arquivo da chave]
+restore_fails() {
+  local h0; h0=$(hc_lines)
+  run_restore "$2" <"${4:-$T/key}"
+  check "$1: reprovou (código ≠ 0)" test "$RC" != 0
+  check "$1: a saída diz o motivo" grep -qE "$3" "$T/rout.log"
+  check "$1: /fail no check trimestral, com o motivo" bash -c "tail -n +$((h0 + 1)) '$T/hc/hc.log' | jq -r 'select(.path==\"/hc/trimestral/fail\") | .body' | grep -qE '$3'"
+  check "$1: o /fail não vaza a chave privada" bash -c "! tail -n +$((h0 + 1)) '$T/hc/hc.log' | grep -q AGE-SECRET-KEY"
+  check "$1: contêiner descartado" test "$(restore_containers)" = 0
+  check "$1: temporário vazio" test -z "$(ls -A "$T/rtmp")"
+}
+
+step "R1. restauração do diário limpo: tudo bate com o manifest"
+h0=$(hc_lines)
+run_restore daily/2026-11-01T090000Z <"$T/key"
+check "restore-test.sh saiu com 0" test "$RC" = 0
+[ "$RC" = 0 ] || sed 's/^/     | /' "$T/rout.log"
+check "zero divergências" grep -q 'divergencias=0' "$T/rout.log"
+check "contou as mesmas tabelas que o backup" grep -q "tabelas=$(jq '.banco.tables | length' "$T/out/manifest.json") " "$T/rout.log"
+check "mídia conferida (3 arquivos, 1 ausente)" grep -q 'midia=3 ausentes=1 ' "$T/rout.log"
+check "manifest registrou a tabela na publicação do Realtime" test "$(jq -r '.banco.publications[0]' "$T/out/manifest.json")" = "supabase_realtime public.pacientes"
+check "healthchecks trimestral: /start e sucesso" \
+  bash -c "tail -n +$((h0 + 1)) '$T/hc/hc.log' | jq -r .path | tr '\n' ' ' | grep -qx '/hc/trimestral/start /hc/trimestral '"
+check "contêiner descartado" test "$(restore_containers)" = 0
+check "temporário vazio (os cifrados baixados foram apagados)" test -z "$(ls -A "$T/rtmp")"
+check "a chave não aparece na saída" bash -c "! grep -q AGE-SECRET-KEY '$T/rout.log'"
+
+step "R2. sem argumento: pega o diário completo mais recente; erro de mídia do backup vira aviso"
+run_restore <"$T/key"
+check "saiu com 0" test "$RC" = 0
+check "escolheu daily/2026-11-03T091500Z" grep -q 'conjunto: daily/2026-11-03T091500Z' "$T/rout.log"
+check "avisa do objeto que falhou no backup" grep -q '1 objeto(s) já tinham falhado no backup' "$T/rout.log"
+
+step "R3. restauração do mensal"
+run_restore monthly/2026-11/2026-11-01T081500Z <"$T/key"
+check "saiu com 0" test "$RC" = 0
+
+step "R4. sabotagens"
+tamper daily/2026-11-01T090000Z daily/2026-12-01T000001Z manifest '.banco.tables["public.pacientes"] = 251'
+restore_fails "contagem adulterada" daily/2026-12-01T000001Z 'tabela public.pacientes: backup=251 restaurado=250'
+tamper daily/2026-11-01T090000Z daily/2026-12-01T000002Z manifest '.banco.acl_relations += 1'
+restore_fails "grant a mais no manifest" daily/2026-12-01T000002Z 'acl_relations: backup=[0-9]+ restaurado='
+tamper daily/2026-11-01T090000Z daily/2026-12-01T000003Z manifest '.banco.rls_tables += 1'
+restore_fails "RLS a mais no manifest" daily/2026-12-01T000003Z 'rls_tables: backup=[0-9]+ restaurado='
+tamper daily/2026-11-01T090000Z daily/2026-12-01T000006Z manifest '.banco.publications += ["supabase_realtime public.fantasma"]'
+restore_fails "publicação a mais no manifest" daily/2026-12-01T000006Z 'publicação perdida: supabase_realtime public.fantasma'
+tamper daily/2026-11-01T090000Z daily/2026-12-01T000004Z cifra
+restore_fails "cifrado corrompido" daily/2026-12-01T000004Z 'db.dump.age não confere com o manifest'
+tamper daily/2026-11-01T090000Z daily/2026-12-01T000005Z midia
+restore_fails "mídia trocada" daily/2026-12-01T000005Z 'mídia: .*msg1.jpg: FAILED'
+runner "$RUNNER" age-keygen -o /t/outra.key 2>/dev/null
+restore_fails "chave errada" daily/2026-11-01T090000Z 'a chave não decifra este backup' "$T/outra.key"
+
+step "R5. entrada que não é chave"
+h0=$(hc_lines)
+set +e
+echo "não sou uma chave" | BACKUP_ENV="$T/cfg-host/backup.env" RESTORE_TMPDIR="$T/rtmp" bash "$HERE/restore-test.sh" >"$T/rout.log" 2>&1
+RC=$?
+set -e
+check "recusou antes de baixar (código ≠ 0)" test "$RC" != 0
+check "explica que não é chave age" grep -q 'não é uma chave privada age' "$T/rout.log"
+check "nem pingou" test "$(hc_lines)" = "$h0"
 
 echo
 if [ "$FAILS" -eq 0 ]; then
