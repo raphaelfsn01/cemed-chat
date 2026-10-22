@@ -13,7 +13,8 @@ export default async function TeamPage() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   const isAdmin = !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
-  const isManager = !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
+  // Distribuir o atendimento (rodízio, disponibilidade dos colegas) é coordinator+ (0124).
+  const distribui = !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.coordinator;
 
   return (
     <div className="flex h-full flex-col gap-6 lg:p-6">
@@ -40,11 +41,11 @@ export default async function TeamPage() {
           <TeamMembersClient currentUserId={user.id} canManage={isAdmin} />
         </TabsContent>
         <TabsContent value="attendants" className="mt-4">
-          {isManager ? (
-            <AttendantsClient canManage={isManager} />
+          {distribui ? (
+            <AttendantsClient canManage={distribui} />
           ) : (
             <p className="text-sm text-muted-foreground">
-              A gestão de atendimento está disponível para gerentes e administradores.
+              A distribuição do atendimento fica com Coordenadores, Gerentes e Administradores.
             </p>
           )}
         </TabsContent>

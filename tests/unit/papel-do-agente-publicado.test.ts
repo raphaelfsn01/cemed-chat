@@ -41,6 +41,8 @@ describe("papel do agente publicado", () => {
     // que ele não alcança, abaixo do gerente para não virar gerente.
     expect(ROLE_RANK.agent).toBeLessThan(ROLE_RANK.ai_operator);
     expect(ROLE_RANK.ai_operator).toBeLessThan(ROLE_RANK.manager);
+    // E acima do Coordenador (0124): nenhuma pessoa herda capacidade de máquina.
+    expect(ROLE_RANK.coordinator).toBeLessThan(ROLE_RANK.ai_operator);
   });
 
   it("NENHUMA pessoa pode recebê-lo — não está na lista de papéis humanos", () => {

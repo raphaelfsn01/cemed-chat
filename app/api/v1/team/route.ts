@@ -34,8 +34,9 @@ interface MemberDto extends MembershipRow {
 
 export async function GET(_req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  // spec 13 §4: team read é manager+ (viewer/agent = none; nota 7).
-  const authz = await requireRole("manager", { requestId, resource: "team" });
+  // spec 13 §4: team read é coordinator+ (viewer/agent = none; nota 7). A RLS
+  // de user_organizations (user_orgs_select, 0124) acompanha o mesmo piso.
+  const authz = await requireRole("coordinator", { requestId, resource: "team" });
   if (!authz.ok) return authz.response;
   const { org: activeOrg } = authz;
 

@@ -46,7 +46,7 @@ const DEFAULT_ROUTING = routingConfigSchema.parse({});
 
 export async function GET(_req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "settings_routing" });
+  const authz = await requireRole("coordinator", { requestId, resource: "settings_routing" });
   if (!authz.ok) return authz.response;
   const { org: activeOrg } = authz;
 
@@ -69,7 +69,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
 
 export async function PATCH(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "settings_routing" });
+  const authz = await requireRole("coordinator", { requestId, resource: "settings_routing" });
   if (!authz.ok) return authz.response;
   const { user: authUser, org: activeOrg } = authz;
 

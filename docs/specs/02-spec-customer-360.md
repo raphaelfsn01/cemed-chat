@@ -603,18 +603,18 @@ create policy "tenant_isolation_crm_lead_activities_insert" on public.crm_lead_a
 
 -- merge_queue: agent não vê (apenas manager+)
 create policy "tenant_isolation_merge_queue_select_manager" on public.merge_queue for select
-  using  ((organization_id in (select organization_id from public.fn_user_org_ids()) and public.fn_user_role_in(organization_id) >= 3)
+  using  ((organization_id in (select organization_id from public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager'))
           or public.fn_is_platform_admin());
 
 create policy "tenant_isolation_merge_queue_write_manager" on public.merge_queue for all
-  using  ((organization_id in (select organization_id from public.fn_user_org_ids()) and public.fn_user_role_in(organization_id) >= 3)
+  using  ((organization_id in (select organization_id from public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager'))
           or public.fn_is_platform_admin())
   with check
-         ((organization_id in (select organization_id from public.fn_user_org_ids()) and public.fn_user_role_in(organization_id) >= 3)
+         ((organization_id in (select organization_id from public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager'))
           or public.fn_is_platform_admin());
 ```
 
-`fn_user_role_in(uuid)` retorna inteiro 1-4 (vide Spec 01 §3.3). Manager = 3.
+Papel é comparado por **nome** com `fn_role_at_least(org, 'manager')` (vide Spec 01 §3.3) — é o que a policy aplicada no baseline usa. Não compare com o inteiro de `fn_user_role_in`: a escala muda quando entra um papel (a migration 0124 pôs `coordinator` = 3 e empurrou manager para 4 e admin para 5), e um `>= 3` fixo passaria a deixar o Coordenador entrar.
 
 ---
 

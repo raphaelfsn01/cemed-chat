@@ -1,9 +1,10 @@
 /**
  * PATCH /api/v1/attendants/availability/[user_id] — grava disponibilidade.
  *
- * Autz (spec 13 §5): o PRÓPRIO atendente muda a sua; manager+ muda de qualquer
- * membro da org. requireRole("agent") + checagem (user_id == auth.uid() OR
- * role>=manager). A RLS de attendant_availability (own OR manager) é backstop.
+ * Autz (spec 13 §5): o PRÓPRIO atendente muda a sua; coordinator+ (0124) muda
+ * de qualquer membro da org. requireRole("agent") + checagem (user_id ==
+ * auth.uid() OR role>=coordinator). A RLS de attendant_availability (own OR
+ * coordinator) é backstop.
  *
  * Persistência do <AttendantStatusToggle> (spec 04 §8) + heartbeat AT-08:
  * quando is_available=true, bumpa last_heartbeat_at=now — "online" é também o
@@ -41,11 +42,11 @@ export async function PATCH(
   const { user: authUser, org: activeOrg } = authz;
 
   const isSelf = targetUserId === authUser.id;
-  const isManager = ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
-  if (!isSelf && !isManager) {
+  const distribui = ROLE_RANK[activeOrg.role] >= ROLE_RANK.coordinator;
+  if (!isSelf && !distribui) {
     return fail(
       "forbidden_role",
-      "Só o próprio atendente ou um manager pode alterar esta disponibilidade.",
+      "Só o próprio atendente ou quem distribui o atendimento (Coordenador ou acima) pode alterar esta disponibilidade.",
       403,
       { requestId },
     );
@@ -66,8 +67,8 @@ export async function PATCH(
 
   const supabase = await createClient();
 
-  // Manager alterando outro: alvo tem que ser membro da org (evita linha órfã;
-  // a RLS permite manager inserir qualquer user_id da própria org).
+  // Coordenador+ alterando outro: alvo tem que ser membro da org (evita linha
+  // órfã; a RLS permite coordinator+ inserir qualquer user_id da própria org).
   if (!isSelf) {
     const { data: member, error: memberErr } = await supabase
       .from("user_organizations")
