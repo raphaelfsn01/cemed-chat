@@ -20,6 +20,10 @@ services:
     pull_policy: ${APP_PULL_POLICY:-always}
     restart: unless-stopped
     env_file: .env
+    environment:
+      # O app chama as próprias rotas internas (/api/internal/*) por aqui, não
+      # pelo domínio: o Caddy recusa /api/internal/* e /api/v1/cron/* vindos de fora.
+      INTERNAL_APP_URL: ${INTERNAL_APP_URL:-http://app:3000}
     depends_on:
       srh:
         condition: service_started

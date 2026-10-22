@@ -211,7 +211,7 @@ else
   exit 1
 fi
 
-# ── 7. Automações (cron do drain de eventos; o da tela já subiu no bloco 0) ──
+# ── 7. Automações (o drain roda no scheduler; o cron da tela subiu no bloco 0) ──
 step "Conferindo as automações"
 ensure_encryption_key .env
-setup_event_log_drain_cron
+remove_host_drain_cron

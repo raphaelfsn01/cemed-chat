@@ -27,9 +27,12 @@
 # - `encode gzip`             → middleware `deskcomm-compress`
 # - `respond @waha_global 403`→ router `deskcomm-waha-block` (ver abaixo)
 #
-# Os timeouts longos que o Caddyfile dá a /api/internal/agents/run* NÃO precisam
-# de equivalente: no Traefik o writeTimeout e o responseHeaderTimeout já são
-# ilimitados por padrão, então uma resposta de 5 minutos passa inteira.
+# SEM equivalente aqui (só o Caddyfile tem):
+# - `respond @maquina 403` — /api/internal/* e /api/v1/cron/* continuam
+#   alcançáveis pelo domínio nesta topologia, protegidos só pelo segredo no
+#   header. Ninguém legítimo os chama por fora: o scheduler e o app falam pela
+#   rede interna.
+# - o header HSTS.
 #
 # PRÉ-REQUISITOS NO TRAEFIK DA HOSPEDAGEM
 # ---------------------------------------

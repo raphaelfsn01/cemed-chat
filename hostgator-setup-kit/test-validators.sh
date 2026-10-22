@@ -437,6 +437,26 @@ else
   printf '  ✗ uma apagou a outra (drain=%s, agente=%s — esperava 1 de cada)\n' "$tem_drain" "$tem_agent"; fail=1
 fi
 
+echo "cron: o drain do host sai, só o desta instalação"
+# O drain agora roda só no scheduler do compose (o Caddy recusa /api/v1/cron/*
+# vindo do domínio). remove_host_drain_cron tira a linha desta instalação, com
+# marcador ou legada, e nada mais.
+CRONTAB_COM_DRAIN="${CRONTAB_VIZINHO}
+* * * * * curl -fsS -H \"Authorization: Bearer X\" \"https://novo.exemplo.com.br/api/v1/cron/event-log-drain\" >/dev/null 2>&1 ${TAG_DRAIN}
+* * * * * curl -fsS -H \"Authorization: Bearer X\" \"https://novo.exemplo.com.br/api/v1/cron/event-log-drain\" >/dev/null 2>&1
+${L_AGENT}"
+sem_drain="$(printf '%s\n' "$CRONTAB_COM_DRAIN" | cron_drop "$TAG_DRAIN" 'https://novo.exemplo.com.br/api/v1/cron/event-log-drain')"
+drop_ok() {  # drop_ok <descrição> <texto> <ocorrências esperadas>
+  local n; n="$(printf '%s\n' "$sem_drain" | grep -cF -e "$2" || true)"
+  if [ "$n" = "$3" ]; then printf '  ✓ %s\n' "$1"
+  else printf '  ✗ %s (achei %s, esperava %s)\n' "$1" "$n" "$3"; fail=1; fi
+}
+drop_ok "o drain desta instalação sai (marcado e legado)" 'novo.exemplo.com.br/api/v1/cron/event-log-drain' 0
+drop_ok "o drain do vizinho fica"                          'crm.deskcomm.com.br/api/v1/cron/event-log-drain' 1
+drop_ok "o agente desta instalação fica"                   "cd ${DIR} && bash hostgator-setup-kit/agent.sh" 1
+drop_ok "o agente do vizinho fica"                         'cd /root/Aula-Youtube/DeskcommCRM && bash hostgator-setup-kit/agent.sh' 1
+drop_ok "a linha alheia (trend-radar) fica"                '/root/trend-radar/run_full_vps.sh' 1
+
 echo "provisionamento do Supabase: senha do banco"
 # Dois testes distintos, porque o defeito e o contrato moram em lugares
 # diferentes — e o primeiro teste que escrevi aqui era VÁCUO por não separá-los.

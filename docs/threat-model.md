@@ -37,8 +37,8 @@ São conclusões de leitura de código.
 | `/api/v1/webhooks/waha/*` | HMAC-SHA512 + `timingSafeEqual` (`lib/waha/ingest.ts`) | ❌ |
 | `/api/v1/webhooks/in/:token` | path token + assinatura opcional | ✅ 60/min por token |
 | `/api/v1/webhooks/nuvemshop/*` | HMAC | ❌ |
-| `/api/v1/cron/*` (9 rotas) | `Bearer INTERNAL_CRON_SECRET\|INTERNAL_SECRET`, **fail-closed** | ❌ |
-| `/api/internal/*` | `x-internal-secret` ou `Bearer INTERNAL_SECRET`, comparação em tempo constante | ❌ |
+| `/api/v1/cron/*` (9 rotas) | `Bearer INTERNAL_CRON_SECRET\|INTERNAL_SECRET`, **fail-closed**. **403 na borda** (Caddyfile, 2026-10-22): só a rede interna do compose chega | ❌ |
+| `/api/internal/*` | `x-internal-secret` ou `Bearer INTERNAL_SECRET`, comparação em tempo constante. **403 na borda** (idem) | ❌ |
 | `/api/mcp` | `Bearer tok_...` validado contra `api_tokens` (hash SHA256) | ❌ |
 | `/account-suspended`, `/403`, `/404`, `/500`, `/503`, `/admin/forbidden` | — | ❌ |
 
@@ -65,7 +65,9 @@ Não há **nenhum** limite de tentativa em:
 - **`/team/accept-invite/:token`** — o HMAC é forte, mas sem limite o atacante pode
   sondar indefinidamente e sem custo, e sem gerar sinal de alerta.
 - **Os 9 crons e `/api/internal/*`** — o secret é forte e a comparação é em tempo
-  constante, mas nada limita o volume de tentativas.
+  constante, mas nada limita o volume de tentativas. Na topologia A (Caddy do compose)
+  eles não são mais alcançáveis da internet: o Caddy responde 403. Na B (Traefik da
+  hospedagem) continuam abertos, protegidos só pelo secret.
 - **`/api/mcp`** — enumeração de bearer token.
 
 **Mitigação recomendada:** aplicar `checkRateLimit` por prefixo no `proxy.ts` (uma passada
@@ -175,7 +177,8 @@ Não avaliado por falta de execução/instância:
 - Se as políticas RLS **realmente** isolam (os invariantes existem para provar; não foram rodados).
 - Postura do container WAHA — `docker-compose.prod.yml` comenta "Core por default, dashboard
   off", mas exposição de porta e rede não foram verificadas contra instância viva.
-- Config do Caddy (`Caddyfile`) — TLS, headers de segurança, HSTS.
+- Config do Caddy (`Caddyfile`) — TLS e headers de segurança. HSTS ligado em 2026-10-22
+  (`max-age` de 6 meses, sem `includeSubDomains`/`preload`); CSP ainda não.
 - Se `next.config.ts` define CSP / security headers.
 - Storage: se o bucket `whatsapp-media` está privado de fato e se a expiração das signed
   URLs é adequada.
