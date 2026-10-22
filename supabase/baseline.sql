@@ -9775,3 +9775,221 @@ create policy "channel_sessions_delete" on public.channel_sessions
   );
 
 notify pgrst, 'reload schema';
+
+-- ---- papel coordinator: CHECK, helpers de RLS e policies de distribuição (migration 0124) ----
+-- Coordenador = Atendente que distribui o atendimento, entre agent e manager. Os
+-- cinco lugares que listam papéis à mão mudam JUNTOS (senão o papel aceito pelo
+-- CHECK cai em false em toda a RLS), e o roster e a disponibilidade dos colegas
+-- passam de manager+ a coordinator+. Idempotente: drop/add da constraint (só
+-- alarga, sem backfill), create or replace e drop/create de policy. Ver o
+-- cabeçalho da migration 0124.
+
+-- 1. CHECK ----------------------------------------------------------------
+alter table public.user_organizations
+  drop constraint if exists user_organizations_role_check;
+alter table public.user_organizations
+  add constraint user_organizations_role_check
+  check (role in ('viewer', 'agent', 'coordinator', 'manager', 'admin'));
+
+-- 2. fn_role_at_least ------------------------------------------------------
+create or replace function public.fn_role_at_least(p_org uuid, p_min text)
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  with levels(role, lvl) as (
+    values ('viewer',1),('agent',2),('coordinator',3),('manager',4),('admin',5)
+  )
+  select coalesce(
+    (select user_lvl.lvl >= min_lvl.lvl
+     from levels user_lvl
+     join levels min_lvl on min_lvl.role = p_min
+     where user_lvl.role = public.fn_user_role_in_org(p_org)),
+    false
+  );
+$$;
+
+revoke execute on function public.fn_role_at_least(uuid, text) from public, anon;
+grant  execute on function public.fn_role_at_least(uuid, text) to authenticated, service_role;
+
+-- 3. fn_user_role_in -------------------------------------------------------
+create or replace function public.fn_user_role_in(p_org uuid)
+returns integer
+language sql stable security definer
+set search_path = public
+as $$
+  select case public.fn_user_role_in_org(p_org)
+    when 'viewer'      then 1
+    when 'agent'       then 2
+    when 'coordinator' then 3
+    when 'manager'     then 4
+    when 'admin'       then 5
+    else 0
+  end;
+$$;
+
+revoke execute on function public.fn_user_role_in(uuid) from public, anon;
+grant  execute on function public.fn_user_role_in(uuid) to authenticated, service_role;
+
+-- 4. visibilidade org-wide -------------------------------------------------
+create or replace function public.fn_can_view_conversation(
+  p_org uuid,
+  p_assigned_to_user_id uuid
+) returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select case
+    when public.fn_is_platform_admin() then true
+    when public.fn_user_role_in_org(p_org) is null then false
+    when public.fn_user_role_in_org(p_org) in ('viewer','coordinator','manager','admin') then true
+    when p_assigned_to_user_id = auth.uid() then true
+    else case coalesce(
+           (select settings->>'visibility_mode' from public.organizations where id = p_org),
+           'own_and_unassigned')
+         when 'all' then true
+         when 'own_and_unassigned' then p_assigned_to_user_id is null
+         else false
+       end
+  end;
+$$;
+
+revoke execute on function public.fn_can_view_conversation(uuid, uuid) from public, anon;
+grant  execute on function public.fn_can_view_conversation(uuid, uuid) to authenticated, service_role;
+
+create or replace function public.fn_can_view_lead(
+  p_org uuid,
+  p_owner_user_id uuid
+) returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select case
+    when public.fn_is_platform_admin() then true
+    when public.fn_user_role_in_org(p_org) is null then false
+    when public.fn_user_role_in_org(p_org) in ('viewer','coordinator','manager','admin') then true
+    when p_owner_user_id = auth.uid() then true
+    else case coalesce(
+           (select settings->>'visibility_mode' from public.organizations where id = p_org),
+           'own_and_unassigned')
+         when 'all' then true
+         when 'own_and_unassigned' then p_owner_user_id is null
+         else false
+       end
+  end;
+$$;
+
+revoke execute on function public.fn_can_view_lead(uuid, uuid) from public, anon;
+grant  execute on function public.fn_can_view_lead(uuid, uuid) to authenticated, service_role;
+
+-- 5. fn_conversation_assign: Coordenador pode receber conversa -------------
+create or replace function public.fn_conversation_assign(
+  p_organization_id uuid,
+  p_conversation_id uuid,
+  p_to_user_id uuid,
+  p_reason text,
+  p_expected_assignee uuid default null,
+  p_enforce_expected boolean default false
+) returns setof public.conversations
+language plpgsql security definer
+set search_path = public
+as $$
+declare
+  v_from uuid;
+  v_conv public.conversations%rowtype;
+begin
+  if auth.uid() is not null
+     and not public.fn_role_at_least(p_organization_id, 'agent') then
+    raise exception 'caller_not_authorized_for_org'
+      using hint = 'caller must be an active agent+ member of the organization';
+  end if;
+
+  if p_to_user_id is not null then
+    if coalesce(public.fn_member_role_in_org(p_to_user_id, p_organization_id), 'none')
+         not in ('agent','coordinator','manager','admin') then
+      raise exception 'assignee_not_eligible_member'
+        using hint = 'target must be an active agent+ member of the organization';
+    end if;
+  end if;
+
+  select assigned_to_user_id into v_from
+    from public.conversations
+   where id = p_conversation_id
+     and organization_id = p_organization_id
+   for update;
+
+  if not found then
+    return;
+  end if;
+
+  if p_enforce_expected and v_from is distinct from p_expected_assignee then
+    return;
+  end if;
+
+  update public.conversations
+     set assigned_to_user_id = p_to_user_id,
+         assigned_at = case when p_to_user_id is null then null else now() end,
+         assignee_kind = case when p_to_user_id is null then null else 'user' end,
+         status = case when p_to_user_id is null then 'open' else 'claimed' end,
+         status_changed_at = now(),
+         unread_count_for_assignee = 0,
+         updated_at = now()
+   where id = p_conversation_id
+   returning * into v_conv;
+
+  insert into public.conversation_assignment_events
+    (organization_id, conversation_id, from_user_id, to_user_id, changed_by, reason)
+  values
+    (p_organization_id, p_conversation_id, v_from, p_to_user_id, auth.uid(), p_reason);
+
+  return next v_conv;
+end;
+$$;
+
+revoke execute on function public.fn_conversation_assign(uuid, uuid, uuid, text, uuid, boolean) from public, anon;
+grant  execute on function public.fn_conversation_assign(uuid, uuid, uuid, text, uuid, boolean)
+  to authenticated, service_role;
+
+-- 6. roster da org ---------------------------------------------------------
+drop policy if exists "user_orgs_select" on public.user_organizations;
+create policy "user_orgs_select" on public.user_organizations
+  for select using (
+    (user_id = auth.uid())
+    or public.fn_role_at_least(organization_id, 'coordinator')
+    or public.fn_is_platform_admin()
+  );
+
+-- 7. disponibilidade dos colegas --------------------------------------------
+drop policy if exists "attendant_availability_insert" on public.attendant_availability;
+create policy "attendant_availability_insert" on public.attendant_availability
+  for insert with check (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'coordinator')))
+  );
+
+drop policy if exists "attendant_availability_update" on public.attendant_availability;
+create policy "attendant_availability_update" on public.attendant_availability
+  for update using (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'coordinator')))
+  ) with check (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'coordinator')))
+  );
+
+drop policy if exists "attendant_availability_delete" on public.attendant_availability;
+create policy "attendant_availability_delete" on public.attendant_availability
+  for delete using (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'coordinator')))
+  );
+
+notify pgrst, 'reload schema';

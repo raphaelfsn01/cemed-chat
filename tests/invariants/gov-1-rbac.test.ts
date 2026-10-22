@@ -30,7 +30,7 @@ beforeAll(() => {
 
 /** fn_role_at_least(GOV_ORG, threshold) for the user, as '1'/'0' per threshold. */
 function roleVector(userId: string): string {
-  const thresholds = ["viewer", "agent", "manager", "admin"];
+  const thresholds = ["viewer", "agent", "coordinator", "manager", "admin"];
   const expr = thresholds
     .map((t) => `public.fn_role_at_least('${GOV_ORG}', '${t}')::int::text`)
     .join(" || ',' || ");
@@ -43,14 +43,16 @@ function roleVector(userId: string): string {
 }
 
 describe("eixo 1 — RBAC", () => {
-  it("fn_role_at_least ordena viewer < agent < manager < admin", () => {
-    expect(roleVector(GOV_VIEWER)).toBe("1,0,0,0");
-    expect(roleVector(GOV_AGENT_A)).toBe("1,1,0,0");
-    expect(roleVector(GOV_MANAGER)).toBe("1,1,1,0");
-    expect(roleVector(GOV_ADMIN)).toBe("1,1,1,1");
+  it("fn_role_at_least ordena viewer < agent < coordinator < manager < admin", () => {
+    // O Coordenador (0124) tem invariante próprio em papel-coordenador.test.ts;
+    // aqui o limiar dele prova que o manager passa e o agent não.
+    expect(roleVector(GOV_VIEWER)).toBe("1,0,0,0,0");
+    expect(roleVector(GOV_AGENT_A)).toBe("1,1,0,0,0");
+    expect(roleVector(GOV_MANAGER)).toBe("1,1,1,1,0");
+    expect(roleVector(GOV_ADMIN)).toBe("1,1,1,1,1");
   });
 
-  it("fn_user_role_in mapeia viewer→1, agent→2, manager→3, admin→4", () => {
+  it("fn_user_role_in mapeia viewer→1, agent→2, manager→4, admin→5 (coordinator→3, 0124)", () => {
     const rank = (userId: string): string =>
       lastLine(
         sql(`
@@ -60,8 +62,8 @@ describe("eixo 1 — RBAC", () => {
       );
     expect(rank(GOV_VIEWER)).toBe("1");
     expect(rank(GOV_AGENT_A)).toBe("2");
-    expect(rank(GOV_MANAGER)).toBe("3");
-    expect(rank(GOV_ADMIN)).toBe("4");
+    expect(rank(GOV_MANAGER)).toBe("4");
+    expect(rank(GOV_ADMIN)).toBe("5");
   });
 
   it("RLS impede agent de se auto-promover (user_orgs_update é admin-only)", () => {

@@ -25,6 +25,16 @@ import { PAPEIS_HUMANOS, ROLE_RANK, ROTULO_DO_PAPEL, type Role } from "@/lib/aut
 const RAIZ = join(__dirname, "..", "..");
 const baseline = readFileSync(join(RAIZ, "supabase/baseline.sql"), "utf8");
 
+/**
+ * A ÚLTIMA ocorrência no baseline — a que vale. O baseline é o dump do snapshot
+ * seguido do apêndice, e um apêndice que redefine o CHECK ou a função (0124)
+ * vem depois da cópia do dump; ler a primeira seria ler uma regra já trocada.
+ */
+function ultima(re: RegExp): string | null {
+  const todas = baseline.match(new RegExp(re.source, "g"));
+  return todas ? todas[todas.length - 1]! : null;
+}
+
 describe("papel do agente publicado", () => {
   it("senta ENTRE atendente e gerente, nessa ordem", () => {
     // A faixa é o ponto inteiro do papel: acima do atendente para alcançar o
@@ -40,13 +50,13 @@ describe("papel do agente publicado", () => {
   it("o banco também não o aceita para pessoa (CHECK de user_organizations)", () => {
     // A defesa de verdade é esta: mesmo que o TypeScript afrouxe, a linha não
     // entra. Lê o CHECK real do baseline — não uma cópia da regra.
-    const m = baseline.match(/user_organizations_role_check[^\n]*/);
+    const m = ultima(/user_organizations_role_check[^\n]*\n?[^\n]*/);
     expect(m, "CHECK de user_organizations não encontrado no baseline").not.toBeNull();
-    expect(m![0]).not.toContain("ai_operator");
+    expect(m!).not.toContain("ai_operator");
     // Controle positivo: se o regex parar de casar a linha certa, o teste acima
     // passaria vacuamente. Este confirma que estamos lendo o CHECK dos papéis.
     for (const humano of PAPEIS_HUMANOS) {
-      expect(m![0]).toContain(humano);
+      expect(m!).toContain(`'${humano}'`);
     }
   });
 
@@ -54,9 +64,11 @@ describe("papel do agente publicado", () => {
     // `fn_role_at_least` consulta `fn_user_role_in_org`, que lê
     // `user_organizations`. O agente não é usuário. Se `ai_operator` aparecer
     // ali, alguém tentou dar papel de máquina a gente pela porta do banco.
-    const fn = baseline.match(/fn_role_at_least[\s\S]*?\$\$;/);
+    const fn = ultima(/create or replace function "?public"?\."?fn_role_at_least"?\([\s\S]*?\$\$;/i);
     expect(fn, "fn_role_at_least não encontrada").not.toBeNull();
-    expect(fn![0]).not.toContain("ai_operator");
+    expect(fn!).not.toContain("ai_operator");
+    // controle positivo: é a definição com os níveis, não outra menção ao nome
+    expect(fn!).toContain("('agent',");
   });
 
   it("tem rótulo em português para todo papel, inclusive o do agente", () => {
