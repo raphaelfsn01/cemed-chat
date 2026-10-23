@@ -15,6 +15,14 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // typedRoutes moved out of experimental in Next 15.5+
   typedRoutes: true,
+  typescript: {
+    // Desde o Next 16.4 o type check do build é o `tsc` completo
+    // (experimental.useTypeScriptCli), que não ignora mais *.test.*. A imagem
+    // Docker não tem tests/ (.dockerignore), então o build de produção usa o
+    // tsconfig.build.json, sem os testes. Dev, IDE, `pnpm typecheck` e o CI
+    // seguem no tsconfig.json e continuam checando os testes.
+    tsconfigPath: process.env.NODE_ENV === "production" ? "tsconfig.build.json" : "tsconfig.json",
+  },
   experimental: {
     optimizePackageImports: ["@phosphor-icons/react", "lucide-react", "date-fns"],
   },
