@@ -58,6 +58,7 @@ import { applyScheduleFollowup, type FollowupWindowKnobs } from './schedule-foll
 import {
   applyRequestHumanHandoff,
   buildHandoffSummary,
+  criarEnviosEmAndamento,
   detectAmbiguousOptOut,
   detectHumanHandoffRequest,
   isLeadInHandoff,
@@ -425,6 +426,12 @@ export interface InboundTurnKnobs {
    * CUSTO: com enabled, é UMA chamada de modelo auxiliar POR TENTATIVA DE ENVIO (não por turno).
    */
   promiseSemantic?: { enabled: boolean; model?: string };
+  /**
+   * Tempo máximo (ms) que `request_human_handoff` espera um `send_message` do mesmo turno
+   * terminar antes de gravar `force_human`. Ausente = `ESPERA_MAXIMA_DO_ENVIO_MS`; só os
+   * testes o reduzem.
+   */
+  esperaEnvioNoHandoffMs?: number;
   /**
    * Onda 5 (Task 5.1) — modelo auxiliar dos turnos `classify`/`decide_timing` do
    * sistema de fluxos de follow-up (lib/agent-engine/agent/followup-flow-classify.ts).
@@ -1119,6 +1126,10 @@ export async function runAgentTurn(
   // `pedido` guarda o payload da chamada recusada (o motivo) para o runtime concluir a
   // transferência com ele se o modelo não a refizer — ver transferenciaPendente.
   const avisoAoPaciente = { tentou: false, jaRecusou: false, transferiu: false, pedido: undefined as unknown };
+  // send_message em andamento: o handoff do MESMO passo espera por eles (ver
+  // ESPERA_MAXIMA_DO_ENVIO_MS), senão grava force_human antes de o gate stop ler e o aviso
+  // é barrado.
+  const enviosEmAndamento = criarEnviosEmAndamento();
   // Spec 15 (Wave 4 lê este flag): true quando open_human_case abriu um caso NESTE
   // turno — aqui só declara e seta; o consumo (ex.: guardrail de promessa) é da Wave 4.
   let openedCaseThisTurn = false;
@@ -1337,6 +1348,10 @@ export async function runAgentTurn(
         if (promiseTable !== null && !decidePromise({ candidate: body, table: promiseTable }).allow) {
           outOfTablePromiseAttempted = true;
         }
+        // Registrado ANTES de qualquer await, no mesmo trecho síncrono que `tentou = true`:
+        // handoff que vê tentou=true já encontra este envio registrado. O `fim` roda no
+        // `finally` abaixo — entregue, vetado ou lançando, a promessa só resolve.
+        const fimDoEnvio = enviosEmAndamento.iniciar();
         // Cadeia de guardrails (F2-13): stop/opt-out → anti-ban → spinning rodam
         // AQUI, entre a decisão do modelo e o adapter. Se um gate veta, o
         // channel.send NÃO acontece e a razão volta ao modelo como erro instrutivo;
@@ -1542,6 +1557,8 @@ export async function runAgentTurn(
             ok: false,
             error: { code: 'internal_error', message: 'erro interno no envio — encerre o turno agora.' },
           };
+        } finally {
+          fimDoEnvio();
         }
       },
     }),
@@ -1705,7 +1722,13 @@ export async function runAgentTurn(
           const res = await applyRequestHumanHandoff(
             pool,
             { tenantId, leadId, conversationId: input.conversationId },
-            { conversationSummary: buildHandoffSummary(previous), log: runLog, aviso: avisoAoPaciente },
+            {
+              conversationSummary: buildHandoffSummary(previous),
+              log: runLog,
+              aviso: avisoAoPaciente,
+              envios: enviosEmAndamento,
+              ...(deps.knobs.esperaEnvioNoHandoffMs !== undefined ? { esperaMaximaMs: deps.knobs.esperaEnvioNoHandoffMs } : {}),
+            },
             raw,
           );
           if (!res.ok) {
