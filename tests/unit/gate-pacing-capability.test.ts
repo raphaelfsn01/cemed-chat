@@ -34,6 +34,7 @@ function baseCtx(overrides: Partial<GateContext> = {}): GateContext {
     now: COMERCIAL,
     body: 'oi',
     optedOut: false,
+    handoffActive: false,
     provider: 'waha',
     pacing: {
       knobs: PACING_DEFAULTS,

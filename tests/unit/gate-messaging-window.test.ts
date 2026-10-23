@@ -16,6 +16,7 @@ function baseCtx(over: Partial<GateContext> = {}): GateContext {
     now: AGORA,
     body: "oi",
     optedOut: false,
+    handoffActive: false,
     provider: "waha",
     pacing: {
       knobs: PACING_DEFAULTS,

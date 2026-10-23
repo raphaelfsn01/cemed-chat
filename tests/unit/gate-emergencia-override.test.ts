@@ -37,6 +37,7 @@ function ctxBase(over: Partial<GateContext> = {}): GateContext {
     now: new Date("2026-09-08T06:00:00.000Z"),
     body: ORIENTACAO,
     optedOut: false,
+    handoffActive: false,
     provider: "waha",
     messagingWindow: { lastInboundAt: new Date("2026-09-08T05:59:00.000Z") },
     pacing: {

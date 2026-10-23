@@ -23,6 +23,16 @@ describe("retentionCopy — tradução leiga dos vetos before_send", () => {
     expect(retentionCopy("lgpd_missing_legal_basis", ctx).kind).toBe("compliance");
   });
 
+  it("contato_bloqueado segue falando de opt-out; handoff_ativo fala da equipe, sem opt-out", () => {
+    expect(retentionCopy("contato_bloqueado", ctx).description).toBe(
+      "O contato pediu para não receber mensagens (opt-out). Nada será enviado a ele.",
+    );
+    const handoff = retentionCopy("handoff_ativo", ctx);
+    expect(handoff.kind).toBe("compliance");
+    expect(handoff.description).toBe("A conversa está com a equipe. O automático está pausado.");
+    expect(handoff.description).not.toMatch(/opt-out/i);
+  });
+
   it("classifica promise/disclosure como qualidade", () => {
     expect(retentionCopy("promise_out_of_table", ctx).kind).toBe("quality");
     expect(retentionCopy("promise_semantic", ctx).kind).toBe("quality");

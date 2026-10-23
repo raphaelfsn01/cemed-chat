@@ -78,11 +78,18 @@ export interface GateContext {
   /** corpo candidato (para o gate de spinning). */
   body: string;
   /**
-   * STOP irrevogável: `contacts.is_blocked` OR `contacts.force_human`, lidos DIRETO da
-   * fonte (mesmo banco pós-fusão — não existe mais cache) SOB o lock desta tentativa,
-   * OR o sinal lido no `get_lead_context` deste turno.
+   * Opt-out irrevogável: `contacts.is_blocked`, lido DIRETO da fonte (mesmo banco
+   * pós-fusão — não existe mais cache) SOB o lock desta tentativa, OR o sinal lido no
+   * `get_lead_context` deste turno. Vence `handoffActive` quando os dois estão ligados.
    */
   optedOut: boolean;
+  /**
+   * Conversa com a equipe humana: `contacts.force_human`, lido sob o lock. Veta tanto
+   * quanto o opt-out, mas com outro código (`handoff_ativo`) — a tela e a timeline não
+   * podem dizer que o contato pediu para sair quando foi a equipe que assumiu.
+   * Obrigatório de propósito: ausente valeria `false`, e o gate abriria o envio.
+   */
+  handoffActive: boolean;
   /**
    * Canal desta tentativa. Nenhum gate pergunta QUEM é o provider (invariante 1
    * de `docs/doctrine/restricao-de-canal.md`) — só o entrega a `capabilitiesOf`
@@ -237,19 +244,34 @@ export interface Gate {
   evaluate(ctx: GateContext): GateVerdict;
 }
 
-/** Gate 1 — STOP/opt-out/força-humano: veto IRREVOGÁVEL (regra dura nº 2), 1ª linha. */
+/**
+ * Gate 1 — STOP/opt-out/força-humano: veto IRREVOGÁVEL (regra dura nº 2), 1ª linha.
+ * Os dois vetam o envio; só o código muda. `is_blocked` (com ou sem `force_human`) é
+ * `contato_bloqueado`; `force_human` sozinho é `handoff_ativo`.
+ */
 const stopGate: Gate = {
   name: 'stop',
-  evaluate: (ctx) =>
-    ctx.optedOut
-      ? {
-          pass: false,
-          code: 'contato_bloqueado',
-          reason:
-            'o lead optou por sair do atendimento (bloqueio/opt-out irrevogável) — não é ' +
-            'possível enviar nada a ele; encerre o turno sem tentar de novo.',
-        }
-      : { pass: true },
+  evaluate: (ctx) => {
+    if (ctx.optedOut) {
+      return {
+        pass: false,
+        code: 'contato_bloqueado',
+        reason:
+          'o lead optou por sair do atendimento (bloqueio/opt-out irrevogável) — não é ' +
+          'possível enviar nada a ele; encerre o turno sem tentar de novo.',
+      };
+    }
+    if (ctx.handoffActive) {
+      return {
+        pass: false,
+        code: 'handoff_ativo',
+        reason:
+          'a conversa está com a equipe humana (transferência ativa) — o automático não envia ' +
+          'mais nada nela; encerre o turno sem tentar de novo.',
+      };
+    }
+    return { pass: true };
+  },
 };
 
 /**
@@ -709,7 +731,8 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     // Estado confiável carregado SOB o lock (os contadores de cap/janela de copies
     // são racy — precisam ver o que o worker anterior já efetivou).
     const provider = await loadChannelProvider(client, args.tenantId, args.channelSessionId);
-    const optedOut = args.optedOutThisTurn || (await readStopFlags(client, args.tenantId, args.leadId));
+    const stopFlags = await readStopFlags(client, args.tenantId, args.leadId);
+    const optedOut = args.optedOutThisTurn || stopFlags.isBlocked;
     const pacingCfg = await loadChannelKnobs(client, args.tenantId, args.channelSessionId, args.log);
     const pacingState = await loadPacingState(client, args.tenantId, args.channelSessionId, {
       now: args.now,
@@ -744,6 +767,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       now: args.now,
       body: args.body,
       optedOut,
+      handoffActive: stopFlags.forceHuman,
       provider,
       messagingWindow: { lastInboundAt, ...(args.isTemplate === true ? { isTemplate: true } : {}) },
       pacing: { knobs: pacingCfg.knobs, state: pacingState, crmDailyLimit: args.crmDailyLimit, rng: args.rng },
@@ -874,8 +898,9 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
 }
 
 /**
- * STOP direto da fonte (pós-fusão, mesmo banco): `contacts.is_blocked` OR
+ * STOP direto da fonte (pós-fusão, mesmo banco): `contacts.is_blocked` e
  * `contacts.force_human`, lidos sob o lock — não existe mais cache no harness.
+ * Devolve os dois separados: o gate precisa saber QUAL está ligado para escolher o código.
  */
 /**
  * O canal desta sessão, do banco (migration 0087) — nunca suposto.
@@ -904,12 +929,16 @@ export async function loadChannelProvider(
   return provider === undefined ? DEFAULT_CHANNEL_PROVIDER : (provider as ChannelProvider);
 }
 
-async function readStopFlags(db: Queryable, organizationId: string, contactId: string): Promise<boolean> {
-  const { rows } = await db.query<{ stopped: boolean }>(
-    'select (is_blocked or force_human) as stopped from contacts where organization_id = $1 and id = $2',
+async function readStopFlags(
+  db: Queryable,
+  organizationId: string,
+  contactId: string,
+): Promise<{ isBlocked: boolean; forceHuman: boolean }> {
+  const { rows } = await db.query<{ is_blocked: boolean; force_human: boolean }>(
+    'select is_blocked, force_human from contacts where organization_id = $1 and id = $2',
     [organizationId, contactId],
   );
-  return rows[0]?.stopped === true;
+  return { isBlocked: rows[0]?.is_blocked === true, forceHuman: rows[0]?.force_human === true };
 }
 
 /**

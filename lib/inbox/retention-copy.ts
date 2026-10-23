@@ -66,6 +66,11 @@ export function retentionCopy(code: string | null, ctx: RetentionContext): Reten
         "compliance",
         "O contato pediu para não receber mensagens (opt-out). Nada será enviado a ele.",
       );
+    case "handoff_ativo":
+      return make(
+        "compliance",
+        "A conversa está com a equipe. O automático está pausado.",
+      );
     case "lgpd_anonymized":
       return make(
         "compliance",
