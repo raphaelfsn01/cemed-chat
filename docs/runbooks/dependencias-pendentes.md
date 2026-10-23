@@ -13,6 +13,21 @@
 
 Reavaliar quando houver versão corrigida (`pnpm audit` mostra).
 
+## Críticos/altos que sobram depois dos PRs 1 e 2 (`pnpm audit`)
+
+Nenhum crítico. Os altos restantes são, todos, de ferramenta de build/teste ou de trecho
+que o app não chama:
+
+| Pacote | Quem puxa | Em uso? |
+|---|---|---|
+| `browserslist`, `nanoid`, `source-map-js` | `postcss`, `autoprefixer`, `webpack` | Só no build. |
+| `fast-uri` | `ajv` (eslint, webpack) | Só ferramenta. |
+| `sharp` | `next` (opcional) | Não: `images.unoptimized: true`, o otimizador de imagem está desligado. |
+| `vite` (`launch-editor`, Windows) | `vitest` | Só teste. |
+| `undici` 8 | `jsdom` | Só teste. |
+| `undici` 7 | `@ai-sdk/provider-utils` | Está no worker e no app, mas o trecho vulnerável (WebSocket, `BalancedPool`) é código que o nosso não chama. Sai junto com o bulk do `ai`/`@ai-sdk/*`. |
+| `braces` | `micromatch`, `chokidar` | Risco aceito (acima). |
+
 ## Fora da entrega (cada um é um PR próprio)
 
 | Item | Motivo de ter ficado de fora | Cuidado ao retomar |
