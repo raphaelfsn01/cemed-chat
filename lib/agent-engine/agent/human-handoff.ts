@@ -275,6 +275,64 @@ export function transferenciaPendente(estado: { jaRecusou: boolean; transferiu: 
   return estado.jaRecusou && !estado.transferiu;
 }
 
+/**
+ * Tempo máximo que o handoff espera um `send_message` do mesmo turno terminar.
+ *
+ * O modelo costuma emitir `send_message` e `request_human_handoff` no MESMO passo, e o SDK
+ * as executa em paralelo. O handoff grava `force_human` na 1ª consulta; o envio só lê
+ * `force_human` (gate stop) depois de conectar, abrir transação e tomar o lock do número —
+ * então, com a latência de um banco em nuvem, o handoff ganhava a corrida e o aviso era
+ * barrado com `contato_bloqueado`. Por isso o handoff espera o envio em andamento terminar
+ * (entregue OU vetado) antes de gravar.
+ *
+ * 10 s: o envio legítimo passa por lock do número, classificador semântico (~1,5 s), espera
+ * de pacing (1,2 s + jitter) e uma pausa de 1,2–2 s por bolha antes de chegar ao canal.
+ * Mais curto que isso perderia a corrida justamente nas mensagens longas; mais longo atrasa
+ * o aviso à equipe por causa de um envio travado. Passado o tempo, o handoff segue: chegar a
+ * um humano nunca depende do envio.
+ */
+export const ESPERA_MAXIMA_DO_ENVIO_MS = 10_000;
+
+export type DesfechoDaEspera = 'sem_envio' | 'concluido' | 'tempo_esgotado';
+
+/** Os `send_message` em andamento NESTE turno (por closure do run, nunca cross-turno). */
+export interface EnviosEmAndamento {
+  /** Registra um envio; devolve o `fim`, que DEVE ser chamado num `finally`. */
+  iniciar(): () => void;
+  /** Resolve quando todos os envios registrados terminam, ou no tempo máximo. Nunca rejeita. */
+  aguardar(maxMs: number): Promise<DesfechoDaEspera>;
+}
+
+export function criarEnviosEmAndamento(): EnviosEmAndamento {
+  const pendentes = new Set<Promise<void>>();
+  return {
+    iniciar() {
+      let resolve!: () => void;
+      const promessa = new Promise<void>((r) => {
+        resolve = r;
+      });
+      pendentes.add(promessa);
+      return () => {
+        pendentes.delete(promessa);
+        resolve();
+      };
+    },
+    async aguardar(maxMs) {
+      if (pendentes.size === 0) return 'sem_envio';
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const esgotou = new Promise<'tempo_esgotado'>((r) => {
+        timer = setTimeout(() => r('tempo_esgotado'), maxMs);
+      });
+      try {
+        // As promessas só resolvem (ver `iniciar`): nunca há rejeição a propagar ao handoff.
+        return await Promise.race([Promise.all([...pendentes]).then(() => 'concluido' as const), esgotou]);
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  };
+}
+
 export function mensagemAviseAntes(fraseDaEquipe: string): string {
   return (
     'Transferência NÃO feita ainda: avise o paciente primeiro. Envie UMA mensagem curta com ' +
@@ -310,7 +368,14 @@ export type RequestHumanHandoffResult =
 export async function applyRequestHumanHandoff(
   db: pg.Pool,
   ids: HandoffIds,
-  opts: { conversationSummary: string; log: Logger; aviso: EstadoDoAviso },
+  opts: {
+    conversationSummary: string;
+    log: Logger;
+    aviso: EstadoDoAviso;
+    /** send_message do mesmo turno ainda em andamento — o handoff espera por eles. */
+    envios?: EnviosEmAndamento;
+    esperaMaximaMs?: number;
+  },
   rawInput: unknown,
 ): Promise<RequestHumanHandoffResult> {
   const forbidden = findForbiddenKey(rawInput);
@@ -327,6 +392,17 @@ export async function applyRequestHumanHandoff(
   if (transferenciaPrecisaDeAviso(opts.aviso)) {
     const { frase } = await expectativaDeAtendimento(db, ids.tenantId, new Date());
     return { ok: false, error: { code: 'avise_antes', message: mensagemAviseAntes(frase) } };
+  }
+
+  // Mesmo passo do modelo = envio e transferência em paralelo: espera o aviso sair (ou ser
+  // vetado) antes de gravar force_human, que o gate stop leria como bloqueio. Ver
+  // ESPERA_MAXIMA_DO_ENVIO_MS. Só os gatilhos via modelo passam por aqui; os determinísticos
+  // (emergência, pedido de humano) chamam performHumanHandoff direto e não esperam.
+  if (opts.envios !== undefined) {
+    const desfecho = await opts.envios.aguardar(opts.esperaMaximaMs ?? ESPERA_MAXIMA_DO_ENVIO_MS);
+    if (desfecho === 'tempo_esgotado') {
+      opts.log.warn('handoff: envio em andamento não terminou no tempo máximo — transferindo mesmo assim');
+    }
   }
 
   await performHumanHandoff(db, ids, {
