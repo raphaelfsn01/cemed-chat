@@ -101,6 +101,7 @@ import {
 } from './skills';
 import { readSkillReference, skillHasReferences } from './skill-references';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
+import { wrapToolsWithCallLog } from './tool-call-log';
 import { loadChannelProvider, runBeforeSend } from '../guardrails/before-send';
 import { isStatusSendable } from '../../channels/meta/template-binding';
 import { capabilitiesOf } from '@/lib/channels/capabilities';
@@ -1949,11 +1950,15 @@ export async function runAgentTurn(
 
   // Circuit breaker de tools (F2-15): estado no closure DESTA invocação — zera
   // entre runs por construção (mesma garantia de isolamento do resto do run).
-  const tools = wrapToolsWithBreaker(rawTools, {
-    thresholds: deps.knobs.breaker,
-    readOnlyTools: READ_ONLY_TOOLS,
-    log: runLog, // os warns dos gates do breaker saem carimbados com o run
-  });
+  // O log de chamadas fica POR FORA do breaker: chamada bloqueada por ele também aparece.
+  const tools = wrapToolsWithCallLog(
+    wrapToolsWithBreaker(rawTools, {
+      thresholds: deps.knobs.breaker,
+      readOnlyTools: READ_ONLY_TOOLS,
+      log: runLog, // os warns dos gates do breaker saem carimbados com o run
+    }),
+    runLog,
+  );
 
   // F3-11: stage-classifier auxiliar. Roda ANTES do turno (modelo BARATO pelo seam
   // agnóstico) e sugere o estágio; a sugestão entra como HINT no SUFIXO por-lead — o modelo
