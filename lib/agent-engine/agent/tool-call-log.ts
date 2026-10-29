@@ -8,6 +8,9 @@
  * `circuit_breaker_*`). Nenhuma tool é editada e o resultado devolvido ao modelo
  * passa intocado — exceção da tool é relançada como veio.
  *
+ * Resumo do turno (`logToolCallSummary`): lista dos nomes chamados, contagem e se houve
+ * `send_message`. Permite provar a posteriori que um turno terminou sem enviar nada.
+ *
  * PII: a linha leva SÓ nome da tool, ok, código do erro, duração e passo. Argumentos,
  * texto de mensagem, `reason` do handoff e `error.message` (texto livre) jamais entram.
  * O job_id/tenant_id/lead_id vêm carimbados pelo logger do run (`withFields`). O código
@@ -48,7 +51,11 @@ function stepNumber(options: unknown): number | undefined {
 
 const nowMs = (): number => performance.now();
 
-export function wrapToolsWithCallLog(tools: ToolSet, log: Logger): ToolSet {
+/**
+ * `called` (opcional) recebe o nome de cada tool chamada, na ordem — insumo do
+ * `logToolCallSummary` no fim do turno.
+ */
+export function wrapToolsWithCallLog(tools: ToolSet, log: Logger, called?: string[]): ToolSet {
   // Falha do logger NUNCA quebra nem atrasa a tool.
   const emit = (
     tool: string,
@@ -78,6 +85,7 @@ export function wrapToolsWithCallLog(tools: ToolSet, log: Logger): ToolSet {
     }
     const execute = tool.execute.bind(def) as AnyExecute;
     const loggedExecute: AnyExecute = async (input, options) => {
+      called?.push(name);
       const started = nowMs();
       let result: unknown;
       try {
@@ -93,4 +101,17 @@ export function wrapToolsWithCallLog(tools: ToolSet, log: Logger): ToolSet {
     wrapped[name] = { ...def, execute: loggedExecute } as typeof def;
   }
   return wrapped;
+}
+
+/** Fim do turno: UMA linha com os nomes das tools chamadas, a contagem e se houve send_message. */
+export function logToolCallSummary(log: Logger, called: readonly string[]): void {
+  try {
+    log.info('resumo de tools do turno', {
+      tools: [...called],
+      tool_calls: called.length,
+      send_message: called.includes('send_message'),
+    });
+  } catch {
+    // intencional: observabilidade não derruba o turno
+  }
 }

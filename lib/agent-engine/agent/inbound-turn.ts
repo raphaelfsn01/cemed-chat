@@ -101,7 +101,7 @@ import {
 } from './skills';
 import { readSkillReference, skillHasReferences } from './skill-references';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
-import { wrapToolsWithCallLog } from './tool-call-log';
+import { logToolCallSummary, wrapToolsWithCallLog } from './tool-call-log';
 import { loadChannelProvider, runBeforeSend } from '../guardrails/before-send';
 import { isStatusSendable } from '../../channels/meta/template-binding';
 import { capabilitiesOf } from '@/lib/channels/capabilities';
@@ -1951,6 +1951,7 @@ export async function runAgentTurn(
   // Circuit breaker de tools (F2-15): estado no closure DESTA invocação — zera
   // entre runs por construção (mesma garantia de isolamento do resto do run).
   // O log de chamadas fica POR FORA do breaker: chamada bloqueada por ele também aparece.
+  const toolsCalled: string[] = [];
   const tools = wrapToolsWithCallLog(
     wrapToolsWithBreaker(rawTools, {
       thresholds: deps.knobs.breaker,
@@ -1958,6 +1959,7 @@ export async function runAgentTurn(
       log: runLog, // os warns dos gates do breaker saem carimbados com o run
     }),
     runLog,
+    toolsCalled,
   );
 
   // F3-11: stage-classifier auxiliar. Roda ANTES do turno (modelo BARATO pelo seam
@@ -2060,27 +2062,33 @@ export async function runAgentTurn(
       : [{ role: 'user', content: [{ type: 'text', text: openingText }, ...nativeParts] }];
 
   // O modelo decide tools livremente dentro do teto de steps (knob AGENT_MAX_STEPS).
-  const turn = await runModelCall(
-    pool,
-    deps.llmCfg,
-    {
-      tenantId,
-      leadId,
-      jobId: job.id,
-      purpose: 'agent_turn',
-      system,
-      messages: openingMessages,
-      tools,
-      maxSteps,
-      ...(agentConfig !== null
-        ? {
-            model: agentConfig.model,
-            llmOverride: { provider: agentConfig.provider, credentialId: agentConfig.credentialId },
-          }
-        : {}),
-    },
-    { registry: deps.registry, log: runLog },
-  );
+  // finally: o resumo sai também quando o run lança — é o caso que mais interessa diagnosticar.
+  let turn: Awaited<ReturnType<typeof runModelCall>>;
+  try {
+    turn = await runModelCall(
+      pool,
+      deps.llmCfg,
+      {
+        tenantId,
+        leadId,
+        jobId: job.id,
+        purpose: 'agent_turn',
+        system,
+        messages: openingMessages,
+        tools,
+        maxSteps,
+        ...(agentConfig !== null
+          ? {
+              model: agentConfig.model,
+              llmOverride: { provider: agentConfig.provider, credentialId: agentConfig.credentialId },
+            }
+          : {}),
+      },
+      { registry: deps.registry, log: runLog },
+    );
+  } finally {
+    logToolCallSummary(runLog, toolsCalled);
+  }
 
   // F4-04: correlação dos dois sinais do MESMO turno — jailbreak ALTO + tentativa de
   // promessa fora de tabela (F4-01). Ambos estão determinados aqui (o jailbreak rodou na
