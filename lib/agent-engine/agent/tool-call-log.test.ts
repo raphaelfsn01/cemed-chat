@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { Logger } from '../obs/logger';
 import type { ToolSet } from '../edge/llm/run-model-call';
-import { wrapToolsWithCallLog } from './tool-call-log';
+import { logToolCallSummary, wrapToolsWithCallLog } from './tool-call-log';
+import { createLogger, withFields } from '../obs/logger';
+import { Writable } from 'node:stream';
 import { wrapToolsWithBreaker } from './tool-breaker';
 
 interface Linha {
@@ -173,5 +175,94 @@ describe('wrapToolsWithCallLog', () => {
 
     const chamadas = linhas.filter((l) => l.msg === 'tool chamada');
     expect(chamadas.map((l) => l.fields.error_code)).toEqual(['avise_antes', 'circuit_breaker_exact_failure']);
+  });
+});
+
+describe('log de tools do turno — linha por chamada + resumo, pelo logger real', () => {
+  const EMAIL = 'maria.souza@exemplo.com.br';
+  const JOB_ID = '7f1c2d3e-0000-4000-8000-00000000abcd';
+
+  function loggerReal(): { log: Logger; linhas: () => Array<Record<string, unknown>>; bruto: () => string } {
+    const pedacos: string[] = [];
+    const stream = new Writable({
+      write(chunk, _enc, cb) {
+        pedacos.push(String(chunk));
+        cb();
+      },
+    });
+    const log = withFields(createLogger(stream), { job_id: JOB_ID });
+    const bruto = (): string => pedacos.join('');
+    const linhas = (): Array<Record<string, unknown>> =>
+      bruto()
+        .split('\n')
+        .filter((l) => l.trim() !== '')
+        .map((l) => JSON.parse(l) as Record<string, unknown>);
+    return { log, linhas, bruto };
+  }
+
+  function tools2(): ToolSet {
+    return {
+      send_message: { description: 'x', inputSchema: {}, execute: () => ({ ok: true }) },
+      lookup_lead: { description: 'x', inputSchema: {}, execute: () => ({ ok: true, nome: 'Maria Souza' }) },
+    } as unknown as ToolSet;
+  }
+  async function chamaTool(tools: ToolSet, nome: string, input: unknown, step: number): Promise<void> {
+    const t = tools[nome] as unknown as { execute: (i: unknown, o: unknown) => Promise<unknown> };
+    await t.execute(input, { messages: [{ role: 'user' }, ...Array(step - 1).fill({ role: 'tool' })] });
+  }
+
+  it('(a) linha por chamada e resumo só têm campos da allowlist, com job_id', async () => {
+    const { log, linhas } = loggerReal();
+    const called: string[] = [];
+    const tools = wrapToolsWithCallLog(tools2(), log, called);
+
+    await chamaTool(tools, 'lookup_lead', {}, 1);
+    await chamaTool(tools, 'send_message', {}, 2);
+    logToolCallSummary(log, called);
+
+    const [l1, l2, resumo] = linhas();
+    const CAMPOS_CHAMADA = ['level', 'msg', 'ts', 'job_id', 'tool', 'ok', 'duration_ms', 'step'];
+    expect(l1).toMatchObject({ msg: 'tool chamada', tool: 'lookup_lead', ok: true, step: 1, job_id: JOB_ID });
+    expect(l2).toMatchObject({ msg: 'tool chamada', tool: 'send_message', ok: true, step: 2, job_id: JOB_ID });
+    for (const l of [l1!, l2!]) {
+      for (const campo of Object.keys(l)) expect(CAMPOS_CHAMADA).toContain(campo);
+    }
+    expect(resumo).toMatchObject({
+      msg: 'resumo de tools do turno',
+      job_id: JOB_ID,
+      tools: ['lookup_lead', 'send_message'],
+      tool_calls: 2,
+      send_message: true,
+    });
+  });
+
+  it('(b) argumentos com telefone, e-mail e texto de mensagem NÃO vazam em nenhuma linha', async () => {
+    const { log, bruto } = loggerReal();
+    const called: string[] = [];
+    const tools = wrapToolsWithCallLog(tools2(), log, called);
+
+    await chamaTool(tools, 'send_message', { to: TELEFONE, email: EMAIL, body: CORPO }, 1);
+    await chamaTool(tools, 'lookup_lead', { phone: TELEFONE, email: EMAIL, text: CORPO }, 2);
+    logToolCallSummary(log, called);
+
+    const saida = bruto();
+    expect(saida).not.toBe('');
+    for (const segredo of [TELEFONE, EMAIL, 'exemplo.com.br', CORPO, 'Maria', '123.456.789-00']) {
+      expect(saida).not.toContain(segredo);
+    }
+  });
+
+  it('(c) turno sem send_message: resumo com send_message=false; turno sem tools: lista vazia', async () => {
+    const { log, linhas } = loggerReal();
+    const called: string[] = [];
+    const tools = wrapToolsWithCallLog(tools2(), log, called);
+
+    await chamaTool(tools, 'lookup_lead', {}, 1);
+    logToolCallSummary(log, called);
+    logToolCallSummary(log, []);
+
+    const resumos = linhas().filter((l) => l.msg === 'resumo de tools do turno');
+    expect(resumos[0]).toMatchObject({ tools: ['lookup_lead'], tool_calls: 1, send_message: false });
+    expect(resumos[1]).toMatchObject({ tools: [], tool_calls: 0, send_message: false });
   });
 });
