@@ -130,3 +130,106 @@ describe("sentryScrubHooks", () => {
     expect(JSON.stringify(crumb)).not.toContain(TOKEN);
   });
 });
+
+// A3 da auditoria: o Sentry fica fora do país e o CRM é clínico. O corpo da
+// requisição é texto livre — nome, telefone, e-mail e mensagem de paciente — então
+// a garantia é remoção do CAMPO, não redação por regex.
+describe("sentryScrubHooks — dado de paciente", () => {
+  const NOME = "Maria Aparecida dos Santos";
+  const TELEFONE = "+55 22 99876-5432";
+  const EMAIL = "maria.santos@exemplo.com";
+  const MENSAGEM = "Bom dia, estou com dor no peito há três dias e queria remarcar a consulta";
+  const IP = "203.0.113.42";
+  const COOKIE = "sb-access-token=eyJhbGciOiJIUzI1NiJ9.segredo";
+  const BEARER = "Bearer tok_segredo_do_servidor";
+  const INTERNO = "segredo-interno-do-cron";
+
+  function eventoDePaciente() {
+    return {
+      message: "falha ao gravar mensagem",
+      exception: {
+        values: [
+          {
+            type: "TypeError",
+            value: "Cannot read properties of undefined (reading 'id')",
+            stacktrace: { frames: [{ filename: "app/api/v1/messages/route.ts", lineno: 42 }] },
+          },
+        ],
+      },
+      request: {
+        url: "https://crm.exemplo.com/api/v1/messages",
+        method: "POST",
+        query_string: `telefone=${encodeURIComponent(TELEFONE)}`,
+        data: { contact_name: NOME, phone: TELEFONE, email: EMAIL, body: MENSAGEM },
+        cookies: { "sb-access-token": "eyJhbGciOiJIUzI1NiJ9.segredo" },
+        headers: {
+          authorization: BEARER,
+          cookie: COOKIE,
+          "set-cookie": COOKIE,
+          "x-internal-secret": INTERNO,
+          "content-type": "application/json",
+          "user-agent": "vitest",
+        },
+      },
+      user: {
+        id: "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        email: EMAIL,
+        ip_address: IP,
+        username: NOME,
+      },
+    };
+  }
+
+  const hooks = [
+    ["beforeSend", sentryScrubHooks.beforeSend],
+    ["beforeSendTransaction", sentryScrubHooks.beforeSendTransaction],
+  ] as const;
+
+  for (const [nome, hook] of hooks) {
+    it(`${nome}: nenhum valor de paciente ou credencial sobra no evento`, () => {
+      const serializado = JSON.stringify(hook(eventoDePaciente()));
+      for (const valor of [NOME, TELEFONE, EMAIL, MENSAGEM, IP, COOKIE, BEARER, INTERNO]) {
+        expect(serializado).not.toContain(valor);
+      }
+      // O telefone também não sobra codificado na query.
+      expect(serializado).not.toContain(encodeURIComponent(TELEFONE));
+    });
+
+    it(`${nome}: remove os campos nomeados, e só eles`, () => {
+      const evento = hook(eventoDePaciente());
+      expect(evento.request).not.toHaveProperty("data");
+      expect(evento.request).not.toHaveProperty("cookies");
+      expect(evento.request).not.toHaveProperty("query_string");
+      expect(evento.request?.headers).not.toHaveProperty("authorization");
+      expect(evento.request?.headers).not.toHaveProperty("cookie");
+      expect(evento.request?.headers).not.toHaveProperty("set-cookie");
+      expect(evento.request?.headers).not.toHaveProperty("x-internal-secret");
+      expect(evento.user).not.toHaveProperty("email");
+      expect(evento.user).not.toHaveProperty("ip_address");
+      expect(evento.user).not.toHaveProperty("username");
+      // O que serve para depurar fica: rota, método, headers inofensivos e o id da conta.
+      expect(evento.request?.url).toBe("https://crm.exemplo.com/api/v1/messages");
+      expect(evento.request?.headers).toMatchObject({ "content-type": "application/json" });
+      expect(evento.user).toMatchObject({ id: "3f2504e0-4f89-11d3-9a0c-0305e82c3301" });
+    });
+  }
+
+  it("beforeSend: o erro (mensagem, tipo e stack) continua intacto", () => {
+    const antes = eventoDePaciente();
+    const stackAntes = JSON.stringify(antes.exception.values[0]!.stacktrace);
+    const depois = sentryScrubHooks.beforeSend(antes);
+    expect(depois.message).toBe("falha ao gravar mensagem");
+    expect(depois.exception.values[0]!.type).toBe("TypeError");
+    expect(depois.exception.values[0]!.value).toBe(
+      "Cannot read properties of undefined (reading 'id')",
+    );
+    expect(JSON.stringify(depois.exception.values[0]!.stacktrace)).toBe(stackAntes);
+  });
+
+  it("não quebra em evento sem request nem user", () => {
+    expect(sentryScrubHooks.beforeSend({ message: "só texto" })).toEqual({ message: "só texto" });
+    expect(sentryScrubHooks.beforeSendTransaction({ transaction: "GET /health" })).toEqual({
+      transaction: "GET /health",
+    });
+  });
+});

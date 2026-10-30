@@ -3,27 +3,25 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
-import { resolveSentryDsn, isCommunityDsn } from "./lib/sentry/dsn";
+import { resolveSentryDsn, tracesSampleRateFor } from "./lib/sentry/dsn";
 import { sentryScrubHooks } from "./lib/sentry/scrub";
 
 const sentryDsn = resolveSentryDsn(
   typeof window !== "undefined" ? window.__PUBLIC_ENV__?.SENTRY_DSN : undefined,
 );
-const community = isCommunityDsn(sentryDsn);
 
 Sentry.init({
   dsn: sentryDsn,
 
-  integrations: [Sentry.replayIntegration()],
-
-  // No Sentry da comunidade, só erro (issue #100): sem trace e sem replay de
-  // sessão. O replay DE ERRO continua, porque é o que explica o stack trace —
-  // e o replayIntegration() sem argumentos já aplica maskAllText/blockAllMedia.
-  tracesSampleRate: community ? 0 : 1,
+  // Sem Session Replay (A3 da auditoria): o replay grava a tela de um CRM clínico
+  // e levaria nome, telefone e texto de paciente para fora do país. Sem a
+  // integração, as taxas abaixo são inertes — ficam em 0 para deixar a decisão
+  // explícita e para quem a religar por engano não herdar uma amostragem.
+  tracesSampleRate: tracesSampleRateFor(sentryDsn),
   enableLogs: true,
 
-  replaysSessionSampleRate: community ? 0 : 0.1,
-  replaysOnErrorSampleRate: 1.0,
+  replaysSessionSampleRate: 0,
+  replaysOnErrorSampleRate: 0,
 
   sendDefaultPii: false,
 

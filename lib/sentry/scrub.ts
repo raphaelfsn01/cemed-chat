@@ -25,7 +25,14 @@ type EventLike = {
   // `unknown` de propósito nos campos que o Sentry tipa mais largo que string
   // (`query_string` é `string | Record<string,string> | Array<[string,string]>`).
   // A checagem de `typeof === "string"` acontece em runtime, logo abaixo.
-  request?: { url?: unknown; query_string?: unknown; headers?: unknown };
+  request?: {
+    url?: unknown;
+    query_string?: unknown;
+    headers?: unknown;
+    data?: unknown;
+    cookies?: unknown;
+  };
+  user?: { email?: unknown; ip_address?: unknown; username?: unknown };
   transaction?: string;
   contexts?: { trace?: { data?: Record<string, unknown> } };
   message?: string;
@@ -123,6 +130,29 @@ function scrubHeaders(headers: unknown): void {
 }
 
 /**
+ * Remove do evento os campos que carregam dado do titular (nome, telefone, e-mail,
+ * texto de mensagem de paciente) ou credencial, em QUALQUER evento — erro ou transação.
+ *
+ * É remoção por campo, não redação por padrão de texto: o corpo da requisição de um
+ * CRM clínico é texto livre, e nenhuma regex garante que não sobra nome de paciente.
+ * Os cabeçalhos sensíveis saem em `scrubHeaders` (padrão, não lista fechada).
+ * `user.id` (UUID) fica de propósito: identifica a conta sem expor quem é.
+ */
+function scrubEventPii<T extends EventLike>(event: T): T {
+  if (event.request) {
+    delete event.request.data;
+    delete event.request.cookies;
+    delete event.request.query_string;
+  }
+  if (event.user) {
+    delete event.user.email;
+    delete event.user.ip_address;
+    delete event.user.username;
+  }
+  return event;
+}
+
+/**
  * Limpa os campos que carregam URL em QUALQUER evento — erro ou transação.
  * O nome da transação entra aqui porque o `@sentry/node` puro não parametriza a
  * rota; só o wrapper do Next parametriza, e nem todo caminho passa por ele.
@@ -152,6 +182,7 @@ function scrubEventUrls<T extends EventLike>(event: T): T {
 export const sentryScrubHooks = {
   beforeSend<T extends EventLike>(event: T): T {
     scrubEventUrls(event);
+    scrubEventPii(event);
     if (typeof event.message === "string") {
       event.message = scrubMessage(event.message);
     }
@@ -164,7 +195,7 @@ export const sentryScrubHooks = {
   },
 
   beforeSendTransaction<T extends EventLike>(event: T): T {
-    return scrubEventUrls(event);
+    return scrubEventPii(scrubEventUrls(event));
   },
 
   beforeSendSpan<T extends SpanLike>(span: T): T {
