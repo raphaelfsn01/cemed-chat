@@ -3,17 +3,28 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
-import { resolveSentryDsn, isCommunityDsn, DEFAULT_SENTRY_DSN } from "./lib/sentry/dsn";
+import { resolveSentryDsn, tracesSampleRateFor, DEFAULT_SENTRY_DSN } from "./lib/sentry/dsn";
 import { sentryScrubHooks } from "./lib/sentry/scrub";
 
 const sentryDsn = resolveSentryDsn(process.env.SENTRY_DSN);
-const community = isCommunityDsn(sentryDsn);
 
 Sentry.init({
   dsn: sentryDsn,
 
   // No Sentry da comunidade, só erro (issue #100). Ver isCommunityDsn().
-  tracesSampleRate: community ? 0 : 1,
+  tracesSampleRate: tracesSampleRateFor(sentryDsn),
+
+  // O @sentry/nextjs registra o `httpIntegration` com `disableIncomingRequestSpans`
+  // (o Next já cria os spans de entrada) e deixa o corpo da requisição no padrão
+  // `medium`: até 10 KB de body iam no evento MESMO com `sendDefaultPii: false`,
+  // porque o corpo é governado só por esta opção. Declarar a integração aqui
+  // substitui a padrão (mesmo nome); `none` é o que impede o corpo de ser lido.
+  integrations: [
+    Sentry.httpIntegration({
+      disableIncomingRequestSpans: true,
+      maxIncomingRequestBodySize: "none",
+    }),
+  ],
   enableLogs: true,
   sendDefaultPii: false,
 

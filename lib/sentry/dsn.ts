@@ -23,14 +23,27 @@ export function resolveSentryDsn(value: string | undefined | null): string | und
 }
 
 /**
+ * Amostragem de traces, fixa em todos os runtimes (servidor, edge e navegador).
+ *
+ * 10%: o suficiente para enxergar lentidão sem mandar uma transação por requisição
+ * de um CRM clínico para fora do país. Não há env para mudar de propósito — a
+ * privacidade do dado de paciente não deve depender de uma variável esquecida.
+ */
+export const TRACES_SAMPLE_RATE = 0.1;
+
+/**
  * Estamos mandando para o Sentry da COMUNIDADE (o nosso), e não para o do operador?
  *
- * Isso decide a amostragem (issue #100). No DSN da comunidade só vai ERRO:
- * `tracesSampleRate` e `replaysSessionSampleRate` vão a 0. O que ajuda a corrigir
- * "bug que afeta todo mundo" é o stack trace — não 100% das transações nem 10% das
- * sessões de um CRM que não é nosso. Quem aponta para o próprio Sentry recebe tudo,
- * porque aí o dado não sai da infraestrutura de quem é dono dele.
+ * Isso decide a amostragem de traces (issue #100). No DSN da comunidade só vai ERRO:
+ * o que ajuda a corrigir "bug que afeta todo mundo" é o stack trace — não as
+ * transações de um CRM que não é nosso. Quem aponta para o próprio Sentry recebe
+ * `TRACES_SAMPLE_RATE`, porque aí o dado não sai da infraestrutura de quem é dono dele.
+ * Replay de sessão não existe em nenhum dos dois casos.
  */
 export function isCommunityDsn(dsn: string | undefined): boolean {
   return dsn === DEFAULT_SENTRY_DSN;
+}
+
+export function tracesSampleRateFor(dsn: string | undefined): number {
+  return isCommunityDsn(dsn) ? 0 : TRACES_SAMPLE_RATE;
 }
