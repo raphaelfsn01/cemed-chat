@@ -67,8 +67,6 @@ export interface LeadContext {
   lead_id: string;
   contact: {
     name: string | null;
-    phone: string | null;
-    email: string | null;
     tags: string[];
     /** contacts.is_blocked lido NESTE turno (fonte da verdade do gate 1). */
     is_blocked: boolean;
@@ -106,13 +104,27 @@ function teach(code: LeadContextErrorCode, message: string): LeadContextResult {
 interface ContactRow {
   name: string | null;
   display_name: string | null;
-  email: string | null;
-  phone_number: string | null;
   tags: string[] | null;
   is_blocked: boolean;
   source: string | null;
   consent: Record<string, unknown> | null;
   is_anonymized: boolean;
+}
+
+/**
+ * Telefone e e-mail do paciente NÃO chegam ao modelo: nem o select os lê.
+ * O nome é a última brecha — o WhatsApp entrega o número como pushName quando a
+ * pessoa não tem nome. Nome que é só dígitos (8+, ignorando espaço + - . ( )) ou
+ * que contém `@` é tratado como contato sem nome (`null`, o mesmo caminho do nome vazio).
+ */
+export function nomeSeguroParaModelo(nome: string | null): string | null {
+  if (nome === null) return null;
+  const aparado = nome.trim();
+  if (aparado === '') return null;
+  if (aparado.includes('@')) return null;
+  const semPontuacao = aparado.replace(/[\s+\-.()]/g, '');
+  if (/^\d{8,}$/.test(semPontuacao)) return null;
+  return nome;
 }
 
 interface DecisionRow {
@@ -160,7 +172,7 @@ export async function getLeadContext(
   knobs: LeadContextKnobs,
 ): Promise<LeadContextResult> {
   const { rows: contactRows } = await db.query<ContactRow>(
-    `select name, display_name, email, phone_number, tags, is_blocked, source, consent, is_anonymized
+    `select name, display_name, tags, is_blocked, source, consent, is_anonymized
      from contacts where organization_id = $1 and id = $2`,
     [input.tenantId, input.leadId],
   );
@@ -235,9 +247,7 @@ export async function getLeadContext(
     {
       lead_id: input.leadId,
       contact: {
-        name: contact.display_name ?? contact.name,
-        phone: contact.phone_number,
-        email: contact.email,
+        name: nomeSeguroParaModelo(contact.display_name ?? contact.name),
         tags: contact.tags ?? [],
         is_blocked: contact.is_blocked,
       },

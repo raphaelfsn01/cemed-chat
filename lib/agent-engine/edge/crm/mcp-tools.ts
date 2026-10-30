@@ -13,7 +13,9 @@
  *   - crm_request_human_handoff NUNCA entra (e a auto-injeção da ponte fica
  *     desligada): o engine tem a própria request_human_handoff com silêncio
  *     durável + cancelamento de follow-ups — duas tools de handoff confundiriam
- *     o modelo e a variante do CRM não silencia o harness.
+ *     o modelo e a variante do CRM não silencia o harness;
+ *   - crm_get_contact / crm_search_contacts NUNCA entram: retornam telefone e
+ *     e-mail do paciente, que não podem chegar ao modelo.
  */
 import type { Tool } from 'ai';
 
@@ -27,7 +29,13 @@ import type { CrmEdgeConfig } from './mcp-client';
 import type { PublishedAgentConfig } from '../../agent/agent-config';
 
 /** Tools do catálogo que jamais entram no turno do engine (ver doc acima). */
-const BLOCKED_TOOL_IDS = new Set(['crm_send_whatsapp_message', 'crm_request_human_handoff']);
+const BLOCKED_TOOL_IDS = new Set([
+  'crm_send_whatsapp_message',
+  'crm_request_human_handoff',
+  // Devolvem telefone/e-mail do paciente: o modelo não pode ver esses dados.
+  'crm_get_contact',
+  'crm_search_contacts',
+]);
 
 export interface McpTurnTools {
   tools: Record<string, Tool>;
