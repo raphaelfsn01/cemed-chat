@@ -80,6 +80,12 @@ describe("nome que é telefone ou e-mail vira contato sem nome", () => {
     ["5522999990000"],
     ["x@y.com"],
     ["  "],
+    ["+55 21 98085-0940"],
+    ["João 21980850940"],
+    ["+55 21 98085\u20110940"],
+    ["\u200E+55 21 98085-0940\u200E"],
+    ["\u202A+55 21 98085-0940\u202C"],
+    ["Maria x@y.com"],
   ])("%s → null", async (nome) => {
     const { context } = await contexto({ name: nome, display_name: null });
     expect(context.contact.name).toBeNull();
@@ -93,6 +99,15 @@ describe("nome que é telefone ou e-mail vira contato sem nome", () => {
   it("nome normal continua igual", async () => {
     const { context } = await contexto({ name: "Maria Souza", display_name: null });
     expect(context.contact.name).toBe("Maria Souza");
+  });
+
+  it.each(["Maria Souza", "Ana 2", "Dr. João 3º"])("nome normal %s passa", (nome) => {
+    expect(nomeSeguroParaModelo(nome)).toBe(nome);
+  });
+
+  it("null e vazio viram null", () => {
+    expect(nomeSeguroParaModelo(null)).toBeNull();
+    expect(nomeSeguroParaModelo("")).toBeNull();
   });
 
   it("nome com poucos dígitos (< 8) não é barrado", () => {
