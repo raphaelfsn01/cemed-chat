@@ -34,7 +34,9 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-const LEAD_COLS = "id, title, status, value_cents, currency, updated_at";
+// `crm_stages(name)` e `tags` são só leitura do que o card já tem: o painel
+// mostra a etapa e as etiquetas do card, não só o status open/won/lost.
+const LEAD_COLS = "id, title, status, value_cents, currency, updated_at, tags, crm_stages(name)";
 /** Acompanha o que a timeline mostra — `reason` e `actor_kind` inclusive. */
 const ACTIVITY_COLS = "id, type, source_module, performed_at, payload, reason, actor_kind";
 
@@ -78,7 +80,16 @@ export async function GET(
 
   return ok(
     {
-      leads: leads.data ?? [],
+      // `stage_id` é FK N:1: o embed vem como objeto, mas os tipos gerados o
+      // inferem como lista — mesmo cast de `leads/proposals/route.ts`.
+      leads: (
+        (leads.data ?? []) as unknown as Array<
+          Record<string, unknown> & { crm_stages: { name: string | null } | null }
+        >
+      ).map(({ crm_stages, ...lead }) => ({
+        ...lead,
+        stage_name: crm_stages?.name ?? null,
+      })),
       // A CEMED não tem integração de e-commerce (tabela `orders` removida
       // junto com o Nuvemshop) — mantido no contrato porque `CRMSidePanel`
       // já trata lista vazia sem exigir mudança de forma.

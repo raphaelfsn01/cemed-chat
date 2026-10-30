@@ -30,6 +30,10 @@ interface LeadRow {
   value_cents: number | null;
   currency: string | null;
   updated_at: string;
+  /** Nome da etapa atual do card no funil; null se a etapa não vier. */
+  stage_name: string | null;
+  /** Etiquetas do card (`crm_leads.tags`) — não as do contato nem da conversa. */
+  tags: string[] | null;
 }
 
 interface OrderRow {
@@ -287,6 +291,24 @@ export function CRMSidePanel({ conversation }: Props) {
                   <div className="text-muted-foreground">
                     {l.status} · {formatMoney(l.value_cents, l.currency)}
                   </div>
+                  {l.stage_name && (
+                    <div data-testid="lead-etapa" className="truncate text-muted-foreground">
+                      Etapa: {l.stage_name}
+                    </div>
+                  )}
+                  {l.tags && l.tags.length > 0 && (
+                    <div data-testid="lead-tags" className="mt-1 flex flex-wrap gap-1">
+                      {l.tags.map((t) => (
+                        <Badge
+                          key={t}
+                          variant="secondary"
+                          className="h-4 max-w-full px-1.5 text-[10px]"
+                        >
+                          <span className="truncate">{t}</span>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </li>
             ))}

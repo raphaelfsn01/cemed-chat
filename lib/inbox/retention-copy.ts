@@ -13,7 +13,7 @@ export interface RetentionContext {
   timezone: string;
 }
 
-export type RetentionKind = "protection" | "compliance" | "quality";
+export type RetentionKind = "protection" | "compliance" | "quality" | "handoff";
 
 export interface RetentionCopy {
   kind: RetentionKind;
@@ -25,12 +25,14 @@ const TITLES: Record<RetentionKind, string> = {
   protection: "Resposta segurada pela proteção do número",
   compliance: "Resposta bloqueada por conformidade",
   quality: "Resposta retida para correção",
+  handoff: "Conversa com a equipe",
 };
 
 /**
  * Copy por código de veto. Códigos de proteção (pacing/spinning) tranquilizam:
  * foi proteção anti-bloqueio, não erro. Conformidade (stop/LGPD) é definitivo.
  * Qualidade (promise/disclosure) explica que o assistente corrige sozinho.
+ * Handoff não é veto de risco: é a equipe atendendo, então tem título e tom neutros.
  */
 export function retentionCopy(code: string | null, ctx: RetentionContext): RetentionCopy {
   const janela = `${ctx.window_start_hour}h–${ctx.window_end_hour}h${ctx.allow_sunday ? "" : ", sem domingo"}`;
@@ -68,7 +70,7 @@ export function retentionCopy(code: string | null, ctx: RetentionContext): Reten
       );
     case "handoff_ativo":
       return make(
-        "compliance",
+        "handoff",
         "A conversa está com a equipe. O automático está pausado.",
       );
     case "lgpd_anonymized":
