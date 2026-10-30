@@ -80,11 +80,11 @@ describe("nome que é telefone ou e-mail vira contato sem nome", () => {
     ["5522999990000"],
     ["x@y.com"],
     ["  "],
-    ["+55 21 98085-0940"],
-    ["João 21980850940"],
-    ["+55 21 98085\u20110940"],
-    ["\u200E+55 21 98085-0940\u200E"],
-    ["\u202A+55 21 98085-0940\u202C"],
+    ["+55 21 91234-5678"],
+    ["João 21912345678"],
+    ["+55 21 91234\u20115678"],
+    ["\u200E+55 21 91234-5678\u200E"],
+    ["\u202A+55 21 91234-5678\u202C"],
     ["Maria x@y.com"],
   ])("%s → null", async (nome) => {
     const { context } = await contexto({ name: nome, display_name: null });
