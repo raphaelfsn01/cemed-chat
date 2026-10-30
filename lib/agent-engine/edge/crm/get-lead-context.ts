@@ -114,16 +114,16 @@ interface ContactRow {
 /**
  * Telefone e e-mail do paciente NÃO chegam ao modelo: nem o select os lê.
  * O nome é a última brecha — o WhatsApp entrega o número como pushName quando a
- * pessoa não tem nome. Nome que é só dígitos (8+, ignorando espaço + - . ( )) ou
- * que contém `@` é tratado como contato sem nome (`null`, o mesmo caminho do nome vazio).
+ * pessoa não tem nome. Nome com 8+ dígitos 0-9 no TOTAL (qualquer outro caractere
+ * é ignorado: hífen especial U+2011, marcas de direção, letras junto) ou com `@`
+ * é tratado como contato sem nome (`null`, o mesmo caminho do nome vazio).
  */
 export function nomeSeguroParaModelo(nome: string | null): string | null {
   if (nome === null) return null;
-  const aparado = nome.trim();
-  if (aparado === '') return null;
-  if (aparado.includes('@')) return null;
-  const semPontuacao = aparado.replace(/[\s+\-.()]/g, '');
-  if (/^\d{8,}$/.test(semPontuacao)) return null;
+  if (nome.trim() === '') return null;
+  if (nome.includes('@')) return null;
+  const digitos = nome.match(/[0-9]/g)?.length ?? 0;
+  if (digitos >= 8) return null;
   return nome;
 }
 
