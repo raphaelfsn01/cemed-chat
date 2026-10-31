@@ -58,10 +58,14 @@ import { applyScheduleFollowup, type FollowupWindowKnobs } from './schedule-foll
 import {
   applyRequestHumanHandoff,
   buildHandoffSummary,
+  CODIGOS_DE_VETO_DE_QUALIDADE,
   criarEnviosEmAndamento,
   detectAmbiguousOptOut,
   detectHumanHandoffRequest,
   isLeadInHandoff,
+  MAX_VETOS_DE_QUALIDADE,
+  mensagemDeFallbackDoVeto,
+  mensagemDeReescrita,
   performHumanHandoff,
   transferenciaPendente,
 } from './human-handoff';
@@ -1142,6 +1146,10 @@ export async function runAgentTurn(
   // (`internal_vocabulary_leak`): 1º veto no turno ensina o modelo a reescrever; persistir
   // solta o envio com registro. Por turno (closure), nunca cross-turno.
   let internalVocabularyVetoCount = 0;
+  // Vetos de QUALIDADE (promise_semantic, promise_out_of_table) no turno: o 1º ensina o
+  // modelo a reescrever UMA vez; o 2º aciona o fallback fixo enviado pelo código (uma vez só).
+  let qualityVetoCount = 0;
+  let qualityFallbackAttempted = false;
   const outcomes: ChannelSendResult[] = [];
   // Citações acumuladas por buscas de conhecimento DESTE turno — anexadas à
   // próxima outbound enviada (shape de lib/ai/citations/types, que a UI já lê).
@@ -1341,8 +1349,6 @@ export async function runAgentTurn(
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
       execute: async ({ body }) => {
-        // Tentativa conta, enviada ou não: é o que libera a transferência (human-handoff.ts).
-        avisoAoPaciente.tentou = true;
         // F4-04: sinaliza (independente do gate F4-01/F4-08) se ESTA candidata é uma
         // promessa fora de tabela — usado só para correlacionar com o jailbreak no fim do
         // turno. A detecção é determinística (decidePromise); sem tabela do tenant = no-op.
@@ -1486,6 +1492,69 @@ export async function runAgentTurn(
               enforceInternalVocabulary: false,
             });
           }
+          if (chain.status === 'vetoed' && CODIGOS_DE_VETO_DE_QUALIDADE.has(chain.code)) {
+            // Veto de QUALIDADE (promessa): o caminho é reescrever, não transferir. Sem esta
+            // instrução o modelo transferia, o handoff silenciava o bot e o paciente ficava
+            // sem resposta (teste real de 30/10). 1º veto: reescreva UMA vez. 2º: o CÓDIGO
+            // envia o fallback fixo — nunca o modelo, que já falhou duas vezes.
+            qualityVetoCount += 1;
+            if (qualityVetoCount < MAX_VETOS_DE_QUALIDADE || qualityFallbackAttempted) {
+              return {
+                ok: false,
+                error: {
+                  code: chain.code,
+                  message: qualityVetoCount < MAX_VETOS_DE_QUALIDADE ? mensagemDeReescrita(chain.message) : chain.message,
+                },
+              };
+            }
+            qualityFallbackAttempted = true;
+            const { quem } = await expectativaDeAtendimento(pool, tenantId, clock());
+            // Cadeia SEM classificador semântico e SEM vocabulário interno (o texto fixo não
+            // pode ser vetado pelo gate que causou o problema), sem casos. stop, lgpd e
+            // pacing continuam valendo: opt-out é irrevogável.
+            const fallback = await runBeforeSend({
+              ...beforeSendArgs,
+              body: mensagemDeFallbackDoVeto(quem),
+              classifyPromiseSemantic: undefined,
+              enforceInternalVocabulary: false,
+              casesEnabled: false,
+              hasOpenCase: false,
+              openedCaseThisTurn: false,
+            });
+            const entregue =
+              fallback.status === 'sent' &&
+              (fallback.outcome.kind === 'sent' ||
+                fallback.outcome.kind === 'already_sent' ||
+                fallback.outcome.kind === 'queued');
+            if (fallback.status === 'sent') outcomes.push(fallback.outcome);
+            if (entregue) {
+              avisoAoPaciente.tentou = true;
+              return {
+                ok: true,
+                status: 'aviso_automatico_enviado',
+                message:
+                  'a reescrita também foi vetada; o sistema enviou ao paciente uma mensagem fixa avisando da ' +
+                  'transferência. Chame request_human_handoff agora e encerre o turno.',
+              };
+            }
+            // Fallback não entregue: ninguém avisou o paciente, mas a equipe PRECISA ser acionada
+            // (como na emergência). jaRecusou libera o handoff sem 2ª recusa e faz o runtime
+            // concluí-lo no fim do turno se o modelo não o refizer. Só código do gate, nunca o texto.
+            avisoAoPaciente.jaRecusou = true;
+            runLog.warn('fallback do veto de qualidade não entregue', {
+              gate: fallback.status === 'vetoed' ? fallback.gate : 'canal',
+              code: fallback.status === 'vetoed' ? fallback.code : fallback.outcome.kind,
+            });
+            return {
+              ok: false,
+              error: {
+                code: fallback.status === 'vetoed' ? fallback.code : 'envio_falhou',
+                message:
+                  'a reescrita foi vetada e o aviso automático ao paciente também não pôde ser enviado. ' +
+                  'Não tente enviar de novo; chame request_human_handoff e encerre o turno.',
+              },
+            };
+          }
           if (chain.status === 'vetoed') {
             // Erro de ENSINO pt-br (mesmo shape de get_lead_context/breaker): o
             // modelo o vê no turno seguinte. NÃO é exceção — não derruba o run.
@@ -1514,8 +1583,12 @@ export async function runAgentTurn(
           switch (outcome.kind) {
             case 'sent':
             case 'already_sent':
+              // O aviso só vale quando ENTREGUE (human-handoff.ts): envio vetado não libera
+              // a transferência, senão o paciente fica sem mensagem e sem equipe avisada.
+              avisoAoPaciente.tentou = true;
               return { ok: true, status: 'enviada', message_id: outcome.messageId };
             case 'queued':
+              avisoAoPaciente.tentou = true; // aceita pelo canal: sairá quando a sessão voltar
               return {
                 ok: true,
                 status: 'aceita_aguardando_canal',

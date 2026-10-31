@@ -21,7 +21,7 @@
 import { z } from 'zod';
 import type pg from 'pg';
 
-import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
+import { expectativaDeAtendimento, type QuemPodeAssumir } from '@/lib/escalacao/disponibilidade';
 import { emitAgentActivityForContact } from '@/lib/leads/agent-activity';
 
 import type { Logger } from '../obs/logger';
@@ -333,6 +333,38 @@ export function criarEnviosEmAndamento(): EnviosEmAndamento {
   };
 }
 
+/**
+ * Vetos de QUALIDADE do `send_message`: o texto do modelo foi barrado por promessa, e a
+ * saída é reescrever, não transferir. `case_promise_without_case` e
+ * `internal_vocabulary_leak` ficam de fora: têm contador e fail-safe próprios. Os vetos de
+ * PARADA (`contato_bloqueado`, `handoff_ativo`) também: reescrever não os resolve.
+ */
+export const CODIGOS_DE_VETO_DE_QUALIDADE: ReadonlySet<string> = new Set(['promise_semantic', 'promise_out_of_table']);
+
+/** Quantos vetos de qualidade o turno tolera antes de o CÓDIGO enviar o fallback. */
+export const MAX_VETOS_DE_QUALIDADE = 2;
+
+/** O veto devolvido ao modelo no 1º veto de qualidade: ensina a reescrever, não a transferir. */
+export function mensagemDeReescrita(motivoDoVeto: string): string {
+  return (
+    'Mensagem vetada (promessa). Reescreva UMA vez, sem prometer nada; não transfira por causa ' +
+    'deste aviso; transfira só se a reescrita também for vetada. ' +
+    `Motivo: ${motivoDoVeto}`
+  );
+}
+
+/**
+ * Mensagem fixa que o CÓDIGO envia quando a reescrita também é vetada. Sem prazo e sem
+ * horário: só diz o que a disponibilidade medida sustenta. Leitura que falhou (`null`) cai
+ * na frase conservadora, como em `expectativaDeAtendimento`.
+ */
+export function mensagemDeFallbackDoVeto(quem: QuemPodeAssumir | null): string {
+  const base = 'Entendi. Vou passar sua conversa agora para uma pessoa da nossa equipe.';
+  return quem !== null && quem.disponiveis > 0
+    ? `${base} Ela continua o atendimento em seguida.`
+    : `${base} A equipe retorna assim que possível.`;
+}
+
 export function mensagemAviseAntes(fraseDaEquipe: string): string {
   return (
     'Transferência NÃO feita ainda: avise o paciente primeiro. Envie UMA mensagem curta com ' +
@@ -387,22 +419,28 @@ export async function applyRequestHumanHandoff(
     return { ok: false, error: { code: 'invalid_payload', message: `payload inválido em request_human_handoff (${zodIssuesSummary(parsed.error)}). ${PAYLOAD_TEACHING}` } };
   }
 
-  // O aviso ao paciente tem de sair ANTES: a transferência marca force_human e o gate de
-  // envio recusa qualquer mensagem depois dela. Ver transferenciaPrecisaDeAviso.
-  if (transferenciaPrecisaDeAviso(opts.aviso)) {
-    const { frase } = await expectativaDeAtendimento(db, ids.tenantId, new Date());
-    return { ok: false, error: { code: 'avise_antes', message: mensagemAviseAntes(frase) } };
-  }
-
   // Mesmo passo do modelo = envio e transferência em paralelo: espera o aviso sair (ou ser
   // vetado) antes de gravar force_human, que o gate stop leria como bloqueio. Ver
   // ESPERA_MAXIMA_DO_ENVIO_MS. Só os gatilhos via modelo passam por aqui; os determinísticos
   // (emergência, pedido de humano) chamam performHumanHandoff direto e não esperam.
+  //
+  // A espera vem ANTES da trava "avise antes": `aviso.tentou` só vale quando o envio foi
+  // ENTREGUE, e um envio em andamento ainda não decidiu isso. Checar primeiro recusaria a
+  // transferência por um aviso que estava a milissegundos de sair.
+  let desfecho: DesfechoDaEspera = 'sem_envio';
   if (opts.envios !== undefined) {
-    const desfecho = await opts.envios.aguardar(opts.esperaMaximaMs ?? ESPERA_MAXIMA_DO_ENVIO_MS);
+    desfecho = await opts.envios.aguardar(opts.esperaMaximaMs ?? ESPERA_MAXIMA_DO_ENVIO_MS);
     if (desfecho === 'tempo_esgotado') {
       opts.log.warn('handoff: envio em andamento não terminou no tempo máximo — transferindo mesmo assim');
     }
+  }
+
+  // O aviso ao paciente tem de sair ANTES: a transferência marca force_human e o gate de
+  // envio recusa qualquer mensagem depois dela. Ver transferenciaPrecisaDeAviso. Envio
+  // travado além do teto não decide nada: chegar a um humano nunca depende dele (PR #38).
+  if (desfecho !== 'tempo_esgotado' && transferenciaPrecisaDeAviso(opts.aviso)) {
+    const { frase } = await expectativaDeAtendimento(db, ids.tenantId, new Date());
+    return { ok: false, error: { code: 'avise_antes', message: mensagemAviseAntes(frase) } };
   }
 
   await performHumanHandoff(db, ids, {

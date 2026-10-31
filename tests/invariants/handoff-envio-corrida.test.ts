@@ -331,6 +331,26 @@ beforeAll(async () => {
   );
 });
 
+/** Preço abaixo do piso da tabela do teste (R$ 100,00): vira `promise_out_of_table`, veto de QUALIDADE. */
+const PRECO_1 = "O exame custa R$ 5,00 hoje.";
+const PRECO_2 = "Fica R$ 7,00 para você.";
+const REESCRITA = "Posso te ajudar com isso pela nossa equipe.";
+const FALLBACK_INICIO = "Entendi. Vou passar sua conversa agora para uma pessoa da nossa equipe.";
+const VERSAO_TABELA = "7a1e0c5d-0000-4000-8000-000000000007";
+
+beforeAll(async () => {
+  await pool.query(
+    `insert into promise_table_versions (id, organization_id, values)
+     values ($1,$2,'{"minPriceCents": 10000}'::jsonb) on conflict (id) do nothing`,
+    [VERSAO_TABELA, ORG],
+  );
+  await pool.query(
+    `insert into promise_table_pointers (organization_id, version_id) values ($2,$1)
+     on conflict (organization_id) do nothing`,
+    [VERSAO_TABELA, ORG],
+  );
+});
+
 beforeEach(async () => {
   ordemDasConsultas = [];
   t0 = Date.now();
@@ -492,5 +512,94 @@ describe("handoff SEM envio em andamento continua imediato", () => {
     const estado = await estadoDoContato();
     expect(estado.force_human).toBe(true);
     expect(estado.silenciado).toBe(true);
+  });
+});
+
+const envia = (body: string) => ({ toolName: "send_message", input: { body } });
+
+describe.each([0, 3, 25, 40, 100])("envio vetado e handoff no MESMO passo — %i ms por consulta", (rtt) => {
+  beforeEach(() => {
+    rttMs = rtt;
+  });
+
+  it("o handoff NÃO silencia o bot antes da reescrita: o paciente recebe a reescrita", async () => {
+    // Passo 1: envio vetado (qualidade) + handoff em paralelo. Antes do conserto, `tentou`
+    // virava true na 1ª linha do envio, o handoff passava, gravava force_human e a reescrita
+    // do passo 2 era barrada por handoff_ativo.
+    const erro = await rodaTurno(montaHandler(modeloComPassos([[envia(PRECO_1), HANDOFF], [envia(REESCRITA)]])));
+    expect(erro).toBeNull();
+
+    const diag = JSON.stringify({ ordemDasConsultas, resultadosDeTool, vetos: await vetosGravados() }, null, 2);
+    expect(enviados.map((e) => e.body), diag).toEqual([REESCRITA]);
+    expect(JSON.stringify(resultadosDeTool), diag).toContain("avise_antes");
+    // A transferência pedida não se perde: o runtime a conclui no fim, DEPOIS do envio.
+    expect((await estadoDoContato()).force_human, diag).toBe(true);
+  });
+});
+
+describe("veto de qualidade: reescreve uma vez, depois o código envia o fallback", () => {
+  beforeEach(() => {
+    rttMs = 0;
+  });
+
+  it("1º veto vira reescrita entregue; sem handoff", async () => {
+    const erro = await rodaTurno(montaHandler(modeloComPassos([[envia(PRECO_1)], [envia(REESCRITA)]])));
+    expect(erro).toBeNull();
+    const diag = JSON.stringify({ resultadosDeTool, vetos: await vetosGravados() }, null, 2);
+    expect(enviados.map((e) => e.body), diag).toEqual([REESCRITA]);
+    expect(JSON.stringify(resultadosDeTool), diag).toContain("Reescreva UMA vez");
+    expect((await estadoDoContato()).force_human, diag).toBe(false);
+  });
+
+  it("2º veto no turno: o CÓDIGO envia o fallback fixo e só então o handoff segue", async () => {
+    const erro = await rodaTurno(montaHandler(modeloComPassos([[envia(PRECO_1)], [envia(PRECO_2)], [HANDOFF]])));
+    expect(erro).toBeNull();
+    const diag = JSON.stringify({ resultadosDeTool, vetos: await vetosGravados() }, null, 2);
+    expect(enviados, diag).toHaveLength(1);
+    expect(enviados[0]!.body.startsWith(FALLBACK_INICIO), diag).toBe(true);
+    expect(enviados[0]!.body).not.toMatch(/R\$/);
+    const estado = await estadoDoContato();
+    expect(estado.force_human, diag).toBe(true);
+    expect(estado.silenciado, diag).toBe(true);
+  });
+
+  it("fallback vetado (spinning): nada é enviado e o handoff segue com jaRecusou=true", async () => {
+    // Limitação ACEITA: o fallback é texto fixo e passa pelo spinning; a 3ª cópia na janela é
+    // vetada (mass_identical). Semeia as duas variantes do fallback 2× cada.
+    const { hashNormalized, normalizeCopy } = await import("@/lib/agent-engine/spinning/engine");
+    for (const fim of ["Ela continua o atendimento em seguida.", "A equipe retorna assim que possível."]) {
+      const n = normalizeCopy(`${FALLBACK_INICIO} ${fim}`);
+      for (let i = 0; i < 2; i++) {
+        await pool.query(
+          `insert into outbound_copies (organization_id, channel_session_id, normalized_text, normalized_hash)
+           values ($1,$2,$3,$4)`,
+          [ORG, SESSION, n, hashNormalized(n)],
+        );
+      }
+    }
+    // O modelo NÃO chama o handoff: é o runtime que o conclui (jaRecusou=true).
+    const erro = await rodaTurno(montaHandler(modeloComPassos([[envia(PRECO_1)], [envia(PRECO_2)]])));
+    expect(erro).toBeNull();
+    const diag = JSON.stringify({ resultadosDeTool, vetos: await vetosGravados() }, null, 2);
+    expect(enviados, diag).toHaveLength(0);
+    expect((await vetosGravados()).map((v) => v.vetoed_code), diag).toContain("mass_identical");
+    const estado = await estadoDoContato();
+    expect(estado.force_human, diag).toBe(true);
+    expect(estado.silenciado, diag).toBe(true);
+  });
+
+  it("veto de PARADA (handoff_ativo) não conta: sem reescrita nem fallback, o turno encerra", async () => {
+    // O turno não nasce com force_human (seria pulado). O stop passa a vetar no MEIO do turno:
+    // o aviso sai, o handoff é feito e dois envios de preço em seguida batem em handoff_ativo.
+    const erro = await rodaTurno(
+      montaHandler(modeloComPassos([[envia(REESCRITA)], [HANDOFF], [envia(PRECO_1), envia(PRECO_2)]])),
+    );
+    expect(erro).toBeNull();
+    const diag = JSON.stringify({ resultadosDeTool, vetos: await vetosGravados() }, null, 2);
+    expect(enviados.map((e) => e.body), diag).toEqual([REESCRITA]);
+    // Só os 2 vetos do stop: o gate de promessa nem foi avaliado, e nenhuma tentativa de
+    // fallback (que deixaria um 3º trace).
+    expect((await vetosGravados()).map((v) => v.vetoed_code), diag).toEqual(["handoff_ativo", "handoff_ativo"]);
+    expect(JSON.stringify(resultadosDeTool), diag).not.toContain("Reescreva UMA vez");
   });
 });
