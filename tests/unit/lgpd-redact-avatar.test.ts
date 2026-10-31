@@ -119,6 +119,30 @@ beforeEach(() => {
   });
 });
 
+describe("cascadeRedactContact — request_id", () => {
+  it("requestId nulo (botão da tela) vai como null no upsert do avatar e no p_request_id do RPC", async () => {
+    await cascadeRedactContact({ organizationId: ORG, contactId: CONTATO, requestId: null });
+
+    const fila = inserts.find((i) => i.tabela === "storage_redaction_queue");
+    expect(fila?.payload).toHaveProperty("request_id", null);
+    expect(rpcMock).toHaveBeenCalledWith(
+      "fn_lgpd_cascade_redact_contact",
+      expect.objectContaining({ p_request_id: null }),
+    );
+  });
+
+  it("requestId real (worker de pedidos) continua indo como está", async () => {
+    await cascadeRedactContact({ organizationId: ORG, contactId: CONTATO, requestId: PEDIDO });
+
+    const fila = inserts.find((i) => i.tabela === "storage_redaction_queue");
+    expect(fila?.payload).toHaveProperty("request_id", PEDIDO);
+    expect(rpcMock).toHaveBeenCalledWith(
+      "fn_lgpd_cascade_redact_contact",
+      expect.objectContaining({ p_request_id: PEDIDO }),
+    );
+  });
+});
+
 describe("cascadeRedactContact — foto de perfil", () => {
   it("enfileira o arquivo da foto e zera a coluna do contato", async () => {
     await cascadeRedactContact({ organizationId: ORG, contactId: CONTATO, requestId: PEDIDO });

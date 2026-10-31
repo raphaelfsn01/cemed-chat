@@ -8,7 +8,6 @@
  *     `already_anonymized: true`).
  *   - Mutates contacts (irreversible), conversations, messages,
  *     crm_lead_activities, crm_leads.
- *   - Strips personal fields from orders.payload but PRESERVES values.
  *   - Enqueues media paths into `storage_redaction_queue` for async deletion.
  *   - Inserts a dense `lgpd.redact_executed` audit row inside the TX.
  *
@@ -33,7 +32,12 @@ interface RpcResult {
 export interface CascadeArgs {
   organizationId: string;
   contactId: string;
-  requestId: string;
+  /**
+   * Id do pedido em `lgpd_requests`, ou `null` quando não há pedido (botão
+   * "Anonimizar" da tela). NUNCA passe outro UUID: `request_id` tem FK para
+   * `lgpd_requests(id)` e um id que não existe lá aborta a cascata (23503).
+   */
+  requestId: string | null;
 }
 
 export async function cascadeRedactContact(args: CascadeArgs): Promise<CascadeResult> {
