@@ -1,15 +1,15 @@
 /**
  * POST /api/v1/lgpd/anonymize
  *
- * Irreversible cascade nullify (Spec 05 §LGPD). Only `admin` role within the
- * tenant or platform_admin can execute. Idempotent: re-anonymizing returns
- * 200 with `action: "already_anonymized"`.
+ * Anonimização irreversível de um contato (Spec 05 §LGPD). Só `admin` na org do
+ * contato (ou platform_admin). Idempotente: re-anonimizar devolve 200 com
+ * `action: "already_anonymized"`.
  *
- * Cascade (best-effort sequential — no client-side transaction):
- *   1. contacts: nullify PII, set is_anonymized + anonymized_at, rewrite display_name
- *   2. crm_leads: append " (anonimizado)" to title (preserve PK + history)
- *   3. crm_lead_activities: redact payload to { redacted: true }
- *   4. Storage media deletion deferred to EPIC-08 worker
+ * A cascata inteira (contacts, conversations, messages, atividades, leads, fila
+ * de remoção de mídia/avatar) é a MESMA do worker de pedidos LGPD:
+ * `cascadeRedactContact` → RPC `fn_lgpd_cascade_redact_contact`, numa única
+ * transação. A rota não faz UPDATE próprio: o antigo gravava `email_normalized`
+ * (coluna GERADA) e o Postgres recusava, então nada era anonimizado.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -18,6 +18,7 @@ import { audit } from "@/lib/audit";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { cascadeRedactContact } from "@/lib/lgpd/redact-cascade";
 import { lgpdAnonymizeSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 
@@ -83,57 +84,29 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
+  // O client de service role só entra aqui: a org do contato veio da query
+  // RLS-scoped acima (nunca do body) e o gate de papel já passou nela.
+  let cascata;
+  try {
+    cascata = await cascadeRedactContact({
+      organizationId: existing.organization_id,
+      contactId: existing.id,
+      requestId,
+    });
+  } catch (err) {
+    console.error("[lgpd.anonymize] cascata falhou", err instanceof Error ? err.message : err);
+    return fail("internal_error", "Não foi possível anonimizar o contato.", 500, { requestId });
+  }
+
+  // Outra chamada anonimizou entre o SELECT e a cascata: nada a emitir nem auditar.
+  if (cascata.alreadyAnonymized) {
+    return ok(
+      { contact_id: existing.id, anonymized_at: null, action: "already_anonymized" },
+      { requestId },
+    );
+  }
+
   const nowIso = new Date().toISOString();
-  const shortId = existing.id.slice(0, 8);
-
-  // Step 1 — contacts.
-  const { error: c1Err } = await supabase
-    .from("contacts")
-    .update({
-      name: null,
-      display_name: `Contato Anonimizado #${shortId}`,
-      email: null,
-      email_normalized: null,
-      phone_number: null,
-      cpf_encrypted: null,
-      cpf_hash: null,
-      birthdate: null,
-      is_anonymized: true,
-      anonymized_at: nowIso,
-      updated_at: nowIso,
-    })
-    .eq("id", existing.id);
-  if (c1Err) {
-    return fail("internal_error", `contacts: ${c1Err.message}`, 500, { requestId });
-  }
-
-  // Step 2 — leads owned by contact (best-effort; non-fatal).
-  const { data: leadRows } = await supabase
-    .from("crm_leads")
-    .select("id, title")
-    .eq("contact_id", existing.id);
-  const redactedLeadIds: string[] = [];
-  for (const row of (leadRows ?? []) as { id: string; title: string | null }[]) {
-    const newTitle = `${(row.title ?? "").slice(0, 20)} (anonimizado)`;
-    const { error: leadErr } = await supabase
-      .from("crm_leads")
-      .update({ title: newTitle })
-      .eq("id", row.id);
-    if (leadErr) {
-      console.error("[lgpd.anonymize] crm_leads update failed", leadErr.message);
-    } else {
-      redactedLeadIds.push(row.id);
-    }
-  }
-
-  // Step 3 — activities (RLS-scoped UPDATE).
-  const { error: actErr } = await supabase
-    .from("crm_lead_activities")
-    .update({ payload: { redacted: true } })
-    .eq("contact_id", existing.id);
-  if (actErr) {
-    console.error("[lgpd.anonymize] crm_lead_activities update failed", actErr.message);
-  }
 
   // Emit + audit.
   await supabase
@@ -163,11 +136,13 @@ export async function POST(req: NextRequest): Promise<Response> {
     metadata: {
       contact_id: existing.id,
       justification: input.justification,
-      redacted_tables: ["contacts", "crm_leads", "crm_lead_activities"],
-      redacted_lead_ids: redactedLeadIds,
-      storage_media_deletion: "deferred_epic_08",
+      cascade_counts: cascata.counts,
+      media_paths_enqueued: cascata.mediaPaths.length,
     },
   });
 
-  return ok({ contact_id: existing.id, anonymized_at: nowIso }, { requestId });
+  return ok(
+    { contact_id: existing.id, anonymized_at: nowIso, action: "anonymized" },
+    { requestId },
+  );
 }
