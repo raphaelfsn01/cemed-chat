@@ -91,7 +91,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     cascata = await cascadeRedactContact({
       organizationId: existing.organization_id,
       contactId: existing.id,
-      requestId,
+      // Sem pedido em `lgpd_requests`: o id HTTP não existe lá e violaria a FK.
+      requestId: null,
     });
   } catch (err) {
     console.error("[lgpd.anonymize] cascata falhou", err instanceof Error ? err.message : err);

@@ -123,6 +123,20 @@ describe("POST /api/v1/lgpd/anonymize", () => {
     expect(updates.filter((u) => u.table === "contacts")).toHaveLength(0);
   });
 
+  it("a cascata recebe requestId nulo; o id HTTP fica só na resposta e na auditoria", async () => {
+    // `requestId` da cascata vira `request_id` com FK para `lgpd_requests`. O id
+    // HTTP é um UUID aleatório que não existe lá: a FK (23503) abortaria o RPC.
+    const res = await POST(req({ contact_id: CONTATO_A, justification: JUSTIFICATIVA }));
+    expect(res.status).toBe(200);
+    expect(cascadeRedactContact.mock.calls[0]![0]).toHaveProperty("requestId", null);
+
+    const idHttp = res.headers.get("X-Request-Id");
+    expect(idHttp).toMatch(/^[0-9a-f-]{36}$/);
+    expect(auditMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "lgpd.anonymize_executed", requestId: idHttp }),
+    );
+  });
+
   it.each(["viewer", "agent", "coordinator"] as Role[])("%s → 403 e a cascata não roda", async (papel) => {
     estado.papel = papel;
     const res = await POST(req({ contact_id: CONTATO_A, justification: JUSTIFICATIVA }));
