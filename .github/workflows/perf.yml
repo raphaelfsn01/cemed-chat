@@ -6,23 +6,23 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # ATENÇÃO ao renomear: `build-and-size` é check OBRIGATÓRIO na branch
+  # protection da `main`, casado pelo NOME do job.
   build-and-size:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v7
-        with:
-          # 22 como o job `ci` e o `.nvmrc`. Buildar numa versão que o
-          # `engines` (>=22) não suporta esconde quebra ou inventa falha.
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
 
       - name: Build
         run: pnpm build
@@ -39,3 +39,45 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       # NOTE: Lighthouse CI + bundle-analyzer thresholds deferred (S-12.05 follow-up).
+
+  # As DUAS imagens que vão para a VPS são construídas no PR, sem publicar.
+  #
+  # `build-and-size` roda `pnpm build` com o repositório inteiro no disco; a
+  # imagem é construída com o que o `.dockerignore` deixa passar (sem `tests/`,
+  # sem `docs/`). São builds diferentes, e o que quebra só no segundo só aparecia
+  # DEPOIS do merge, no "Publicar imagem Docker (GHCR)" — foi assim que o #35
+  # entrou na main e a publicação falhou.
+  #
+  # O worker é o caso pior: `Dockerfile.worker` não era construído em NENHUM
+  # workflow. Erro de build só aparecia na VPS, na hora do deploy.
+  #
+  # Só em PR: na `main` o app já é construído pelo publish-image.yml. Não é check
+  # obrigatório; vira obrigatório na branch protection quando se decidir.
+  docker-build:
+    if: github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: app
+            dockerfile: Dockerfile
+          - image: worker
+            dockerfile: Dockerfile.worker
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build da imagem (${{ matrix.image }}) — sem publicar
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          # A mesma plataforma que o publish-image.yml publica e a VPS roda.
+          platforms: linux/amd64
+          push: false
+          # Só LÊ o cache que a `main` grava (publish-image.yml). PR não escreve
+          # cache: cada PR gravando camadas próprias encheria a cota do repositório.
+          cache-from: type=gha

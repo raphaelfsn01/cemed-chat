@@ -14,6 +14,10 @@ updates:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
   - package-ecosystem: "github-actions"
-    directory: "/"
+    # "/" cobre .github/workflows; a action local de preparo fica em outra pasta
+    # e, sem a segunda entrada, os SHAs fixados nela nunca seriam atualizados.
+    directories:
+      - "/"
+      - "/.github/actions/setup"
     schedule:
       interval: "weekly"

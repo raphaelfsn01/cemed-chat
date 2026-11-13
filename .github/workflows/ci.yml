@@ -5,21 +5,31 @@ on:
   push:
     branches: [main]
 
+# O token do job só lê o repositório: nenhum passo aqui publica, comenta ou
+# escreve. Sem a declaração vale o padrão do repositório, que pode ser escrita.
+permissions:
+  contents: read
+
+# Push novo no MESMO PR cancela a execução anterior — ela mede um commit que já
+# não é a ponta da branch. Na `main` nada é cancelado: cada merge tem o seu
+# resultado registrado.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # ATENÇÃO ao renomear: `verify` e `invariants` são checks OBRIGATÓRIOS na branch
+  # protection da `main`, casados pelo NOME do job. Mudar o nome aqui deixa todo
+  # PR esperando para sempre um check que não existe mais.
   verify:
-    runs-on: ubuntu-latest
+    # Versão fixa do runner, não `ubuntu-latest`: "latest" troca de sistema por
+    # baixo sem nenhum commit nosso, e o CI quebra sem que o código tenha mudado.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
 
       - name: Typecheck
         run: pnpm typecheck
@@ -33,6 +43,14 @@ jobs:
       # workflow, e mecanismo que não roda no gate não protege nada.
       - name: Channel provider leak
         run: pnpm lint:channels
+
+      # Toda spec de tests/e2e tem destino DECLARADO em tests/e2e/ci-suites.json:
+      # roda numa suíte do e2e.yml ou está em "fora" com o motivo. Aqui, no check
+      # obrigatório, e não no e2e (que não segura merge): spec nova sem destino
+      # reprova o PR em vez de ficar esquecida — foi o que aconteceu com as duas
+      # specs do painel de leads.
+      - name: E2E — toda spec tem destino declarado
+        run: pnpm exec tsx scripts/ci/e2e-suites.ts check
 
       - name: Unit tests
         run: pnpm test:unit
@@ -51,19 +69,12 @@ jobs:
   # tests/invariants/** contra ele. Invocar via `pnpm test:db` é o que põe
   # node_modules/.bin no PATH que o script herda para chamar `vitest`.
   invariants:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
 
       - name: RLS isolation + governance invariants
         run: pnpm test:db

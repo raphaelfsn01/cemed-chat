@@ -1,7 +1,9 @@
 name: e2e
 
 # Issue #63: as specs de tests/e2e/ não rodavam em lugar nenhum. Este job fecha o
-# buraco com o subconjunto que não depende de serviço externo — hoje 29 de 33.
+# buraco com o subconjunto que não depende de serviço externo. Quais specs rodam
+# e quais ficam de fora (com o motivo) está em tests/e2e/ci-suites.json — fonte
+# única, vigiada no job `verify` do ci.yml.
 #
 # A execução é dividida em DUAS invocações do playwright de propósito: o
 # limitador de login do produto é por IP (60/300s) e no CI todos os specs vêm do
@@ -21,6 +23,15 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
+# Push novo no mesmo PR cancela a execução anterior (o responsivo leva ~20 min
+# medindo um commit que já não é a ponta da branch). Na `main` nada é cancelado.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   e2e:
     # Duas suítes em paralelo sobre o MESMO preparo (Supabase + baseline + build
@@ -31,23 +42,25 @@ jobs:
       fail-fast: false
       matrix:
         suite: [geral, responsivo]
-    runs-on: ubuntu-latest
+    # Versão fixa do runner: `ubuntu-latest` troca de sistema sem commit nosso.
+    runs-on: ubuntu-24.04
     timeout-minutes: ${{ matrix.suite == 'responsivo' && 50 || 30 }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/setup
 
-      - uses: actions/setup-node@v7
+      # Versão FIXA do CLI, nunca `latest`. Com `latest` este job quebrou sozinho:
+      # a 3.0.0 saiu em 2026-11-02 e, de 03/11 em diante, o `supabase start` abaixo
+      # passou a falhar em ~30 s em TODO PR, sem nenhuma mudança no repositório —
+      # duas semanas de PRs entrando sem a parte 1 e sem o responsivo.
+      #
+      # 2.121.0 é a versão com que este mesmo preparo (start + baseline + seed)
+      # foi provado em 2026-11-09. Para subir de versão: troque o número num PR
+      # só disso e leia este job — se o start passar, a versão nova serve.
+      - uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13 # v3.2.0
         with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - uses: supabase/setup-cli@v3
-        with:
-          version: latest
+          version: 2.121.0
 
       # Sobe Postgres + Auth (GoTrue) + PostgREST + Storage. Auth de verdade é
       # requisito: os specs de login exercitam o GoTrue, não um mock.
@@ -57,11 +70,16 @@ jobs:
       # tabela que ainda não existe) — está no CLAUDE.md e foi confirmado neste
       # CI. O que o self-hoster aplica é o `baseline.sql`, então é ele que o
       # e2e aplica: o banco do teste fica igual ao de quem instalou o produto.
+      #
+      # `-x`: serviços que nenhuma spec usa (painel Studio e o que só ele consome,
+      # transformação de imagem, edge functions, coleta de logs, pooler). Ficam
+      # Postgres, Auth, PostgREST, Realtime, Storage e a caixa de e-mail de teste.
+      # É a mesma lista da prova em banco fresco de 2026-11-09.
       - name: Subir Supabase local (sem a cadeia de migrations)
         run: |
           mv supabase/migrations /tmp/migrations-off
           mkdir -p supabase/migrations
-          supabase start
+          supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,postgres-meta
 
       # O baseline é um dump `--schema-only`: ele USA os tipos das extensões
       # (public.vector, citext, gin_trgm_ops) mas não as cria. O stack local do
@@ -192,17 +210,16 @@ jobs:
       # `reset-password-mfa` (issue #80): ela passa sozinha e falha em paralelo.
       - name: E2E — parte 1 de 2
         if: matrix.suite == 'geral'
+        # A lista vem de tests/e2e/ci-suites.json. Atribuir ANTES de usar não é
+        # estilo: se o script falhar, o passo morre aqui — com `$(...)` direto na
+        # linha do playwright, uma lista vazia faria ele rodar a suíte INTEIRA.
         run: |
-          pnpm exec playwright test --workers=1 \
-            smoke.spec.ts auth.spec.ts error-pages.spec.ts \
-            password-recovery.spec.ts convite-primeiro-acesso.spec.ts \
-            rbac-roles.spec.ts inbox-scope.spec.ts reset-password-mfa.spec.ts mfa-pulo.spec.ts \
-            degradacao-silenciosa.spec.ts vps-webhook-outbound-ssrf.spec.ts \
-            kanban-owner-filter.spec.ts queue-assign.spec.ts \
-            risk-radar.spec.ts invite-lifecycle.spec.ts system-update.spec.ts \
-            auth-sem-credencial-na-url.spec.ts marca-cemed.spec.ts \
-            papeis-rotulos.spec.ts
-        env:
+          SPECS="$(pnpm exec tsx scripts/ci/e2e-suites.ts parte1)"
+          pnpm exec playwright test --workers=1 $SPECS
+        # Âncora YAML: o MESMO bloco vale para a parte 2 e para o responsivo
+        # (`env: *e2e-env`). Eram três cópias; mudar uma e esquecer as outras
+        # fazia as suítes rodarem contra servidores configurados diferente.
+        env: &e2e-env
           INTERNAL_SECRET: ci-placeholder-nao-e-segredo
           CPF_ENCRYPTION_KEY: ci-placeholder-nao-e-segredo
           WAHA_BYO_ENCRYPTION_KEY: ci-placeholder-nao-e-segredo
@@ -220,28 +237,9 @@ jobs:
       - name: E2E — parte 2 de 2 (processo novo, contador de login zerado)
         if: matrix.suite == 'geral'
         run: |
-          pnpm exec playwright test --workers=1 \
-            agente-novo-e-uso.spec.ts agente-organiza-operacao.spec.ts \
-            central-de-avisos-capacidades.spec.ts escalacao-ciclo.spec.ts \
-            navegacao.spec.ts olhar-telas-do-epico.spec.ts pipelines-gestao.spec.ts \
-            qa-agente-usa-as-maos.spec.ts qa-selo-no-funil-usado.spec.ts \
-            qa-telas-descobertas-w4.spec.ts retorno-anti-morte.spec.ts \
-            followup-builder.spec.ts followup-queue.spec.ts \
-            distribuicao-atendimento.spec.ts followup-journey.spec.ts
-        env:
-          INTERNAL_SECRET: ci-placeholder-nao-e-segredo
-          CPF_ENCRYPTION_KEY: ci-placeholder-nao-e-segredo
-          WAHA_BYO_ENCRYPTION_KEY: ci-placeholder-nao-e-segredo
-          AI_CRED_AES_KEY: ci-placeholder-nao-e-segredo
-          SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
-          WAHA_API_BASE_URL: http://127.0.0.1:3999
-          WAHA_API_KEY: ci-placeholder-nao-e-segredo
-          WAHA_WEBHOOK_BASE_URL: http://127.0.0.1:3001
-          UPSTASH_REDIS_REST_URL: http://127.0.0.1:3998
-          UPSTASH_REDIS_REST_TOKEN: ci-placeholder-nao-e-segredo
-          # CI = 1 IP para todos os specs; o teto de produção (60/5min) é irreal aqui.
-          # O teto por CONTA (5 falhas) NÃO muda — é ele que barra brute force.
-          AUTH_RATE_LIMIT_LOGIN_IP: "1000"
+          SPECS="$(pnpm exec tsx scripts/ci/e2e-suites.ts parte2)"
+          pnpm exec playwright test --workers=1 $SPECS
+        env: *e2e-env
 
       # Projetos de viewport do playwright.config.ts — só eles rodam esta spec
       # (o `chromium` a ignora). A jornada do dono cria um dono novo por projeto
@@ -252,55 +250,15 @@ jobs:
           pnpm exec playwright test --workers=1 \
             --project=mobile --project=mobile-sm --project=tablet \
             --project=desktop --project=webkit-p0 responsivo.spec.ts
-        env:
-          INTERNAL_SECRET: ci-placeholder-nao-e-segredo
-          CPF_ENCRYPTION_KEY: ci-placeholder-nao-e-segredo
-          WAHA_BYO_ENCRYPTION_KEY: ci-placeholder-nao-e-segredo
-          AI_CRED_AES_KEY: ci-placeholder-nao-e-segredo
-          SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
-          WAHA_API_BASE_URL: http://127.0.0.1:3999
-          WAHA_API_KEY: ci-placeholder-nao-e-segredo
-          WAHA_WEBHOOK_BASE_URL: http://127.0.0.1:3001
-          UPSTASH_REDIS_REST_URL: http://127.0.0.1:3998
-          UPSTASH_REDIS_REST_TOKEN: ci-placeholder-nao-e-segredo
-          AUTH_RATE_LIMIT_LOGIN_IP: "1000"
+        env: *e2e-env
 
+      # Gerado de tests/e2e/ci-suites.json — contagens e motivos reais. O texto
+      # fixo que vivia aqui dizia "32 de 36" com 40 specs no repositório.
       - name: Declarar o que este job ainda NÃO cobre
         if: always() && matrix.suite == 'geral'
-        run: |
-          {
-            echo "## E2E — cobertura deste job"
-            echo ""
-            echo "**Rodou (32 de 36 specs; a responsivo.spec.ts roda na outra perna da matriz):**"
-            echo "smoke, auth, auth-sem-credencial-na-url, error-pages, password-recovery,"
-            echo "convite-primeiro-acesso, rbac-roles, inbox-scope, reset-password-mfa,"
-            echo "degradacao-silenciosa, vps-webhook-outbound-ssrf, kanban-owner-filter,"
-            echo "queue-assign, risk-radar, invite-lifecycle, system-update, marca-cemed,"
-            echo "agente-novo-e-uso, agente-organiza-operacao, central-de-avisos-capacidades,"
-            echo "escalacao-ciclo, navegacao, olhar-telas-do-epico, pipelines-gestao,"
-            echo "qa-agente-usa-as-maos, qa-selo-no-funil-usado, qa-telas-descobertas-w4,"
-            echo "retorno-anti-morte, followup-builder, followup-queue,"
-            echo "distribuicao-atendimento, followup-journey."
-            echo ""
-            echo "**Não rodou (3):**"
-            echo "- webhooks: a automação não aplica a tag no card do lead neste"
-            echo "  ambiente — reproduzido localmente, ainda sem causa. NÃO é falta"
-            echo "  de WAHA: a followup-journey estava na mesma categoria e passa"
-            echo "  sem WAHA nenhum (ela dubla o webhook chamando a mesma função"
-            echo "  que o receiver real chama)."
-            echo "- precisa de WAHA + Redis + Resend + Nuvemshop: vps-fresh-onboarding (P0)"
-            echo "- **capacidades-do-agente: fora porque REPROVA, e o vermelho está certo.**"
-            echo "  Ligar o pacote 'Atender' enche o teto de 20 capacidades, e aí a UI"
-            echo "  DESABILITA o checkbox da capacidade crítica que o próprio desenho"
-            echo "  manda o humano marcar à mão ('o pacote não liga por você'). O seed"
-            echo "  liga 3; o pacote traz >=17 automáticas. Não é dado sujo: é o catálogo"
-            echo "  ter crescido depois que a spec foi escrita — e ninguém soube porque"
-            echo "  ela nunca rodou no gate, que é a tese desta issue."
-            echo ""
-            echo "Expandir é trabalho de seguimento — issue #63."
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: pnpm exec tsx scripts/ci/e2e-suites.ts resumo >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: playwright-report-${{ matrix.suite }}

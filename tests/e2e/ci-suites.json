@@ -1,0 +1,48 @@
+{
+  "parte1": [
+    "smoke.spec.ts",
+    "auth.spec.ts",
+    "error-pages.spec.ts",
+    "password-recovery.spec.ts",
+    "convite-primeiro-acesso.spec.ts",
+    "rbac-roles.spec.ts",
+    "inbox-scope.spec.ts",
+    "reset-password-mfa.spec.ts",
+    "mfa-pulo.spec.ts",
+    "degradacao-silenciosa.spec.ts",
+    "vps-webhook-outbound-ssrf.spec.ts",
+    "kanban-owner-filter.spec.ts",
+    "queue-assign.spec.ts",
+    "risk-radar.spec.ts",
+    "invite-lifecycle.spec.ts",
+    "system-update.spec.ts",
+    "auth-sem-credencial-na-url.spec.ts",
+    "marca-cemed.spec.ts",
+    "papeis-rotulos.spec.ts",
+    "painel-leads-etapa-tags.spec.ts",
+    "painel-leads-retencao.spec.ts"
+  ],
+  "parte2": [
+    "agente-novo-e-uso.spec.ts",
+    "agente-organiza-operacao.spec.ts",
+    "central-de-avisos-capacidades.spec.ts",
+    "escalacao-ciclo.spec.ts",
+    "navegacao.spec.ts",
+    "olhar-telas-do-epico.spec.ts",
+    "pipelines-gestao.spec.ts",
+    "qa-agente-usa-as-maos.spec.ts",
+    "qa-selo-no-funil-usado.spec.ts",
+    "qa-telas-descobertas-w4.spec.ts",
+    "retorno-anti-morte.spec.ts",
+    "followup-builder.spec.ts",
+    "followup-queue.spec.ts",
+    "distribuicao-atendimento.spec.ts",
+    "followup-journey.spec.ts"
+  ],
+  "responsivo": ["responsivo.spec.ts"],
+  "fora": {
+    "webhooks.spec.ts": "A automação não aplica a tag no card do lead neste ambiente — reproduzido localmente, ainda sem causa. Não é falta de WAHA: a followup-journey estava na mesma categoria e passa sem WAHA nenhum.",
+    "vps-fresh-onboarding.spec.ts": "Precisa de WAHA + Redis + Resend + Nuvemshop. É a P0 da doutrina de QA Visual e segue sem rodar no CI (issue #63).",
+    "capacidades-do-agente.spec.ts": "Fora porque REPROVA, e o vermelho está certo: ligar o pacote 'Atender' enche o teto de 20 capacidades e a UI desabilita o checkbox da capacidade crítica que o próprio desenho manda marcar à mão."
+  }
+}
