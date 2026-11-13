@@ -9017,6 +9017,11 @@ alter table public.agent_inbox_items
     -- — os blocos antigos rodam antes e falham em cadeia. Um bloco por
     -- constraint, vigiado por tests/unit/baseline-constraint-reconstruida.test.ts.
     'message_send_stuck',
+    -- (migration 0125) Turno do agente que conclui `done` sem enviar nenhuma
+    -- mensagem e sem handoff: para a fila é sucesso, para o paciente é silêncio.
+    -- `job_dead` só cobre turno que falha. Entra NESTA lista (um bloco por
+    -- constraint — ver a nota do `message_send_stuck` acima).
+    'turn_no_reply',
     'other'
   ));
 

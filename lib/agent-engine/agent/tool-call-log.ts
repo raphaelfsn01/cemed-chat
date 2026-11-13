@@ -103,13 +103,22 @@ export function wrapToolsWithCallLog(tools: ToolSet, log: Logger, called?: strin
   return wrapped;
 }
 
-/** Fim do turno: UMA linha com os nomes das tools chamadas, a contagem e se houve send_message. */
-export function logToolCallSummary(log: Logger, called: readonly string[]): void {
+/**
+ * Fim do turno: UMA linha com os nomes das tools chamadas, a contagem, se houve send_message
+ * e, quando o chamador informa, quantos envios a cadeia before-send vetou por gate
+ * (`vetos_by_gate`; `{}` = nenhum veto). Nomes de gate e números — nunca texto de mensagem.
+ */
+export function logToolCallSummary(
+  log: Logger,
+  called: readonly string[],
+  vetosPorGate?: Readonly<Record<string, number>>,
+): void {
   try {
     log.info('resumo de tools do turno', {
       tools: [...called],
       tool_calls: called.length,
       send_message: called.includes('send_message'),
+      ...(vetosPorGate !== undefined ? { vetos_by_gate: { ...vetosPorGate } } : {}),
     });
   } catch {
     // intencional: observabilidade não derruba o turno

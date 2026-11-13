@@ -106,7 +106,12 @@ import {
 import { readSkillReference, skillHasReferences } from './skill-references';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
 import { logToolCallSummary, wrapToolsWithCallLog } from './tool-call-log';
-import { loadChannelProvider, runBeforeSend } from '../guardrails/before-send';
+import { alertarTurnoSemResposta, turnoFicouMudo } from './turn-no-reply';
+import {
+  loadChannelProvider,
+  runBeforeSend,
+  type BeforeSendResult,
+} from '../guardrails/before-send';
 import { isStatusSendable } from '../../channels/meta/template-binding';
 import { capabilitiesOf } from '@/lib/channels/capabilities';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
@@ -1151,6 +1156,22 @@ export async function runAgentTurn(
   let qualityVetoCount = 0;
   let qualityFallbackAttempted = false;
   const outcomes: ChannelSendResult[] = [];
+  // Trilha do veto (sem PII): toda tentativa de envio das tools do turno passa por aqui.
+  // Numera a tentativa (vai ao `detail` do trace) e conta os vetos por gate — o resumo do
+  // turno e o aviso `turn_no_reply` leem essa contagem. Nunca guarda o texto.
+  let sendAttempt = 0;
+  const vetosPorGate: Record<string, number> = {};
+  // Os pontos de envio continuam chamando `runBeforeSend(` pelo nome: testes de fiação
+  // conferem isso no texto do arquivo (nenhuma tool pode virar rota de fuga da cadeia).
+  const proximaTentativa = (): number => {
+    sendAttempt += 1;
+    return sendAttempt;
+  };
+  const comTrilha = async (envio: Promise<BeforeSendResult>): Promise<BeforeSendResult> => {
+    const res = await envio;
+    if (res.status === 'vetoed') vetosPorGate[res.gate] = (vetosPorGate[res.gate] ?? 0) + 1;
+    return res;
+  };
   // Citações acumuladas por buscas de conhecimento DESTE turno — anexadas à
   // próxima outbound enviada (shape de lib/ai/citations/types, que a UI já lê).
   let pendingCitations: ReturnType<typeof citationsFromHits> = [];
@@ -1276,34 +1297,37 @@ export async function runAgentTurn(
           parameterFormat: linha.parameter_format,
         });
 
-        const chain = await runBeforeSend({
-          pool,
-          log: runLog,
-          tenantId,
-          leadId,
-          jobId: job.id,
-          channelSessionId: input.channelSessionId,
-          body: rendered,
-          // Só ESTE gate muda; stop, LGPD e pacing continuam valendo integralmente.
-          isTemplate: true,
-          optedOutThisTurn,
-          crmDailyLimit: null,
-          now: clock(),
-          sleep: deps.sleep,
-          lgpd,
-          send: (finalBody: string) => {
-            seq += 1;
-            return channel.send({
-              tenantId,
-              leadId,
-              jobId: job.id,
-              seq,
-              conversationId: input.conversationId,
-              body: finalBody,
-              template: { name: template_name, language, values },
-            });
-          },
-        });
+        const chain = await comTrilha(
+          runBeforeSend({
+            attempt: proximaTentativa(),
+            pool,
+            log: runLog,
+            tenantId,
+            leadId,
+            jobId: job.id,
+            channelSessionId: input.channelSessionId,
+            body: rendered,
+            // Só ESTE gate muda; stop, LGPD e pacing continuam valendo integralmente.
+            isTemplate: true,
+            optedOutThisTurn,
+            crmDailyLimit: null,
+            now: clock(),
+            sleep: deps.sleep,
+            lgpd,
+            send: (finalBody: string) => {
+              seq += 1;
+              return channel.send({
+                tenantId,
+                leadId,
+                jobId: job.id,
+                seq,
+                conversationId: input.conversationId,
+                body: finalBody,
+                template: { name: template_name, language, values },
+              });
+            },
+          }),
+        );
 
         if (chain.status === 'vetoed') {
           return { ok: false, error: { code: chain.code, message: chain.message } };
@@ -1427,7 +1451,7 @@ export async function runAgentTurn(
                 },
               }),
           };
-          let chain = await runBeforeSend(beforeSendArgs);
+          let chain = await comTrilha(runBeforeSend({ ...beforeSendArgs, attempt: proximaTentativa() }));
           if (chain.status === 'vetoed' && chain.code === 'case_promise_without_case') {
             // Wave 4 — fail-safe da invariante sagrada: o lead NUNCA recebe promessa-de-
             // humano sem caso aberto. 1ª vez no turno: erro-de-ensino (o modelo re-tenta —
@@ -1460,7 +1484,14 @@ export async function runAgentTurn(
             // (perderia pacing/lgpd/stop). ponytail: re-roda a cadeia inteira no fail-safe
             // (raro) — pode reaplicar 1 espera de pacing; aceitável pelo caminho ser
             // excepcional.
-            chain = await runBeforeSend({ ...beforeSendArgs, hasOpenCase: true, openedCaseThisTurn: true });
+            chain = await comTrilha(
+              runBeforeSend({
+                ...beforeSendArgs,
+                hasOpenCase: true,
+                openedCaseThisTurn: true,
+                attempt: proximaTentativa(),
+              }),
+            );
           }
           if (chain.status === 'vetoed' && chain.code === 'internal_vocabulary_leak') {
             // Fail-safe do gate de vazamento — O CLIENTE NUNCA FICA SEM RESPOSTA.
@@ -1485,12 +1516,15 @@ export async function runAgentTurn(
             });
             // `openedCaseThisTurn` vai pelo valor VIVO (o fail-safe de casos acima pode
             // tê-lo mudado); reusar o do objeto capturado re-vetaria no case_promise.
-            chain = await runBeforeSend({
-              ...beforeSendArgs,
-              openedCaseThisTurn,
-              hasOpenCase: hasOpenCase || openedCaseThisTurn,
-              enforceInternalVocabulary: false,
-            });
+            chain = await comTrilha(
+              runBeforeSend({
+                attempt: proximaTentativa(),
+                ...beforeSendArgs,
+                openedCaseThisTurn,
+                hasOpenCase: hasOpenCase || openedCaseThisTurn,
+                enforceInternalVocabulary: false,
+              }),
+            );
           }
           if (chain.status === 'vetoed' && CODIGOS_DE_VETO_DE_QUALIDADE.has(chain.code)) {
             // Veto de QUALIDADE (promessa): o caminho é reescrever, não transferir. Sem esta
@@ -1512,15 +1546,19 @@ export async function runAgentTurn(
             // Cadeia SEM classificador semântico e SEM vocabulário interno (o texto fixo não
             // pode ser vetado pelo gate que causou o problema), sem casos. stop, lgpd e
             // pacing continuam valendo: opt-out é irrevogável.
-            const fallback = await runBeforeSend({
-              ...beforeSendArgs,
-              body: mensagemDeFallbackDoVeto(quem),
-              classifyPromiseSemantic: undefined,
-              enforceInternalVocabulary: false,
-              casesEnabled: false,
-              hasOpenCase: false,
-              openedCaseThisTurn: false,
-            });
+            const fallback = await comTrilha(
+              runBeforeSend({
+                attempt: proximaTentativa(),
+                ...beforeSendArgs,
+                body: mensagemDeFallbackDoVeto(quem),
+                fallback: true,
+                classifyPromiseSemantic: undefined,
+                enforceInternalVocabulary: false,
+                casesEnabled: false,
+                hasOpenCase: false,
+                openedCaseThisTurn: false,
+              }),
+            );
             const entregue =
               fallback.status === 'sent' &&
               (fallback.outcome.kind === 'sent' ||
@@ -2160,7 +2198,7 @@ export async function runAgentTurn(
       { registry: deps.registry, log: runLog },
     );
   } finally {
-    logToolCallSummary(runLog, toolsCalled);
+    logToolCallSummary(runLog, toolsCalled, vetosPorGate);
   }
 
   // F4-04: correlação dos dois sinais do MESMO turno — jailbreak ALTO + tentativa de
@@ -2407,6 +2445,35 @@ export async function runAgentTurn(
   }
 
   await mcpCleanup?.();
+
+  // Turno que conclui SEM mensagem e sem ninguém avisado (ver turn-no-reply.ts): para a fila
+  // é sucesso, para o paciente é silêncio. O aviso é observabilidade — falha ao gravá-lo
+  // nunca derruba um turno que já terminou.
+  const entregues = outcomes.filter(
+    (o) => o.kind === 'sent' || o.kind === 'already_sent' || o.kind === 'queued',
+  ).length;
+  if (
+    turnoFicouMudo({
+      jobKind: job.kind,
+      entregues,
+      optedOut: optedOutThisTurn,
+      transferiu: avisoAoPaciente.transferiu,
+      vetosPorGate,
+    })
+  ) {
+    try {
+      const criados = await alertarTurnoSemResposta(pool, { tenantId, leadId, vetosPorGate });
+      runLog.warn('turno concluído sem resposta ao paciente', {
+        kind: job.kind,
+        inbox_item_created: criados > 0,
+        vetos_by_gate: { ...vetosPorGate },
+      });
+    } catch (err) {
+      runLog.error('falha ao abrir aviso de turno sem resposta (segue)', {
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+    }
+  }
 
   runLog.info('turno do agente concluído', {
     kind: job.kind,

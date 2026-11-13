@@ -37,6 +37,7 @@ export type InboxKind =
   | 'reactivation_expired'
   | 'capabilities_missing'
   | 'message_send_stuck'
+  | 'turn_no_reply'
   | 'other';
 
 export interface InboxItemRow {

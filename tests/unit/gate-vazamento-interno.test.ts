@@ -174,7 +174,8 @@ describe("a cadeia REAL barra o vazamento — e só quando armada", () => {
       gate: "internal_vocabulary",
       verdict: "veto",
       code: "internal_vocabulary_leak",
-      detail: { leaked_count: 1, leaked_kinds: "snake_case,tool" },
+      // body_len: trilha do veto (tamanho da candidata, nunca o texto) — entra em todo veto.
+      detail: { leaked_count: 1, leaked_kinds: "snake_case,tool", body_len: VAZA.length },
     });
     // E a medição sobrevive ao rollback do veto: escrita autônoma em before_send_traces.
     const sql = String(inserts.mock.calls[0]?.[0] ?? "");
