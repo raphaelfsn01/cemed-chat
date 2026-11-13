@@ -652,6 +652,14 @@ export interface RunBeforeSendArgs {
    */
   agentId?: string | null;
   /**
+   * Trilha do veto (sem PII): nº da tentativa de envio DENTRO do turno (1 = primeira) e se
+   * o corpo é o fallback fixo do código. Só entram no `detail` da entrada que VETOU, junto
+   * com `body_len` — o teste real de 30/10 mostrou um veto de que não se sabia nem a
+   * tentativa nem o tamanho. O texto vetado e qualquer hash dele NUNCA são gravados.
+   */
+  attempt?: number;
+  fallback?: boolean;
+  /**
    * channel_sessions.daily_message_limit do CRM (fonte única do cap absoluto). null =
    * ainda não lido do CRM no runtime → os degraus de warm-up (conservadores) seguram
    * o cap. Ponto de injeção: quando o drain expuser o limite da sessão, passar aqui.
@@ -815,7 +823,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
           gate: gate.name,
           verdict: 'veto',
           code: verdict.code,
-          ...(verdict.detail !== undefined ? { detail: verdict.detail } : {}),
+          detail: { ...(verdict.detail ?? {}), ...vetoTrail(args) },
         });
         veto = {
           gate: gate.name,
@@ -966,6 +974,21 @@ async function readLastInboundAt(
     [organizationId, contactId, channelSessionId],
   );
   return rows[0]?.last_inbound_at ?? null;
+}
+
+/**
+ * Trilha do veto: o que dá para saber de uma tentativa vetada SEM guardar o que ela dizia.
+ * `body_len` é o tamanho do corpo que o chamador pediu para enviar (antes de qualquer emenda
+ * de disclosure); `attempt` e `fallback` só entram quando o chamador os informa. Só números.
+ */
+export function vetoTrail(
+  args: Pick<RunBeforeSendArgs, 'body' | 'attempt' | 'fallback'>,
+): Record<string, number> {
+  return {
+    body_len: args.body.length,
+    ...(args.attempt !== undefined ? { attempt: args.attempt } : {}),
+    ...(args.fallback !== undefined ? { fallback: args.fallback ? 1 : 0 } : {}),
+  };
 }
 
 /** Trace estruturado: uma linha por gate avaliado (ids não são PII; corpo nunca é logado). */

@@ -38,6 +38,9 @@ export const KIND_LABEL = {
   // ficou "enviando" para sempre é, do lado de lá, uma mensagem que nunca
   // chegou. O motivo técnico fica no corpo do aviso.
   message_send_stuck: "Uma resposta ficou presa e não chegou ao cliente",
+  // O atendimento "deu certo" para a fila e o paciente não recebeu nada: é o
+  // silêncio que nenhum outro aviso pega (job_dead só cobre o que falha).
+  turn_no_reply: "O assistente terminou um atendimento sem responder ao paciente",
   other: "Aviso do assistente",
 } as const satisfies Record<InboxKind, string>;
 

@@ -252,6 +252,18 @@ describe('log de tools do turno — linha por chamada + resumo, pelo logger real
     }
   });
 
+  it('(d) vetos_by_gate entra no resumo quando informado ({} = nenhum veto) e some quando não', () => {
+    const { log, linhas } = loggerReal();
+    logToolCallSummary(log, ['send_message'], { semantic_promise: 2, stop: 1 });
+    logToolCallSummary(log, ['send_message'], {});
+    logToolCallSummary(log, ['send_message']);
+
+    const [comVetos, semVetos, semInformar] = linhas();
+    expect(comVetos).toMatchObject({ vetos_by_gate: { semantic_promise: 2, stop: 1 } });
+    expect(semVetos).toMatchObject({ vetos_by_gate: {} });
+    expect(semInformar).not.toHaveProperty('vetos_by_gate');
+  });
+
   it('(c) turno sem send_message: resumo com send_message=false; turno sem tools: lista vazia', async () => {
     const { log, linhas } = loggerReal();
     const called: string[] = [];

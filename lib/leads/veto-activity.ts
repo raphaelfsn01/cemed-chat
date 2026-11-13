@@ -61,6 +61,9 @@ export function vetoReason(gate: string, code: string): string {
     budget: "Não enviei: orçamento de IA esgotado",
     warmup: "Não enviei: número ainda em aquecimento",
     promise: "Não enviei: a mensagem prometia algo que não posso garantir",
+    // Chave = NOME do gate na cadeia (`semantic_promise`), não o código `promise_semantic`.
+    // Sem esta linha o veto caía no genérico 'bloqueado pela regra "semantic_promise"'.
+    semantic_promise: "Não enviei: a mensagem parecia prometer algo que não posso garantir",
     internal_vocabulary:
       "Não enviei: a mensagem usava termos internos do sistema que o cliente não deve ler",
   };
