@@ -213,9 +213,28 @@ export async function completeJob<T = void>(
 }
 
 /**
- * Devolve o job à fila após falha (attempts já foi incrementado no claim). Excedeu
- * `max_attempts` → 'dead' + escalação humana em agent_inbox_items (kind='job_dead'), no
- * MESMO statement (atômico). Devolve null se o lease já não era deste worker.
+ * Espera entre tentativas de um job que falhou: 15 s, dobrando a cada falha, com teto de
+ * 2 min (decisão de 31/10). Com `max_attempts = 5` a sequência é 15 s, 30 s, 60 s, 120 s —
+ * cerca de 3 min 45 s entre a 1ª falha e o `dead`.
+ *
+ * Antes não havia espera nenhuma. Caso real (23/10, 14:10 BRT): o provedor de IA respondeu
+ * 404 e o `inbound_turn` queimou as 5 tentativas em ~25 s, morrendo dentro da própria
+ * instabilidade que o retry existe para atravessar.
+ */
+export const RETRY_BACKOFF_BASE_MS = 15_000;
+export const RETRY_BACKOFF_MAX_MS = 120_000;
+
+/** `attempts` = tentativas já feitas (o claim incrementa antes de rodar): 1 → 15 s, 2 → 30 s… */
+export function retryBackoffMs(attempts: number): number {
+  const n = Math.max(1, Math.floor(attempts));
+  return Math.min(RETRY_BACKOFF_BASE_MS * 2 ** (n - 1), RETRY_BACKOFF_MAX_MS);
+}
+
+/**
+ * Devolve o job à fila após falha (attempts já foi incrementado no claim), com `run_after`
+ * adiado pelo backoff (`retryBackoffMs`; a conta é feita no SQL com o relógio do banco).
+ * Excedeu `max_attempts` → 'dead' + escalação humana em agent_inbox_items (kind='job_dead'),
+ * no MESMO statement (atômico). Devolve null se o lease já não era deste worker.
  */
 export async function failJob(
   db: Queryable,
@@ -227,6 +246,13 @@ export async function failJob(
     `with updated as (
        update job_queue
        set status = case when attempts >= max_attempts then 'dead' else 'pending' end,
+           -- Só o job que VOLTA à fila espera; o que morre mantém o run_after que tinha.
+           -- greatest(attempts, 1): expoente nunca negativo, mesmo em linha anômala.
+           run_after = case
+             when attempts >= max_attempts then run_after
+             else now() + least($4::double precision * power(2, greatest(attempts, 1) - 1),
+                                $5::double precision) * interval '1 millisecond'
+           end,
            locked_by = null, locked_at = null, last_error = $3
        where id = $1 and status = 'running' and locked_by = $2
        returning *
@@ -247,7 +273,7 @@ export async function failJob(
        where status = 'dead'
      )
      select * from updated`,
-    [jobId, workerId, normalizeError(error)],
+    [jobId, workerId, normalizeError(error), RETRY_BACKOFF_BASE_MS, RETRY_BACKOFF_MAX_MS],
   );
   return rows[0] ?? null;
 }
