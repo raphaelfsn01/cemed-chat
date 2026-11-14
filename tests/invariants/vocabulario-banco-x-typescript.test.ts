@@ -136,10 +136,10 @@ const PARES: Array<{
     coluna: "status",
     // lib/lgpd/types.ts → LgpdRequestStatus.
     //
-    // Par nascido de divergência REAL nos dois sentidos: o tipo tinha
-    // `pending_review`, que o CHECK recusava (os workers gravavam, o banco
-    // devolvia 23514 e o pedido ficava `processing` para sempre — migration
-    // 0127), e não tinha `expired`, que o CHECK aceita.
+    // Par nascido de divergência REAL: o tipo tinha `pending_review`, que o
+    // CHECK recusava. Os workers gravavam, o banco devolvia 23514, ninguém
+    // conferia o erro e o pedido ficava `processing` para sempre. A migration
+    // 0127 alargou o CHECK; este par impede que as duas listas se separem de novo.
     arquivo: "lib/lgpd/types.ts",
     simbolo: "LgpdRequestStatus",
   },

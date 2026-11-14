@@ -11,6 +11,12 @@
 -- era dado por concluído e o pedido ficava `processing` para sempre, sem aviso.
 -- O tipo do TypeScript e as telas já conheciam o valor; só o banco não.
 --
+-- LIMITE CONHECIDO: `pending_review` ainda não tem saída pela tela. A rota de
+-- aprovação só aceita `received`, os workers só rodam `processing`, e o link do
+-- PDF só é entregue com o pedido `completed`. O pedido deixa de mentir
+-- (`processing` eterno) e passa a aparecer como "Revisão pendente", mas fechar
+-- o caso ainda é manual. A ação de concluir fica para o bloco 0128–0130.
+--
 -- (A 0126 está reservada para `fn_conversation_assign`; esta é a primeira do
 -- bloco 0127–0130 de LGPD.)
 --
