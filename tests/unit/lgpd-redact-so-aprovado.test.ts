@@ -100,3 +100,41 @@ describe("lgpd-redact-worker: só pedido aprovado anonimiza", () => {
     expect(cascadeRedactContact).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * Retentativa sem nova aprovação (decisão de 2026-11-13, teto 3).
+ *
+ * Na falha o worker gravava `received` — o mesmo estado que a guarda acima
+ * recusa. O dreno reenviava o evento e o worker respondia `not_approved` para
+ * sempre: a anonimização aprovada pelo admin nunca era tentada de novo.
+ */
+describe("lgpd-redact-worker: falha mantém o pedido aprovado para a retentativa", () => {
+  it("falha antes do teto: o pedido continua `processing`", async () => {
+    findLgpdRequest.mockResolvedValue(pedido("processing"));
+    cascadeRedactContact.mockRejectedValue(new Error("banco fora"));
+
+    const r = await processLgpdRedact(evento());
+
+    expect(r.status).toBe("error");
+    expect(updates.at(-1)).toMatchObject({ status: "processing" });
+    expect(updates.map((u) => u.status)).not.toContain("received");
+  });
+
+  it("a retentativa roda de fato: segundo evento, pedido ainda `processing`", async () => {
+    findLgpdRequest.mockResolvedValue({ ...pedido("processing"), attempts: 1 });
+    cascadeRedactContact.mockResolvedValue({ already_anonymized: false, counts: {}, media_paths: [] });
+
+    await processLgpdRedact(evento());
+
+    expect(cascadeRedactContact).toHaveBeenCalledTimes(1);
+  });
+
+  it("falha na 3ª tentativa: vira `failed`", async () => {
+    findLgpdRequest.mockResolvedValue({ ...pedido("processing"), attempts: 2 });
+    cascadeRedactContact.mockRejectedValue(new Error("banco fora"));
+
+    await processLgpdRedact(evento());
+
+    expect(updates.at(-1)).toMatchObject({ status: "failed" });
+  });
+});

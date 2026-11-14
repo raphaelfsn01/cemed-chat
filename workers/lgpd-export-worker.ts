@@ -3,7 +3,7 @@
  *
  * Pipeline (S-08.04):
  *   1. Load lgpd_requests row (programmatic org filter).
- *   2. Move status received -> processing, attempts++ (cap at 3).
+ *   2. Só roda pedido `processing` (aprovado pelo admin); attempts++ (cap at 3).
  *   3. collectExportData → 8-table aggregator (PII-safe; no logs of bodies).
  *   4. Render PDF via @react-pdf/renderer (PT-BR, Art. 18 II).
  *   5. signPdfPades — STUB when LGPD_SIGNING_KEY missing (warning, no throw).
@@ -17,7 +17,8 @@
  *   12. Audit both with sanitized payload.
  *
  * Failure: do NOT throw out of the handler — increment attempts and surface
- * an "error" status so the dispatcher can retry. PII never appears in error
+ * an "error" status so the dispatcher can retry. O pedido continua `processing`
+ * entre as tentativas (a aprovação não se perde) e vira `failed` no teto. PII never appears in error
  * messages or Sentry breadcrumbs (only ids + hashes).
  */
 
@@ -96,6 +97,28 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
       consumer_key: "lgpd-export-worker.v1",
       status: "skipped",
       detail: "already_completed",
+    };
+  }
+
+  if (req.status === "failed") {
+    return {
+      consumer_key: "lgpd-export-worker.v1",
+      status: "skipped",
+      detail: "already_failed",
+    };
+  }
+
+  // Só pedido APROVADO roda. A rota de aprovação (admin) passa `received` para
+  // `processing` antes de emitir o evento, e as novas tentativas mantêm
+  // `processing`. Um `lgpd.data_request_received` sem aprovação — pedido ainda
+  // `received`, ou `expired`, ou `pending_review` — não gera nem envia o PDF:
+  // o evento pode ser emitido por quem não é admin, e o arquivo leva os dados
+  // do paciente para um e-mail. Mesma guarda do worker de anonimização.
+  if (req.status !== "processing") {
+    return {
+      consumer_key: "lgpd-export-worker.v1",
+      status: "skipped",
+      detail: "not_approved",
     };
   }
 
@@ -288,7 +311,7 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
           detail: "email_not_configured",
         };
       }
-      // Generic Resend failure — set status back so cron retries.
+      // Generic Resend failure — segue `processing` para o dreno tentar de novo.
       const detail = err instanceof EmailSendFailed ? err.message : String(err);
       logger.warn("[lgpd-export-worker] email send failed", {
         request_id: shortId(requestId),
@@ -297,7 +320,7 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
       await admin
         .from("lgpd_requests")
         .update({
-          status: "received",
+          status: "processing",
           error_message: "email_send_failed",
         })
         .eq("organization_id", orgId)
@@ -416,7 +439,7 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
     await admin
       .from("lgpd_requests")
       .update({
-        status: nextAttempts >= MAX_ATTEMPTS ? "failed" : "received",
+        status: nextAttempts >= MAX_ATTEMPTS ? "failed" : "processing",
         error_message: detail.slice(0, 500),
       })
       .eq("organization_id", orgId)

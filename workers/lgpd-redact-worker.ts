@@ -487,7 +487,9 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
     await admin
       .from("lgpd_requests")
       .update({
-        status: nextAttempts >= MAX_ATTEMPTS ? "failed" : "received",
+        // Mantém `processing`: a guarda lá em cima só roda pedido aprovado, e
+        // voltar para `received` fazia a nova tentativa cair em `not_approved`.
+        status: nextAttempts >= MAX_ATTEMPTS ? "failed" : "processing",
         error_message: detail.slice(0, 500),
       })
       .eq("organization_id", orgId)
