@@ -170,6 +170,34 @@ describe("lgpd-export-worker: falha mantém o pedido aprovado para a retentativa
     expect(updates.map((u) => u.status)).not.toContain("received");
   });
 
+  it("falha no envio do e-mail na 3ª tentativa: vira `failed`", async () => {
+    findLgpdRequest.mockResolvedValue(pedido("processing", 2));
+    collectExportData.mockResolvedValue(DADOS);
+    sendExportEmail.mockRejectedValue(new EmailSendFailed("resend 500"));
+
+    await processLgpdExport(evento());
+
+    expect(updates.at(-1)).toMatchObject({ status: "failed" });
+  });
+
+  it("falha ao carregar o pedido: erro (o dreno tenta de novo), não `skipped`", async () => {
+    findLgpdRequest.mockRejectedValue(new Error("banco fora"));
+
+    const r = await processLgpdExport(evento());
+
+    expect(r).toMatchObject({ status: "error", detail: "request_load_failed" });
+    expect(collectExportData).not.toHaveBeenCalled();
+    expect(updates).toEqual([]);
+  });
+
+  it("pedido que não existe: `skipped` (não há o que tentar de novo)", async () => {
+    findLgpdRequest.mockResolvedValue(null);
+
+    const r = await processLgpdExport(evento());
+
+    expect(r).toMatchObject({ status: "skipped", detail: "request_not_found" });
+  });
+
   it("falha na 3ª tentativa: vira `failed`", async () => {
     findLgpdRequest.mockResolvedValue(pedido("processing", 2));
     collectExportData.mockRejectedValue(new Error("banco fora"));

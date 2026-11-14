@@ -76,13 +76,23 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
   const admin = createAdminClient();
 
   // 1. Load request.
-  const req = await findLgpdRequest(orgId, requestId).catch((err: unknown) => {
+  // Falha ao LER o pedido não é "pedido não existe": devolve erro para o dreno
+  // tentar de novo. Como `skipped`, o evento era dado por concluído e um pedido
+  // aprovado ficava `processing` para sempre (não há rota de nova tentativa).
+  let req: Awaited<ReturnType<typeof findLgpdRequest>>;
+  try {
+    req = await findLgpdRequest(orgId, requestId);
+  } catch (err) {
     logger.error("[lgpd-export-worker] findLgpdRequest threw", {
       request_id: shortId(requestId),
-      error: err instanceof Error ? err.message : String(err),
+      error_hash: sha256(err instanceof Error ? err.message : String(err)),
     });
-    return null;
-  });
+    return {
+      consumer_key: "lgpd-export-worker.v1",
+      status: "error",
+      detail: "request_load_failed",
+    };
+  }
 
   if (!req) {
     return {
@@ -320,7 +330,7 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
       await admin
         .from("lgpd_requests")
         .update({
-          status: "processing",
+          status: nextAttempts >= MAX_ATTEMPTS ? "failed" : "processing",
           error_message: "email_send_failed",
         })
         .eq("organization_id", orgId)
