@@ -559,3 +559,72 @@ describe("resposta barrada pela janela de envio", () => {
     expect(enviados).toEqual([RESPOSTA]);
   });
 });
+
+/**
+ * Caso real de 14/11 15h03 BRT: a saudação padrão já tinha saído 2 vezes nas últimas 20
+ * mensagens do número e foi vetada por repetição na 3ª conversa. A 1ª resposta a quem
+ * escreveu é 1:1, não disparo em massa: passa. Da 2ª mensagem em diante, o gate vale.
+ */
+describe("saudação repetida na primeira resposta", () => {
+  const SAUDACAO = "Olá! Que bom te ver por aqui.";
+
+  async function semeiaCopias(texto: string, n: number): Promise<void> {
+    const { hashNormalized, normalizeCopy } = await import("@/lib/agent-engine/spinning/engine");
+    const normalizado = normalizeCopy(texto);
+    for (let i = 0; i < n; i++) {
+      await pool.query(
+        `insert into outbound_copies (organization_id, channel_session_id, normalized_text, normalized_hash)
+         values ($1,$2,$3,$4)`,
+        [ORG, SESSION, normalizado, hashNormalized(normalizado)],
+      );
+    }
+  }
+
+  async function zeraEnviosAnteriores(): Promise<void> {
+    await pool.query(`delete from send_ledger where organization_id = $1 and contact_id = $2`, [ORG, CONTACT]);
+  }
+
+  it("contato sem envio anterior: a saudação já repetida 2× no número sai", async () => {
+    await zeraEnviosAnteriores();
+    await semeiaCopias(SAUDACAO, 2);
+    const erro = await rodaTurno(
+      montaHandler(modeloComPassos([[{ toolName: "send_message", input: { body: SAUDACAO } }]])),
+    );
+    expect(erro).toBeNull();
+    const diag = JSON.stringify(await entradasDeVeto());
+    expect(enviados, diag).toEqual([SAUDACAO]);
+  });
+
+  it("controle: contato que JÁ recebeu mensagem nossa → a saudação repetida volta a ser vetada", async () => {
+    await zeraEnviosAnteriores();
+    // Envio aceito anterior a este contato, como o canal real (edge/crm/send-message.ts)
+    // registra. O canal falso do arnês não grava o ledger, por isso a semente é direta.
+    const { job } = await m.queue.enqueueJob(pool, ORG, {
+      kind: "inbound_turn",
+      leadId: CONTACT,
+      payload: {
+        conversation_id: CONV,
+        contact_id: CONTACT,
+        channel_session_id: SESSION,
+        inbound_message_id: MSG,
+        crm_event_id: EVENTO,
+      },
+      maxAttempts: 1,
+    });
+    await pool.query(`update job_queue set status = 'done' where id = $1`, [job.id]);
+    await pool.query(
+      `insert into send_ledger (organization_id, contact_id, job_id, seq, body_hash, status)
+       values ($1,$2,$3,1,'semente','accepted')`,
+      [ORG, CONTACT, job.id],
+    );
+    await semeiaCopias(SAUDACAO, 2);
+    const erro = await rodaTurno(
+      montaHandler(modeloComPassos([[{ toolName: "send_message", input: { body: SAUDACAO } }]])),
+    );
+    expect(erro).toBeNull();
+    expect(enviados).toEqual([]);
+    expect((await entradasDeVeto()).map((v) => v.code)).toContain("mass_identical");
+    await zeraEnviosAnteriores();
+  });
+});
+

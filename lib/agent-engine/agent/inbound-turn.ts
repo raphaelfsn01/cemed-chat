@@ -1448,6 +1448,9 @@ export async function runAgentTurn(
             // não é dele, e a única saída seria o silêncio. O follow-up determinístico
             // idem (ver GateContext.internalVocabularyEnforced).
             enforceInternalVocabulary: true,
+            // Resposta a quem acabou de escrever: a 1ª saída ao contato fica fora do
+            // anti-repetição (a saudação é igual para todos). Follow-up não passa por aqui.
+            replyToInbound: job.kind === 'inbound_turn',
             ...(deps.knobs.disclosureMode !== undefined ? { disclosureMode: deps.knobs.disclosureMode } : {}),
             // Gate 5 (F4-02): classificador semântico roteado pelo MESMO seam agnóstico (budget
             // da org checado nele). Closure com tenant/lead/job da ROW fechados — nunca do payload.
