@@ -113,7 +113,7 @@ export function decidePacing(input: PacingInput): PacingDecision {
  * Falha FECHADO: idade aquém do primeiro degrau usa o cap do PRIMEIRO degrau
  * (o mais conservador) — configuração com furo nunca vira "sem cap".
  */
-function warmupCapFor(ageDays: number, steps: WarmupStep[]): number | null {
+export function warmupCapFor(ageDays: number, steps: WarmupStep[]): number | null {
   let cap: number | null = steps[0]?.cap ?? null;
   for (const step of steps) {
     if (ageDays >= step.minAgeDays) cap = step.cap;

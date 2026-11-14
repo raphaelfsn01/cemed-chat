@@ -24,6 +24,35 @@ import {
 
 export const dynamic = "force-dynamic";
 
+type Admin = ReturnType<typeof createAdminClient>;
+
+/**
+ * Data sugerida para a ativação do número: a MAIS ANTIGA entre a criação da conexão no
+ * sistema e o 1º envio do agente registrado (`pacing_ledger`). O ledger sozinho não basta:
+ * ele só registra envio do AGENTE, e um número antigo que só passou a ter agente agora
+ * pareceria novo — o teto de aquecimento voltaria (caso real de 14/11/2026: 20/dia).
+ */
+async function ativoDesdeSugerido(
+  admin: Admin,
+  orgId: string,
+  sessionId: string,
+  sessionCreatedAt: string | null,
+): Promise<string | null> {
+  const { data } = await admin
+    .from("pacing_ledger")
+    .select("sent_at")
+    .eq("organization_id", orgId)
+    .eq("channel_session_id", sessionId)
+    .order("sent_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const candidatas = [sessionCreatedAt, (data?.sent_at as string | undefined) ?? null].filter(
+    (d): d is string => typeof d === "string" && d.length >= 10,
+  );
+  if (candidatas.length === 0) return null;
+  return candidatas.reduce((a, b) => (Date.parse(a) <= Date.parse(b) ? a : b));
+}
+
 const KNOB_COLUMNS =
   "throttle_ms, jitter_max_ms, window_start_hour, window_end_hour, allow_sunday, timezone, warmup_daily_caps, number_activated_at";
 
@@ -37,7 +66,7 @@ export async function GET(): Promise<Response> {
   const [{ data: sessions, error: sErr }, { data: knobs, error: kErr }] = await Promise.all([
     admin
       .from("channel_sessions")
-      .select("id, waha_session_name, display_name, phone_number, status, daily_message_limit")
+      .select("id, waha_session_name, display_name, phone_number, status, daily_message_limit, created_at")
       .eq("organization_id", org.orgId)
       // Canal arquivado foi excluído pelo usuário: não volta como opção aqui.
       .is("archived_at", null)
@@ -54,9 +83,19 @@ export async function GET(): Promise<Response> {
   const byuSession = new Map<string, ChannelKnobsRow>(
     (knobs ?? []).map((k) => [k.channel_session_id as string, k as unknown as ChannelKnobsRow]),
   );
+  // A tela sugere esta data quando a conexão ainda não tem configuração (sem ela, salvar
+  // gravaria a data de hoje). Poucas conexões por org: uma consulta por conexão basta.
+  const sugeridas = await Promise.all(
+    (sessions ?? []).map(
+      async (s) =>
+        [s.id, await ativoDesdeSugerido(admin, org.orgId, s.id, (s.created_at as string | null) ?? null)] as const,
+    ),
+  );
+  const sugerida = new Map(sugeridas);
   const items = (sessions ?? []).map((s) => ({
     channel_session: s,
     ...knobsView(byuSession.get(s.id) ?? null),
+    ativo_desde_sugerido: sugerida.get(s.id) ?? null,
   }));
   return ok({ items }, { requestId });
 }
@@ -80,12 +119,13 @@ export async function PUT(req: NextRequest): Promise<Response> {
       details: parsed.error.flatten(),
     });
   }
-  const { channel_session_id, daily_message_limit, ...knobFields } = parsed.data;
+  const { channel_session_id, daily_message_limit, ...camposEnviados } = parsed.data;
+  const knobFields = { ...camposEnviados };
 
   const admin = createAdminClient();
   const { data: session } = await admin
     .from("channel_sessions")
-    .select("id")
+    .select("id, created_at")
     .eq("id", channel_session_id)
     .eq("organization_id", org.orgId)
     // O MESMO filtro do GET, e não por simetria: sem ele a tela sumia com a
@@ -128,6 +168,19 @@ export async function PUT(req: NextRequest): Promise<Response> {
       422,
       { requestId },
     );
+  }
+
+  // Conexão sem configuração e sem data enviada (cliente antigo, chamada por API): a
+  // coluna é NOT NULL DEFAULT now() e gravaria HOJE — o número voltaria a ser tratado
+  // como novo. Usa a data sugerida no lugar.
+  if (Object.keys(knobFields).length > 0 && !currentRow && knobFields.number_activated_at === undefined) {
+    const sugestao = await ativoDesdeSugerido(
+      admin,
+      org.orgId,
+      channel_session_id,
+      (session.created_at as string | null) ?? null,
+    );
+    if (sugestao !== null) knobFields.number_activated_at = sugestao.slice(0, 10);
   }
 
   if (Object.keys(knobFields).length > 0) {
