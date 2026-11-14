@@ -457,7 +457,9 @@ describe("a espera do handoff pelo envio — bordas", () => {
   });
 
   it("envio que TRAVA: o handoff acontece após o tempo máximo, sem esperar o envio", async () => {
-    const ESPERA = 600;
+    // 2 s, não 600 ms: com a máquina carregada a cadeia de gates levou mais de 600 ms até o
+    // canal, o handoff estourou ANTES de o envio chegar e o teste falhava (1 em ~4 rodadas).
+    const ESPERA = 2000;
     let liberaEnvio!: () => void;
     const travado = new Promise<void>((r) => {
       liberaEnvio = r;
@@ -479,18 +481,23 @@ describe("a espera do handoff pelo envio — bordas", () => {
     });
 
     const turno = rodaTurno(handler);
-    await esperaForceHumanLigado();
-    const ligouDepoisDoEnvio = Date.now() - chegouNoCanalEm;
+    // try/finally: se uma asserção falhar, o envio travado é solto mesmo assim e o turno
+    // fecha. Sem isso o job ficava 'running' e derrubava em cascata todo teste seguinte
+    // que faz claim (o cap global de concorrência é 1).
+    try {
+      await esperaForceHumanLigado(ESPERA + 5000);
+      const ligouDepoisDoEnvio = Date.now() - chegouNoCanalEm;
 
-    // O handoff estava SEGURADO enquanto o envio ainda não tinha chegado ao canal …
-    expect(forceHumanAoChegarNoCanal).toBe(false);
-    // … e foi liberado pelo tempo máximo, não pelo envio (que segue travado).
-    expect(enviados).toHaveLength(0);
-    expect(ligouDepoisDoEnvio).toBeLessThan(ESPERA + 3000);
-
-    liberaEnvio();
+      // O handoff estava SEGURADO enquanto o envio ainda não tinha chegado ao canal …
+      expect(forceHumanAoChegarNoCanal).toBe(false);
+      // … e foi liberado pelo tempo máximo, não pelo envio (que segue travado).
+      expect(enviados).toHaveLength(0);
+      expect(ligouDepoisDoEnvio).toBeLessThan(ESPERA + 3000);
+    } finally {
+      liberaEnvio();
+    }
     expect(await turno).toBeNull();
-  });
+  }, 30_000);
 });
 
 describe("handoff SEM envio em andamento continua imediato", () => {
@@ -563,9 +570,7 @@ describe("veto de qualidade: reescreve uma vez, depois o código envia o fallbac
     expect(estado.silenciado, diag).toBe(true);
   });
 
-  it("fallback vetado (spinning): nada é enviado e o handoff segue com jaRecusou=true", async () => {
-    // Limitação ACEITA: o fallback é texto fixo e passa pelo spinning; a 3ª cópia na janela é
-    // vetada (mass_identical). Semeia as duas variantes do fallback 2× cada.
+  async function semeiaFallbackRepetido(): Promise<void> {
     const { hashNormalized, normalizeCopy } = await import("@/lib/agent-engine/spinning/engine");
     for (const fim of ["Ela continua o atendimento em seguida.", "A equipe retorna assim que possível."]) {
       const n = normalizeCopy(`${FALLBACK_INICIO} ${fim}`);
@@ -577,8 +582,44 @@ describe("veto de qualidade: reescreve uma vez, depois o código envia o fallbac
         );
       }
     }
+  }
+
+  /** Envio aceito anterior a este contato, como o canal real registra (o canal falso não grava o ledger). */
+  async function semeiaEnvioAnterior(): Promise<void> {
+    const { job } = await m.queue.enqueueJob(pool, ORG, {
+      kind: "inbound_turn",
+      leadId: CONTACT,
+      payload: {
+        conversation_id: CONV,
+        contact_id: CONTACT,
+        channel_session_id: SESSION,
+        inbound_message_id: MSG,
+        crm_event_id: EVENTO,
+      },
+      maxAttempts: 1,
+    });
+    await pool.query(`update job_queue set status = 'done' where id = $1`, [job.id]);
+    await pool.query(
+      `insert into send_ledger (organization_id, contact_id, job_id, seq, body_hash, status)
+       values ($1,$2,$3,1,'semente','accepted')`,
+      [ORG, CONTACT, job.id],
+    );
+  }
+
+  const apagaEnviosAnteriores = () =>
+    pool.query(`delete from send_ledger where organization_id = $1 and contact_id = $2`, [ORG, CONTACT]);
+
+  it("fallback vetado (spinning): nada é enviado e o handoff segue com jaRecusou=true", async () => {
+    // Limitação ACEITA: o fallback é texto fixo e passa pelo spinning; a 3ª cópia na janela é
+    // vetada (mass_identical). Semeia as duas variantes do fallback 2× cada. O contato JÁ
+    // recebeu mensagem nossa antes: na 1ª saída a um contato o spinning não vale
+    // (GateContext.firstReplyToInbound) — esse caso é o teste seguinte.
+    await apagaEnviosAnteriores();
+    await semeiaEnvioAnterior();
+    await semeiaFallbackRepetido();
     // O modelo NÃO chama o handoff: é o runtime que o conclui (jaRecusou=true).
     const erro = await rodaTurno(montaHandler(modeloComPassos([[envia(PRECO_1)], [envia(PRECO_2)]])));
+    await apagaEnviosAnteriores();
     expect(erro).toBeNull();
     const diag = JSON.stringify({ resultadosDeTool, vetos: await vetosGravados() }, null, 2);
     expect(enviados, diag).toHaveLength(0);
@@ -586,6 +627,20 @@ describe("veto de qualidade: reescreve uma vez, depois o código envia o fallbac
     const estado = await estadoDoContato();
     expect(estado.force_human, diag).toBe(true);
     expect(estado.silenciado, diag).toBe(true);
+  });
+
+  it("contato que nunca recebeu mensagem nossa: o fallback repetido SAI (1ª resposta não passa pelo spinning)", async () => {
+    await apagaEnviosAnteriores();
+    await semeiaFallbackRepetido();
+    // Aviso entregue: a transferência volta a ser do modelo (como no teste do 2º veto acima).
+    const erro = await rodaTurno(
+      montaHandler(modeloComPassos([[envia(PRECO_1)], [envia(PRECO_2)], [HANDOFF]])),
+    );
+    expect(erro).toBeNull();
+    const diag = JSON.stringify({ resultadosDeTool, vetos: await vetosGravados() }, null, 2);
+    expect(enviados, diag).toHaveLength(1);
+    expect(enviados[0]!.body.startsWith(FALLBACK_INICIO), diag).toBe(true);
+    expect((await estadoDoContato()).force_human, diag).toBe(true);
   });
 
   it("veto de PARADA (handoff_ativo) não conta: sem reescrita nem fallback, o turno encerra", async () => {
@@ -660,7 +715,7 @@ describe("aviso de transferência vetado DEPOIS de um envio entregue no turno", 
   });
 
   it("veto e depois [envio que TRAVA, handoff]: a transferência não espera o aviso fixo nem o envio travado", async () => {
-    const ESPERA = 600;
+    const ESPERA = 2000; // ver "envio que TRAVA" acima
     let liberaEnvio!: () => void;
     const travado = new Promise<void>((r) => {
       liberaEnvio = r;
@@ -677,17 +732,19 @@ describe("aviso de transferência vetado DEPOIS de um envio entregue no turno", 
     });
 
     const turno = rodaTurno(handler);
-    await esperaForceHumanLigado();
-    // Transferiu pelo tempo máximo, com o envio ainda preso no canal — e sem tentar o aviso
-    // fixo, que ficaria na fila do lock atrás dele.
-    expect(Date.now() - chegouNoCanalEm).toBeLessThan(ESPERA + 3000);
-    expect(enviados).toHaveLength(0);
-
-    liberaEnvio();
+    try {
+      await esperaForceHumanLigado(ESPERA + 5000);
+      // Transferiu pelo tempo máximo, com o envio ainda preso no canal — e sem tentar o aviso
+      // fixo, que ficaria na fila do lock atrás dele.
+      expect(Date.now() - chegouNoCanalEm).toBeLessThan(ESPERA + 3000);
+      expect(enviados).toHaveLength(0);
+    } finally {
+      liberaEnvio(); // solto mesmo se falhar: job preso derruba os testes seguintes
+    }
     expect(await turno).toBeNull();
     // Só a reescrita (que destravou) chegou: nada de aviso fixo em dobro.
     expect(enviados.map((e) => e.body)).toEqual([REESCRITA]);
-  });
+  }, 30_000);
 
   it("veto como ÚNICO envio do turno: 1ª chamada recusada, na 2ª o código avisa e transfere", async () => {
     const erro = await rodaTurno(montaHandler(modeloComPassos([[envia(PRECO_1)], [HANDOFF], [HANDOFF]])));
