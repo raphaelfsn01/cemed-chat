@@ -97,7 +97,12 @@ function modeloComPassos(passos: Chamada[][]) {
   };
 }
 
-function montaHandler(doGenerate: unknown) {
+/** Dentro da janela horária do anti-ban (12h BRT). */
+const DENTRO_DA_JANELA = new Date("2026-07-30T15:00:00Z");
+/** Quinta, 05h BRT: fora da janela 7h–22h. */
+const FORA_DA_JANELA = new Date("2026-07-30T08:00:00Z");
+
+function montaHandler(doGenerate: unknown, agora: Date = DENTRO_DA_JANELA) {
   return m.createInboundTurnHandler({
     crmCfg: { supabase: {} as never },
     llmCfg: { anthropicApiKey: "fake" } as never,
@@ -129,8 +134,7 @@ function montaHandler(doGenerate: unknown) {
         capabilities: () => ({ freeform: true, media: true, audio: true }),
         costPerMessage: () => ({ currency: "BRL", cents: 0 }),
       }) as never,
-    // Dentro da janela horária do anti-ban.
-    clock: () => new Date("2026-07-30T15:00:00Z"),
+    clock: () => agora,
     sleep: async () => {},
   });
 }
@@ -286,6 +290,7 @@ beforeEach(async () => {
     CONTACT,
   ]);
   await pool.query(`delete from agent_inbox_items where ref_id = $1`, [CONTACT]);
+  await pool.query(`delete from cron_jobs where organization_id = $1 and contact_id = $2`, [ORG, CONTACT]);
 });
 
 /** Texto que o gate de promessa veta (abaixo do piso). Único no arquivo: serve de isca de vazamento. */
@@ -402,3 +407,76 @@ describe("turno que termina sem resposta ao paciente", () => {
     ).toBe(0);
   });
 });
+
+interface CronAgendado {
+  job_kind: string;
+  kind: string;
+  enabled: boolean;
+  next_run_at: Date;
+  payload: Record<string, unknown>;
+}
+
+async function cronsDoContato(): Promise<CronAgendado[]> {
+  const { rows } = await pool.query<CronAgendado>(
+    `select job_kind, kind, enabled, next_run_at, payload from cron_jobs
+      where organization_id = $1 and contact_id = $2 order by created_at`,
+    [ORG, CONTACT],
+  );
+  return rows;
+}
+
+/**
+ * Caso de origem: 14/11 06h39 BRT. Paciente escreveu fora da janela, os envios foram vetados
+ * com `outside_window`, o turno fechou `done` com zero mensagens e NADA ficou agendado — a
+ * tela prometia "a resposta fica agendada para a próxima abertura da janela".
+ */
+describe("resposta barrada pela janela de envio", () => {
+  const envio = { toolName: "send_message", input: { body: RESPOSTA } };
+
+  it("fora da janela → nada enviado, turno volta como inbound_turn na abertura (10h UTC = 7h BRT)", async () => {
+    const erro = await rodaTurno(montaHandler(modeloComPassos([[envio]]), FORA_DA_JANELA));
+    expect(erro).toBeNull();
+    expect(enviados).toEqual([]);
+
+    const crons = await cronsDoContato();
+    expect(crons).toHaveLength(1);
+    expect(crons[0]).toMatchObject({ job_kind: "inbound_turn", kind: "at", enabled: true });
+    // Abertura da janela no mesmo dia, mais o jitter do gate (minutos, nunca horas).
+    const abre = new Date("2026-07-30T10:00:00Z").getTime();
+    const quando = crons[0]!.next_run_at.getTime();
+    expect(quando).toBeGreaterThanOrEqual(abre);
+    expect(quando).toBeLessThan(abre + 30 * 60_000);
+    // O payload do turno original segue junto: é ele que diz por onde responder.
+    expect(crons[0]!.payload).toMatchObject({
+      conversation_id: CONV,
+      contact_id: CONTACT,
+      channel_session_id: SESSION,
+      inbound_message_id: MSG,
+    });
+    expect(typeof crons[0]!.payload.reschedule_of).toBe("string");
+  });
+
+  it("resposta reagendada → NÃO abre aviso turn_no_reply (o silêncio tem hora para acabar)", async () => {
+    expect(await rodaTurno(montaHandler(modeloComPassos([[envio]]), FORA_DA_JANELA))).toBeNull();
+    expect(await avisosDoContato("turn_no_reply")).toEqual([]);
+  });
+
+  it("dois turnos fora da janela → UM só reagendamento por contato", async () => {
+    expect(await rodaTurno(montaHandler(modeloComPassos([[envio]]), FORA_DA_JANELA))).toBeNull();
+    expect(await rodaTurno(montaHandler(modeloComPassos([[envio]]), FORA_DA_JANELA))).toBeNull();
+    expect((await cronsDoContato()).filter((c) => c.enabled)).toHaveLength(1);
+  });
+
+  it("dentro da janela → envia e não agenda nada", async () => {
+    expect(await rodaTurno(montaHandler(modeloComPassos([[envio]])))).toBeNull();
+    expect(enviados).toEqual([RESPOSTA]);
+    expect(await cronsDoContato()).toEqual([]);
+  });
+
+  it("fora da janela sem tentativa de envio → não agenda; o aviso turn_no_reply continua valendo", async () => {
+    expect(await rodaTurno(montaHandler(modeloComPassos([]), FORA_DA_JANELA))).toBeNull();
+    expect(await cronsDoContato()).toEqual([]);
+    expect(await avisosDoContato("turn_no_reply")).toHaveLength(1);
+  });
+});
+
