@@ -495,6 +495,8 @@ describe("a espera do handoff pelo envio — bordas", () => {
       expect(ligouDepoisDoEnvio).toBeLessThan(ESPERA + 3000);
     } finally {
       liberaEnvio();
+      // Espera o turno fechar mesmo quando uma asserção falhou: job 'running' derruba os seguintes.
+      await turno.catch(() => undefined);
     }
     expect(await turno).toBeNull();
   }, 30_000);
@@ -740,6 +742,7 @@ describe("aviso de transferência vetado DEPOIS de um envio entregue no turno", 
       expect(enviados).toHaveLength(0);
     } finally {
       liberaEnvio(); // solto mesmo se falhar: job preso derruba os testes seguintes
+      await turno.catch(() => undefined);
     }
     expect(await turno).toBeNull();
     // Só a reescrita (que destravou) chegou: nada de aviso fixo em dobro.

@@ -63,10 +63,10 @@ describe("spinning × primeira resposta a quem escreveu", () => {
     if (!v.pass) expect(v.code).toBe("mass_identical");
   });
 
-  it("1ª resposta a inbound → passa, como 'skipped' (regra desarmada, não aprovada)", () => {
+  it("1ª resposta a inbound → passa, como 'skipped' com código próprio (não se confunde com emergência)", () => {
     const v = gate("spinning").evaluate(ctx({ firstReplyToInbound: true }));
     expect(v.pass).toBe(true);
-    if (v.pass) expect(v.skipped).toBe("not_applicable");
+    if (v.pass) expect(v.skipped).toBe("first_reply");
   });
 
   it("ausente = false: nenhum chamador existente muda de comportamento", () => {

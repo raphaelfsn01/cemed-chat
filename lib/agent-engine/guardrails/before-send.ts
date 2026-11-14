@@ -229,7 +229,10 @@ export interface GateContext {
    * Fura APENAS o `spinning`. A saudação é idêntica por construção e sai 1:1 para quem
    * escreveu — não é disparo em massa. Caso real (14/11 15h03 BRT): a saudação padrão já
    * tinha saído 2 vezes nas últimas 20 do número e foi vetada na 3ª conversa.
-   * Da 2ª mensagem em diante o gate vale; follow-up e template nunca marcam.
+   * Da 2ª mensagem em diante o gate vale, desde que a 1ª tenha virado `accepted` no ledger
+   * (com saída `queued`/`failed` as seguintes do turno continuam isentas — nada saiu de
+   * fato). "Sem envio anterior" é o ledger do agente: envios da equipe pela tela não contam.
+   * Follow-up e template nunca marcam.
    *
    * Ausente = false: nenhum chamador existente muda de comportamento.
    */
@@ -249,7 +252,11 @@ export type GateVerdict =
   // `skipped: 'not_applicable'` (invariante 4 de `docs/doctrine/restricao-de-canal.md`): a
   // restrição não existe NESTE canal. Passa, mas o trace registra que não se aplicava — um
   // `pass` silencioso apagaria a diferença entre "não regrediu" e "provo que não regrediu".
-  | { pass: true; waitMs?: number; amendBody?: string; skipped?: 'not_applicable' }
+  //
+  // `skipped: 'first_reply'`: o `spinning` desarmado na 1ª resposta a quem escreveu
+  // (GateContext.firstReplyToInbound). Código próprio para a auditoria distinguir esta
+  // isenção da emergência, que usa 'not_applicable'.
+  | { pass: true; waitMs?: number; amendBody?: string; skipped?: 'not_applicable' | 'first_reply' }
   | { pass: false; code: string; reason: string; nextAllowedAt?: Date; detail?: Record<string, string | number> };
 
 export interface Gate {
@@ -546,7 +553,7 @@ const spinningGate: Gate = {
     // justamente a segunda pessoa a passar mal no mesmo dia.
     if (ctx.emergencyOverride === true) return { pass: true, skipped: 'not_applicable' };
     // 1ª resposta a quem escreveu: 1:1 por definição, não blast (ver GateContext).
-    if (ctx.firstReplyToInbound === true) return { pass: true, skipped: 'not_applicable' };
+    if (ctx.firstReplyToInbound === true) return { pass: true, skipped: 'first_reply' };
     const decision = decideSpinning({
       candidate: ctx.body,
       window: ctx.spinning.window,
