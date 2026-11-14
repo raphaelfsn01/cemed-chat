@@ -107,6 +107,7 @@ import { readSkillReference, skillHasReferences } from './skill-references';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
 import { logToolCallSummary, wrapToolsWithCallLog } from './tool-call-log';
 import { alertarTurnoSemResposta, turnoFicouMudo } from './turn-no-reply';
+import { conversaJaRespondida, deveReagendarPorJanela, reagendarTurnoPorJanela } from './window-reschedule';
 import {
   loadChannelProvider,
   runBeforeSend,
@@ -1161,6 +1162,9 @@ export async function runAgentTurn(
   // turno e o aviso `turn_no_reply` leem essa contagem. Nunca guarda o texto.
   let sendAttempt = 0;
   const vetosPorGate: Record<string, number> = {};
+  // Abertura da janela informada pelo último veto `outside_window` do turno (já com jitter).
+  // No fecho, se nada foi entregue, o turno volta nessa hora (ver window-reschedule.ts).
+  let janelaReabreEm: Date | undefined;
   // Os pontos de envio continuam chamando `runBeforeSend(` pelo nome: testes de fiação
   // conferem isso no texto do arquivo (nenhuma tool pode virar rota de fuga da cadeia).
   const proximaTentativa = (): number => {
@@ -1169,7 +1173,10 @@ export async function runAgentTurn(
   };
   const comTrilha = async (envio: Promise<BeforeSendResult>): Promise<BeforeSendResult> => {
     const res = await envio;
-    if (res.status === 'vetoed') vetosPorGate[res.gate] = (vetosPorGate[res.gate] ?? 0) + 1;
+    if (res.status === 'vetoed') {
+      vetosPorGate[res.gate] = (vetosPorGate[res.gate] ?? 0) + 1;
+      if (res.code === 'outside_window' && res.nextAllowedAt !== undefined) janelaReabreEm = res.nextAllowedAt;
+    }
     return res;
   };
   // Citações acumuladas por buscas de conhecimento DESTE turno — anexadas à
@@ -2452,7 +2459,41 @@ export async function runAgentTurn(
   const entregues = outcomes.filter(
     (o) => o.kind === 'sent' || o.kind === 'already_sent' || o.kind === 'queued',
   ).length;
+  // Resposta barrada pela janela de envio: o turno volta na abertura em vez de sumir. Se o
+  // agendamento falhar, cai no aviso de turno mudo abaixo — a equipe fica sabendo.
+  let voltaNaJanela = false;
   if (
+    janelaReabreEm !== undefined &&
+    deveReagendarPorJanela({
+      jobKind: job.kind,
+      entregues,
+      optedOut: optedOutThisTurn,
+      transferiu: avisoAoPaciente.transferiu,
+      janelaReabreEm,
+    })
+  ) {
+    try {
+      const criado = await reagendarTurnoPorJanela(pool, {
+        tenantId,
+        leadId,
+        conversationId: input.conversationId,
+        jobId: job.id,
+        at: janelaReabreEm,
+        payload: job.payload,
+      });
+      voltaNaJanela = true;
+      runLog.info('resposta barrada pela janela de envio — turno re-agendado para a abertura', {
+        next_run_at: janelaReabreEm.toISOString(),
+        cron_created: criado,
+      });
+    } catch (err) {
+      runLog.error('falha ao re-agendar turno barrado pela janela (segue para o aviso)', {
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+    }
+  }
+  if (
+    !voltaNaJanela &&
     turnoFicouMudo({
       jobKind: job.kind,
       entregues,
@@ -2490,6 +2531,20 @@ export async function runAgentTurn(
 export function createInboundTurnHandler(deps: InboundTurnDeps) {
   return async (job: JobRow, pool: pg.Pool, ctx: { workerId: string }): Promise<void> => {
     const payload = inboundTurnPayloadSchema.parse(job.payload);
+    // Turno que voltou da janela de envio (window-reschedule.ts): se a conversa já foi
+    // respondida nesse meio-tempo, não há o que fazer — rodar seria responder em dobro.
+    if (
+      typeof payload.reschedule_of === 'string' &&
+      (await conversaJaRespondida(pool, {
+        tenantId: job.organization_id,
+        conversationId: payload.conversation_id,
+      }))
+    ) {
+      withFields(deps.log, { job_id: job.id, tenant_id: job.organization_id }).info(
+        'turno re-agendado pela janela dispensado: a conversa já foi respondida',
+      );
+      return;
+    }
     await runAgentTurn(deps, job, pool, ctx, {
       channelSessionId: payload.channel_session_id,
       conversationId: payload.conversation_id,
