@@ -132,6 +132,18 @@ const PARES: Array<{
     simbolo: "CaseEventKind",
   },
   {
+    tabela: "lgpd_requests",
+    coluna: "status",
+    // lib/lgpd/types.ts → LgpdRequestStatus.
+    //
+    // Par nascido de divergência REAL nos dois sentidos: o tipo tinha
+    // `pending_review`, que o CHECK recusava (os workers gravavam, o banco
+    // devolvia 23514 e o pedido ficava `processing` para sempre — migration
+    // 0127), e não tinha `expired`, que o CHECK aceita.
+    arquivo: "lib/lgpd/types.ts",
+    simbolo: "LgpdRequestStatus",
+  },
+  {
     tabela: "system_update_runs",
     coluna: "status",
     // lib/system/update-run.ts → RunStatus

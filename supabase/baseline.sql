@@ -9998,3 +9998,26 @@ create policy "attendant_availability_delete" on public.attendant_availability
   );
 
 notify pgrst, 'reload schema';
+
+-- ---- lgpd_requests.status aceita 'pending_review' (migration 0127) ----
+-- Os workers de LGPD gravam `pending_review` quando o pedido precisa de uma
+-- pessoa (exportação sem e-mail de entrega ou sem provedor configurado;
+-- anonimização sem pegada local; tenant com falha parcial). O CHECK do snapshot
+-- recusava o valor, o worker não conferia o erro e o pedido ficava `processing`
+-- para sempre. Idempotente: a lista só cresce, nenhuma linha existente viola a
+-- constraint nova. ÚNICO bloco desta constraint no apêndice — valor novo entra
+-- NESTA lista (ver tests/unit/baseline-constraint-reconstruida.test.ts).
+alter table public.lgpd_requests
+  drop constraint if exists lgpd_requests_status_check;
+
+alter table public.lgpd_requests
+  add constraint lgpd_requests_status_check check (status in (
+    'received',
+    'processing',
+    'completed',
+    'failed',
+    'expired',
+    'pending_review'
+  ));
+
+notify pgrst, 'reload schema';
