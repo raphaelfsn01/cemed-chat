@@ -221,6 +221,19 @@ export interface GateContext {
    * Ausente = false: nenhum chamador existente muda de comportamento.
    */
   emergencyOverride?: boolean;
+  /**
+   * PRIMEIRA saída a este contato, em resposta a uma mensagem que ele acabou de mandar.
+   * Calculado pelo runner sob o lock: `RunBeforeSendArgs.replyToInbound` E nenhum envio
+   * `accepted` anterior a ele (send_ledger, o mesmo sinal do disclosure).
+   *
+   * Fura APENAS o `spinning`. A saudação é idêntica por construção e sai 1:1 para quem
+   * escreveu — não é disparo em massa. Caso real (14/11 15h03 BRT): a saudação padrão já
+   * tinha saído 2 vezes nas últimas 20 do número e foi vetada na 3ª conversa.
+   * Da 2ª mensagem em diante o gate vale; follow-up e template nunca marcam.
+   *
+   * Ausente = false: nenhum chamador existente muda de comportamento.
+   */
+  firstReplyToInbound?: boolean;
 }
 
 /**
@@ -532,6 +545,8 @@ const spinningGate: Gate = {
     // é o comportamento correto, não sinal de campanha em massa. Vetar aqui calaria
     // justamente a segunda pessoa a passar mal no mesmo dia.
     if (ctx.emergencyOverride === true) return { pass: true, skipped: 'not_applicable' };
+    // 1ª resposta a quem escreveu: 1:1 por definição, não blast (ver GateContext).
+    if (ctx.firstReplyToInbound === true) return { pass: true, skipped: 'not_applicable' };
     const decision = decideSpinning({
       candidate: ctx.body,
       window: ctx.spinning.window,
@@ -714,6 +729,12 @@ export interface RunBeforeSendArgs {
    */
   emergencyOverride?: boolean;
   /**
+   * Esta chamada responde a uma mensagem que o contato acabou de mandar (turno
+   * `inbound_turn`). O runner só a converte em isenção do `spinning` se for também a 1ª
+   * saída ao contato — ver `GateContext.firstReplyToInbound`. Ausente = false.
+   */
+  replyToInbound?: boolean;
+  /**
    * Enviado SÓ se TODOS os gates passarem — ChannelAdapter (própria tx/idempotência). Recebe o
    * corpo FINAL (o disclosureGate F4-05 pode emendá-lo via `amendBody`): quem monta o send DEVE
    * enviar este `body`, não o corpo original capturado antes da cadeia.
@@ -759,8 +780,10 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     const disclosure = await loadDisclosureTemplate(client, args.tenantId);
     // "1º outbound" (send_ledger accepted == 0): sinal compartilhado pelo disclosure (F4-05) e
     // pelo gate LGPD (F4-09). Só consulta o ledger se ALGUM dos dois precisa (senão no-op).
+    // Também consultado quando a chamada responde a inbound: a isenção do spinning na 1ª
+    // resposta (GateContext.firstReplyToInbound) depende do mesmo sinal.
     const isFirstOutbound =
-      disclosure !== null || args.lgpd !== undefined
+      disclosure !== null || args.lgpd !== undefined || args.replyToInbound === true
         ? (await countPriorAcceptedSends(client, args.tenantId, args.leadId)) === 0
         : false;
 
@@ -794,6 +817,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       openedCaseThisTurn: args.openedCaseThisTurn ?? false,
       internalVocabularyEnforced: args.enforceInternalVocabulary ?? false,
       emergencyOverride: args.emergencyOverride ?? false,
+      firstReplyToInbound: args.replyToInbound === true && isFirstOutbound,
     };
 
     const trace: GateTraceEntry[] = [];
