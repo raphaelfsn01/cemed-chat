@@ -17,11 +17,16 @@
  *      passa do prazo, o laço re-digita num campo que já sumiu e cai no defeito 1
  *      pela outra ponta. 30s é folga para a carga, não para o TOTP — a janela do
  *      código continua sendo respeitada por `msUntilNextTotpWindow()`.
+ *   4. **A espera pela janela do TOTP saía do prazo do teste.** Em série, o login
+ *      seguinte cai na mesma janela de 30s e espera a próxima — medido no CI:
+ *      13s parado, de um teste com 30s de prazo. O que vinha depois (aqui, um
+ *      `page.screenshot`) estourava o prazo e levava a culpa. Essa espera é do
+ *      relógio, não do app: `esperarJanela` devolve o tempo ao teste.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import type { Page } from "@playwright/test";
+import { test, type Page } from "@playwright/test";
 
 import { generateTotp, msUntilNextTotpWindow } from "../e2e/utils/totp";
 
@@ -52,6 +57,13 @@ const JA_LOGADO = /\/(app|onboarding)\//;
  */
 let ultimoCodigo: string | null = null;
 
+/** Espera a janela do TOTP sem gastar o prazo do teste (defeito 4). */
+async function esperarJanela(page: Page, ms: number): Promise<void> {
+  const info = test.info();
+  if (info.timeout > 0) test.setTimeout(info.timeout + ms);
+  await page.waitForTimeout(ms);
+}
+
 export async function loginAdmin(page: Page): Promise<void> {
   const creds = lerCreds();
   const secret = creds.admin_totp?.secret;
@@ -74,12 +86,12 @@ export async function loginAdmin(page: Page): Promise<void> {
     // Defeito 1: a tentativa anterior pode ter passado enquanto esperávamos.
     if (JA_LOGADO.test(page.url())) return;
 
-    if (msUntilNextTotpWindow() < 3_000) await page.waitForTimeout(msUntilNextTotpWindow() + 200);
+    if (msUntilNextTotpWindow() < 3_000) await esperarJanela(page, msUntilNextTotpWindow() + 200);
 
     // Espera a próxima janela em vez de reenviar um código já queimado.
     let codigo = generateTotp(secret);
     if (codigo === ultimoCodigo) {
-      await page.waitForTimeout(msUntilNextTotpWindow() + 500);
+      await esperarJanela(page, msUntilNextTotpWindow() + 500);
       codigo = generateTotp(secret);
     }
     ultimoCodigo = codigo;
@@ -92,7 +104,7 @@ export async function loginAdmin(page: Page): Promise<void> {
       return;
     } catch {
       if (JA_LOGADO.test(page.url())) return;
-      await page.waitForTimeout(msUntilNextTotpWindow() + 200);
+      await esperarJanela(page, msUntilNextTotpWindow() + 200);
     }
   }
   throw new Error("MFA falhou após 3 tentativas de TOTP");
