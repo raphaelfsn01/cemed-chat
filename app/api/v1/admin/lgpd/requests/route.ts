@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
 
 const querySchema = z.object({
   status: z
-    .enum(["received", "processing", "completed", "failed", "pending_review"])
+    .enum(["received", "processing", "completed", "failed", "expired", "pending_review"])
     .optional(),
   request_type: z
     .enum(["redact", "data_request", "store_redact"])

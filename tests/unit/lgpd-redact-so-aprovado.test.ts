@@ -93,10 +93,70 @@ describe("lgpd-redact-worker: só pedido aprovado anonimiza", () => {
 
   it("pedido aprovado (processing): segue para a anonimização (probe positivo)", async () => {
     findLgpdRequest.mockResolvedValue(pedido("processing"));
-    cascadeRedactContact.mockResolvedValue({ already_anonymized: false, counts: {}, media_paths: [] });
+    cascadeRedactContact.mockResolvedValue({ alreadyAnonymized: false, counts: {}, mediaPaths: [] });
+
+    const r = await processLgpdRedact(evento());
+
+    expect(cascadeRedactContact).toHaveBeenCalledTimes(1);
+    expect(r.status).toBe("ok");
+    expect(updates.at(-1)).toMatchObject({ status: "completed" });
+  });
+});
+
+/**
+ * Retentativa sem nova aprovação (decisão de 2026-11-13, teto 3).
+ *
+ * Na falha o worker gravava `received` — o mesmo estado que a guarda acima
+ * recusa. O dreno reenviava o evento e o worker respondia `not_approved` para
+ * sempre: a anonimização aprovada pelo admin nunca era tentada de novo.
+ */
+describe("lgpd-redact-worker: falha mantém o pedido aprovado para a retentativa", () => {
+  it("falha antes do teto: o pedido continua `processing`", async () => {
+    findLgpdRequest.mockResolvedValue(pedido("processing"));
+    cascadeRedactContact.mockRejectedValue(new Error("banco fora"));
+
+    const r = await processLgpdRedact(evento());
+
+    expect(r.status).toBe("error");
+    expect(updates.at(-1)).toMatchObject({ status: "processing" });
+    expect(updates.map((u) => u.status)).not.toContain("received");
+  });
+
+  it("a retentativa roda de fato: segundo evento, pedido ainda `processing`", async () => {
+    findLgpdRequest.mockResolvedValue({ ...pedido("processing"), attempts: 1 });
+    cascadeRedactContact.mockResolvedValue({ alreadyAnonymized: false, counts: {}, mediaPaths: [] });
+
+    const r = await processLgpdRedact(evento());
+
+    expect(cascadeRedactContact).toHaveBeenCalledTimes(1);
+    expect(r.status).toBe("ok");
+    expect(updates.at(-1)).toMatchObject({ status: "completed" });
+  });
+
+  it("falha ao carregar o pedido: erro (o dreno tenta de novo), não `skipped`", async () => {
+    findLgpdRequest.mockRejectedValue(new Error("banco fora"));
+
+    const r = await processLgpdRedact(evento());
+
+    expect(r).toMatchObject({ status: "error", detail: "request_load_failed" });
+    expect(cascadeRedactContact).not.toHaveBeenCalled();
+    expect(updates).toEqual([]);
+  });
+
+  it("pedido que não existe: `skipped` (não há o que tentar de novo)", async () => {
+    findLgpdRequest.mockResolvedValue(null);
+
+    const r = await processLgpdRedact(evento());
+
+    expect(r).toMatchObject({ status: "skipped", detail: "request_not_found" });
+  });
+
+  it("falha na 3ª tentativa: vira `failed`", async () => {
+    findLgpdRequest.mockResolvedValue({ ...pedido("processing"), attempts: 2 });
+    cascadeRedactContact.mockRejectedValue(new Error("banco fora"));
 
     await processLgpdRedact(evento());
 
-    expect(cascadeRedactContact).toHaveBeenCalledTimes(1);
+    expect(updates.at(-1)).toMatchObject({ status: "failed" });
   });
 });
