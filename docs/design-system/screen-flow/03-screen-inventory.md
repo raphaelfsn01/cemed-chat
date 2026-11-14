@@ -131,7 +131,7 @@ date: 2026-04-28
 |---|---|---|---|---|---|---|
 | 58 | `/app/lgpd` | P3 admin | default, no-pending, alarm-d+5 | `<LGPDOverview>` | — | P0 |
 | 59 | `/app/lgpd/requests` | P3 admin | default, empty, filter (status) | `<LGPDRequestList>` | sim | P0 |
-| 60 | `/app/lgpd/requests/[id]` | P3 admin | received, processing, completed, failed, expired | `<LGPDRequestDetail>`, `<ExportPreview>`, `<SLATimeline>` | sim | P0 |
+| 60 | `/app/lgpd/requests/[id]` | P3 admin | received, processing, completed, failed, expired, pending_review | `<LGPDRequestDetail>`, `<ExportPreview>`, `<SLATimeline>` | sim | P0 |
 | 61 | `/app/lgpd/redact` | P3 admin | default, search-contact, confirm-irreversible, processing | `<RedactWizard>` | — | P0 |
 | 62 | `/app/lgpd/consent` | P3 admin | default, audit-trail | `<ConsentDashboard>` | — | P1 |
 

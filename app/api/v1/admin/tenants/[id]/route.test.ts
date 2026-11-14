@@ -8,7 +8,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * GET /api/v1/admin/tenants/[id] — cabeçalho do tenant no painel de plataforma.
  *
  * O contador de LGPD filtrava `status = 'pending'`, valor que não existe em
- * `lgpd_requests_status_check` (received/processing/completed/failed/expired):
+ * `lgpd_requests_status_check` (received/processing/completed/failed/expired/pending_review):
  * era sempre 0, e a tela jurava que o tenant não devia nada à LGPD.
  *
  * O dublê abaixo aplica o filtro sobre linhas com status do vocabulário REAL —

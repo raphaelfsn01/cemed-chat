@@ -76,7 +76,7 @@ arquivos de UI/rotas/cron + 2 workers alinhados.
 | Campo | Tipo declara | Banco aceita |
 |---|---|---|
 | `source` | `admin_panel` | `nuvemshop`, `manual`, `api`, `support` |
-| `status` | `pending_review` | `received`, `processing`, `completed`, `failed`, `expired` |
+| `status` | `pending_review` | **corrigido na migration 0127 (2026-11-14):** o CHECK passou a aceitar `pending_review`. Antes: `received`, `processing`, `completed`, `failed`, `expired` |
 
 **Mesma mecânica do Achado 2:** um `INSERT` com esses valores viola a constraint. Não foi tocado
 por decisão de escopo.

@@ -80,7 +80,7 @@ export async function GET(
       .select("*", { count: "exact", head: true })
       .eq("organization_id", id)
       // `pending` não existe em `lgpd_requests_status_check`
-      // (received/processing/completed/failed/expired), então este contador era
+      // (received/processing/completed/failed/expired/pending_review), então este contador era
       // sempre 0 e a tela jurava que o tenant não devia nada à LGPD. Aqui
       // pendente = TUDO que ainda não fechou, sem recorte de prazo. O KPI de
       // plataforma (`app/api/v1/admin/dashboard/kpis/route.ts`) parte do mesmo
