@@ -134,6 +134,12 @@ Estes são achados de código/config verificados nesta auditoria, não relatos.
 > tinham entrado no gate, e ao rodá-las apareceu um defeito de produto real
 > (`capacidades-do-agente` — o teto de 20 capacidades desabilita a crítica que o desenho manda
 > marcar à mão). As 4 restantes seguem sem gate — o texto abaixo continua valendo para elas.
+>
+> **Atualização (2026-11-13):** a contagem mudou — são **37 das 40 specs** no `e2e.yml`. A
+> lista deixou de ser escrita à mão: vive em `tests/e2e/ci-suites.json`, e o job `verify`
+> reprova spec nova sem destino declarado (`scripts/ci/e2e-suites.ts check`). As 3 de fora e o
+> motivo de cada uma estão nesse arquivo. Os números "28 das 32" e "4 das 32" deste trecho
+> são históricos.
 
 O gate de isolamento RLS **roda** — `ci.yml` tem o job `invariants` chamando `pnpm test:db`,
 que sobe `pgvector/pgvector:pg17`, aplica `baseline.sql` em modo install e update, e roda os

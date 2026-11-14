@@ -1,0 +1,25 @@
+name: setup
+description: Preparo comum dos jobs — pnpm, Node 22 (com cache do pnpm) e dependências.
+
+# Um lugar só para o preparo que estava copiado em quatro jobs. Mudar a versão
+# do Node ou do pnpm passa a ser uma edição, não quatro que podem divergir.
+#
+# Exige `actions/checkout` ANTES (action local só existe depois do checkout).
+#
+# Actions por SHA do commit, versão no comentário: tag é móvel, SHA não. O
+# Dependabot atualiza os dois juntos (ver `directories` em .github/dependabot.yml).
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        # 22 como o `.nvmrc` e o `engines`. Rodar numa versão que o `engines`
+        # (>=22) não suporta esconde quebra ou inventa falha.
+        node-version: 22
+        cache: pnpm
+
+    - run: pnpm install --frozen-lockfile
+      shell: bash

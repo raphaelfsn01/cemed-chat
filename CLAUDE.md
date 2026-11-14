@@ -279,13 +279,14 @@ pnpm test:e2e    # Playwright (requer dev server)
 
 Checks **obrigatórios** na branch protection da `main` (verificado na configuração, não só no papel):
 
-- **`verify`** (`ci.yml`) — typecheck + lint + test:unit.
+- **`verify`** (`ci.yml`) — typecheck + lint + test:unit, e a guarda `scripts/ci/e2e-suites.ts check`: spec nova em `tests/e2e/` sem destino declarado em `ci-suites.json` reprova o PR.
 - **`invariants`** (`ci.yml`) — `pnpm test:db`: sobe `pgvector/pgvector:pg17`, aplica `supabase/baseline.sql` em modo install (`ON_ERROR_STOP=1`) e update (idempotência), e roda os testes de invariante, incluindo o de isolamento RLS entre 2 organizações.
 - **`build-and-size`** (`perf.yml`) — `pnpm build` em Node 22.
 
-Check **não-obrigatório** (roda, mas não segura merge):
+Checks **não-obrigatórios** (rodam, mas não seguram merge):
 
-- **`e2e`** (`e2e.yml`) — sobe Supabase local, aplica o `baseline.sql` e roda **29 das 33 specs** Playwright. As 4 de fora: `followup-journey` e `webhooks` (precisam de WAHA), `vps-fresh-onboarding` (WAHA + Redis + Resend + Nuvemshop — é a P0 da doutrina de QA Visual) e `capacidades-do-agente`, que está fora porque **reprova de verdade**: ligar o pacote "Atender" enche o teto de 20 capacidades e a UI desabilita o checkbox da capacidade crítica que o próprio desenho manda marcar à mão. O `e2e` **ainda não é obrigatório** — o conjunto de specs mudou em 2026-08-05, então as execuções verdes anteriores eram de outro conjunto e não servem de prova de estabilidade deste (issue #63).
+- **`e2e`** (`e2e.yml`) — sobe Supabase local (CLI **fixo em 2.121.0**: com `latest` o job quebrou sozinho quando a 3.0.0 saiu, em 2026-11-02), aplica o `baseline.sql` e roda **37 das 40 specs** Playwright em três invocações (parte 1, parte 2 e responsivo). Quais specs rodam e quais ficam de fora, com o motivo, está em **`tests/e2e/ci-suites.json`** — fonte única, lida pelo workflow via `scripts/ci/e2e-suites.ts`. As 3 de fora: `webhooks` (a automação não aplica a tag neste ambiente, sem causa conhecida), `vps-fresh-onboarding` (WAHA + Redis + Resend + Nuvemshop — é a P0 da doutrina de QA Visual) e `capacidades-do-agente`, que está fora porque **reprova de verdade**: ligar o pacote "Atender" enche o teto de 20 capacidades e a UI desabilita o checkbox da capacidade crítica que o próprio desenho manda marcar à mão. O `e2e` **ainda não é obrigatório**: a parte 2 tem falhas antigas conhecidas e o job ficou sem rodar de 03/11 a 14/11/2026, então não há sequência de execuções verdes que prove estabilidade (issue #63).
+- **`docker-build (app)`** e **`docker-build (worker)`** (`perf.yml`, só em PR) — constroem `Dockerfile` e `Dockerfile.worker` sem publicar. `build-and-size` roda `pnpm build` com o repositório inteiro; a imagem é construída com o que o `.dockerignore` deixa passar, e o que quebra só ali aparecia depois do merge. O worker não era construído em nenhum workflow.
 
 Ao mexer em schema, RLS, RBAC, atribuição, escopo, roteamento, follow-up, webhooks ou automações: rode `pnpm test:db` **localmente** antes de abrir PR. É o único caminho que exercita o `baseline.sql` que o self-hoster realmente aplica.
 
