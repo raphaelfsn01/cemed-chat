@@ -30,6 +30,19 @@ function isValidTimezone(tz: string): boolean {
  */
 export const DAILY_LIMIT_BOUNDS = { min: 1, max: 10_000 } as const;
 
+/**
+ * Data de ativação do número: "AAAA-MM-DD", data real, não futura (1 dia de folga para
+ * fuso). NÃO aceita null: a coluna é NOT NULL DEFAULT now() — "apagar" a data seria
+ * zerar a idade do número e reativar o aquecimento de número novo.
+ */
+function dataDeAtivacaoValida(s: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const t = Date.parse(`${s}T00:00:00Z`);
+  if (Number.isNaN(t) || new Date(t).toISOString().slice(0, 10) !== s) return false;
+  // Piso no lançamento do WhatsApp: data absurda não vira "número de 20 anos".
+  return t >= Date.parse("2009-01-01T00:00:00Z") && t <= Date.now() + 86_400_000;
+}
+
 /** Campos editáveis pela tela — null = voltar ao default conservador do engine. */
 export const pacingKnobsUpdateSchema = z
   .object({
@@ -43,6 +56,10 @@ export const pacingKnobsUpdateSchema = z
       .string()
       .refine(isValidTimezone, "timezone IANA inválida (ex.: America/Sao_Paulo)")
       .nullable()
+      .optional(),
+    number_activated_at: z
+      .string()
+      .refine(dataDeAtivacaoValida, "data de ativação inválida (AAAA-MM-DD, sem data futura)")
       .optional(),
     daily_message_limit: z
       .number()

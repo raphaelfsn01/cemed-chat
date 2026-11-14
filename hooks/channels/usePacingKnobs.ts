@@ -24,6 +24,8 @@ export interface PacingKnobsItem {
     hourEnd: number;
     daily_limit: { min: number; max: number };
   };
+  /** Data sugerida de ativação: a mais antiga entre a criação da conexão e o 1º envio do agente. */
+  ativo_desde_sugerido: string | null;
 }
 
 /** Knobs anti-ban por conexão (Operação Visível F2ii) — GET /api/v1/ai/pacing. */

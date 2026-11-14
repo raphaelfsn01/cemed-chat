@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { useUpdatePacingKnobs, type PacingKnobsItem } from "@/hooks/channels/usePacingKnobs";
+import { aquecimentoAtual } from "@/lib/ai/aquecimento";
 import { ApiError } from "@/lib/api/types";
 
 interface Props {
@@ -37,6 +38,28 @@ interface FormState {
   daily_message_limit: string;
   allow_sunday: boolean;
   timezone: string;
+  /** AAAA-MM-DD; nunca vazio — ver `dataInicial`. */
+  number_activated_at: string;
+}
+
+/** Data de hoje no fuso do navegador, AAAA-MM-DD. */
+function hojeLocal(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * A coluna é NOT NULL DEFAULT now(): salvar sem data numa conexão sem configuração
+ * gravaria HOJE e o número voltaria a ser tratado como novo. Por isso o campo nunca fica
+ * vazio: data gravada > data sugerida pelo servidor (criação da conexão ou 1º envio do
+ * agente, a mais antiga) > hoje.
+ */
+function dataInicial(item: PacingKnobsItem): string {
+  return (
+    item.overrides?.number_activated_at?.slice(0, 10) ??
+    item.ativo_desde_sugerido?.slice(0, 10) ??
+    hojeLocal()
+  );
 }
 
 function fromItem(item: PacingKnobsItem): FormState {
@@ -52,6 +75,7 @@ function fromItem(item: PacingKnobsItem): FormState {
         : "",
     allow_sunday: o?.allow_sunday ?? item.defaults.allowSunday,
     timezone: o?.timezone ?? "",
+    number_activated_at: dataInicial(item),
   };
 }
 
@@ -87,6 +111,7 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
         jitter_max_ms: msOrNull(form.jitter_s),
         allow_sunday: form.allow_sunday,
         timezone: form.timezone.trim() === "" ? null : form.timezone.trim(),
+        number_activated_at: form.number_activated_at,
         ...(form.daily_message_limit.trim() !== ""
           ? { daily_message_limit: Math.round(Number(form.daily_message_limit)) }
           : {}),
@@ -228,6 +253,32 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
             />
             <p className="text-xs text-muted-foreground">
               A janela de envio é avaliada neste fuso (ex.: America/Sao_Paulo).
+            </p>
+          </fieldset>
+
+          <fieldset className="flex flex-col gap-2">
+            <Label htmlFor="number-activated-at">Data em que o número começou a enviar</Label>
+            <Input
+              id="number-activated-at"
+              type="date"
+              max={hojeLocal()}
+              required
+              value={form.number_activated_at}
+              onChange={(e) => e.target.value !== "" && set({ number_activated_at: e.target.value })}
+              disabled={!canWrite}
+              className="w-full sm:w-48"
+            />
+            <p className="text-xs text-muted-foreground" data-testid="anti-ban-aquecimento">
+              {(() => {
+                const a = aquecimentoAtual(form.number_activated_at, eff.warmupDailyCaps, new Date());
+                if (a.idadeDias === null) {
+                  return `Data inválida: o número é tratado como novo, com até ${a.tetoDia} mensagens por dia.`;
+                }
+                const idade = `${a.idadeDias} ${a.idadeDias === 1 ? "dia" : "dias"}`;
+                return a.tetoDia === null
+                  ? `Número com ${idade}: sem limite de aquecimento.`
+                  : `Número com ${idade}: até ${a.tetoDia} mensagens por dia enquanto aquece.`;
+              })()}
             </p>
           </fieldset>
 
