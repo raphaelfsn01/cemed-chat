@@ -95,13 +95,23 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
   const admin = createAdminClient();
 
   // 1. Load request row (programmatic org filter).
-  const req = await findLgpdRequest(orgId, requestId).catch((err: unknown) => {
+  // Falha ao LER o pedido não é "pedido não existe": devolve erro para o dreno
+  // tentar de novo. Como `skipped`, o evento era dado por concluído e um pedido
+  // aprovado ficava `processing` para sempre (não há rota de nova tentativa).
+  let req: Awaited<ReturnType<typeof findLgpdRequest>>;
+  try {
+    req = await findLgpdRequest(orgId, requestId);
+  } catch (err) {
     logger.error("[lgpd-redact-worker] findLgpdRequest threw", {
       request_id: shortId(requestId),
       error_hash: sha256(err instanceof Error ? err.message : String(err)),
     });
-    return null;
-  });
+    return {
+      consumer_key: "lgpd-redact-worker.v1",
+      status: "error",
+      detail: "request_load_failed",
+    };
+  }
 
   if (!req) {
     return {
@@ -487,7 +497,9 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
     await admin
       .from("lgpd_requests")
       .update({
-        status: nextAttempts >= MAX_ATTEMPTS ? "failed" : "received",
+        // Mantém `processing`: a guarda lá em cima só roda pedido aprovado, e
+        // voltar para `received` fazia a nova tentativa cair em `not_approved`.
+        status: nextAttempts >= MAX_ATTEMPTS ? "failed" : "processing",
         error_message: detail.slice(0, 500),
       })
       .eq("organization_id", orgId)
