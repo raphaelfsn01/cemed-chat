@@ -107,7 +107,7 @@ import { readSkillReference, skillHasReferences } from './skill-references';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
 import { logToolCallSummary, wrapToolsWithCallLog } from './tool-call-log';
 import { alertarTurnoSemResposta, turnoFicouMudo } from './turn-no-reply';
-import { deveReagendarPorJanela, reagendarTurnoPorJanela } from './window-reschedule';
+import { conversaJaRespondida, deveReagendarPorJanela, reagendarTurnoPorJanela } from './window-reschedule';
 import {
   loadChannelProvider,
   runBeforeSend,
@@ -2476,6 +2476,7 @@ export async function runAgentTurn(
       const criado = await reagendarTurnoPorJanela(pool, {
         tenantId,
         leadId,
+        conversationId: input.conversationId,
         jobId: job.id,
         at: janelaReabreEm,
         payload: job.payload,
@@ -2530,6 +2531,20 @@ export async function runAgentTurn(
 export function createInboundTurnHandler(deps: InboundTurnDeps) {
   return async (job: JobRow, pool: pg.Pool, ctx: { workerId: string }): Promise<void> => {
     const payload = inboundTurnPayloadSchema.parse(job.payload);
+    // Turno que voltou da janela de envio (window-reschedule.ts): se a conversa já foi
+    // respondida nesse meio-tempo, não há o que fazer — rodar seria responder em dobro.
+    if (
+      typeof payload.reschedule_of === 'string' &&
+      (await conversaJaRespondida(pool, {
+        tenantId: job.organization_id,
+        conversationId: payload.conversation_id,
+      }))
+    ) {
+      withFields(deps.log, { job_id: job.id, tenant_id: job.organization_id }).info(
+        'turno re-agendado pela janela dispensado: a conversa já foi respondida',
+      );
+      return;
+    }
     await runAgentTurn(deps, job, pool, ctx, {
       channelSessionId: payload.channel_session_id,
       conversationId: payload.conversation_id,

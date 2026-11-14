@@ -42,8 +42,10 @@ export function deveReagendarPorJanela(input: ReagendarPorJanelaInput): boolean 
 
 /**
  * Agenda UM `inbound_turn` one-shot para `at`, com o payload do turno de origem. Um por
- * contato: se já há um re-agendamento de janela pendente, o turno que ele vai disparar já
- * lê a conversa inteira — um segundo só faria o agente responder duas vezes na abertura.
+ * CONVERSA: se já há um re-agendamento de janela pendente para ela, o turno que ele vai
+ * disparar já lê a conversa inteira — um segundo só faria o agente responder duas vezes na
+ * abertura. Outra conversa do mesmo contato (outro número) ganha o dela: o payload é o que
+ * diz por onde responder.
  * `staggerWindowMs: 0` de propósito: o jitter já vem embutido em `at` (calculado pelo gate).
  * Devolve `true` se criou, `false` se já havia um pendente.
  *
@@ -52,14 +54,22 @@ export function deveReagendarPorJanela(input: ReagendarPorJanelaInput): boolean 
  */
 export async function reagendarTurnoPorJanela(
   pool: pg.Pool,
-  input: { tenantId: string; leadId: string; jobId: string; at: Date; payload: Record<string, unknown> },
+  input: {
+    tenantId: string;
+    leadId: string;
+    conversationId: string;
+    jobId: string;
+    at: Date;
+    payload: Record<string, unknown>;
+  },
 ): Promise<boolean> {
   const { rowCount } = await pool.query(
     `select 1 from cron_jobs
       where organization_id = $1 and contact_id = $2
         and enabled = true and job_kind = 'inbound_turn'
-        and payload ? 'reschedule_of'`,
-    [input.tenantId, input.leadId],
+        and payload ? 'reschedule_of'
+        and payload->>'conversation_id' = $3`,
+    [input.tenantId, input.leadId, input.conversationId],
   );
   if (rowCount !== null && rowCount > 0) return false;
   await scheduleCronJob(pool, input.tenantId, {
@@ -70,4 +80,30 @@ export async function reagendarTurnoPorJanela(
     staggerWindowMs: 0,
   });
   return true;
+}
+
+/**
+ * O turno re-agendado ainda tem o que responder? Entre o veto e a abertura da janela a
+ * conversa pode ter sido respondida por outro caminho — um turno novo do próprio paciente
+ * logo depois das 7h, um follow-up, ou alguém da equipe pela tela. Se a última palavra já é
+ * nossa (saída não-falha depois da última entrada), rodar o turno seria responder em dobro.
+ * Só vale para job que carrega `reschedule_of`: turno normal nunca passa por aqui.
+ */
+export async function conversaJaRespondida(
+  pool: pg.Pool,
+  input: { tenantId: string; conversationId: string },
+): Promise<boolean> {
+  const { rows } = await pool.query<{ respondida: boolean }>(
+    `select exists (
+       select 1 from messages o
+        where o.organization_id = $1 and o.conversation_id = $2
+          and o.direction = 'outbound' and o.status <> 'failed'
+          and o.created_at > coalesce((
+            select max(i.created_at) from messages i
+             where i.organization_id = $1 and i.conversation_id = $2 and i.direction = 'inbound'
+          ), '-infinity'::timestamptz)
+     ) as respondida`,
+    [input.tenantId, input.conversationId],
+  );
+  return rows[0]?.respondida === true;
 }
