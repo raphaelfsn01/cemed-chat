@@ -658,5 +658,45 @@ describe("aviso de transferência vetado DEPOIS de um envio entregue no turno", 
     expect(enviados.map((e) => e.body)).toEqual([REESCRITA]);
     expect((await estadoDoContato()).force_human).toBe(true);
   });
+
+  it("veto e depois [envio que TRAVA, handoff]: a transferência não espera o aviso fixo nem o envio travado", async () => {
+    const ESPERA = 600;
+    let liberaEnvio!: () => void;
+    const travado = new Promise<void>((r) => {
+      liberaEnvio = r;
+    });
+    let chegouNoCanalEm = 0;
+    const handler = montaHandler(modeloComPassos([[envia(PRECO_1)], [envia(REESCRITA), HANDOFF]]), {
+      esperaEnvioNoHandoffMs: ESPERA,
+      enviar: async (i) => {
+        chegouNoCanalEm = Date.now();
+        await travado;
+        enviados.push(i);
+        return { kind: "sent" as const, idempotencyKey: "k", messageId: "m1" };
+      },
+    });
+
+    const turno = rodaTurno(handler);
+    await esperaForceHumanLigado();
+    // Transferiu pelo tempo máximo, com o envio ainda preso no canal — e sem tentar o aviso
+    // fixo, que ficaria na fila do lock atrás dele.
+    expect(Date.now() - chegouNoCanalEm).toBeLessThan(ESPERA + 3000);
+    expect(enviados).toHaveLength(0);
+
+    liberaEnvio();
+    expect(await turno).toBeNull();
+    // Só a reescrita (que destravou) chegou: nada de aviso fixo em dobro.
+    expect(enviados.map((e) => e.body)).toEqual([REESCRITA]);
+  });
+
+  it("veto como ÚNICO envio do turno: 1ª chamada recusada, na 2ª o código avisa e transfere", async () => {
+    const erro = await rodaTurno(montaHandler(modeloComPassos([[envia(PRECO_1)], [HANDOFF], [HANDOFF]])));
+    expect(erro).toBeNull();
+    const diag = JSON.stringify({ resultadosDeTool, vetos: await vetosGravados() }, null, 2);
+    expect(JSON.stringify(resultadosDeTool), diag).toContain("avise_antes");
+    expect(enviados, diag).toHaveLength(1);
+    expect(enviados[0]!.body.startsWith(FALLBACK_INICIO), diag).toBe(true);
+    expect((await estadoDoContato()).force_human, diag).toBe(true);
+  });
 });
 

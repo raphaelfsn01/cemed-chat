@@ -1142,7 +1142,10 @@ export async function runAgentTurn(
   // "avise antes" não segura quando já houve OUTRO envio entregue no turno — e a conversa ia
   // para a equipe com o paciente sem saber (caso real de 14/11 11h27 BRT: a última mensagem
   // dele foi "Obrigada, Andrea!"). Com isto pendente, quem avisa antes de transferir é o
-  // código. Zera quando um envio posterior é entregue ou quando o fallback já foi tentado.
+  // código. Zera quando outro envio TERMINA entregue depois do veto, ou quando o fallback já
+  // foi tentado. Limites conhecidos: dois envios no mesmo passo terminam em ordem não
+  // garantida (um entregue que termine depois zera a pendência do vetado); e só veto de
+  // QUALIDADE cria pendência — janela, spinning, vocabulário interno e caso não.
   let avisoFixoPendente: (() => Promise<void>) | undefined;
   const enviarAvisoFixoPendente = async (): Promise<void> => {
     const enviar = avisoFixoPendente;
@@ -1587,7 +1590,7 @@ export async function runAgentTurn(
                   if (qualityFallbackAttempted) return;
                   const { fallback, entregue } = await enviarFallbackDoVeto();
                   if (entregue) {
-                    runLog.warn('aviso fixo enviado pelo código antes da transferência: o aviso do modelo foi vetado');
+                    runLog.warn('aviso fixo enviado pelo código antes da transferência: um envio do modelo foi vetado');
                   } else {
                     runLog.warn('aviso fixo antes da transferência não entregue', {
                       gate: fallback.status === 'vetoed' ? fallback.gate : 'canal',
@@ -2278,7 +2281,8 @@ export async function runAgentTurn(
       : turn.result.response.messages;
 
   // Transferência recusada por falta de aviso e NÃO refeita pelo modelo: o runtime conclui
-  // (ver transferenciaPendente). O aviso já saiu a esta altura, então a ordem continua certa.
+  // (ver transferenciaPendente). O aviso do modelo já saiu a esta altura — ou, se foi vetado,
+  // o aviso fixo sai agora (antesDeTransferir) —, então a ordem continua certa.
   // A 2ª chamada nunca é recusada, e o payload já passou pela validação na 1ª.
   if (transferenciaPendente(avisoAoPaciente)) {
     try {
