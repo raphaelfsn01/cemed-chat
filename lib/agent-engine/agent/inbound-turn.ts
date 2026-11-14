@@ -1137,6 +1137,18 @@ export async function runAgentTurn(
   // `pedido` guarda o payload da chamada recusada (o motivo) para o runtime concluir a
   // transferência com ele se o modelo não a refizer — ver transferenciaPendente.
   const avisoAoPaciente = { tentou: false, jaRecusou: false, transferiu: false, pedido: undefined as unknown };
+  // Aviso fixo devido ao paciente: um envio foi vetado por QUALIDADE e nada foi entregue
+  // depois. O 1º veto manda o modelo reescrever; se em vez disso ele transfere, a trava
+  // "avise antes" não segura quando já houve OUTRO envio entregue no turno — e a conversa ia
+  // para a equipe com o paciente sem saber (caso real de 14/11 11h27 BRT: a última mensagem
+  // dele foi "Obrigada, Andrea!"). Com isto pendente, quem avisa antes de transferir é o
+  // código. Zera quando um envio posterior é entregue ou quando o fallback já foi tentado.
+  let avisoFixoPendente: (() => Promise<void>) | undefined;
+  const enviarAvisoFixoPendente = async (): Promise<void> => {
+    const enviar = avisoFixoPendente;
+    avisoFixoPendente = undefined;
+    await enviar?.();
+  };
   // send_message em andamento: o handoff do MESMO passo espera por eles (ver
   // ESPERA_MAXIMA_DO_ENVIO_MS), senão grava force_human antes de o gate stop ler e o aviso
   // é barrado.
@@ -1539,7 +1551,51 @@ export async function runAgentTurn(
             // sem resposta (teste real de 30/10). 1º veto: reescreva UMA vez. 2º: o CÓDIGO
             // envia o fallback fixo — nunca o modelo, que já falhou duas vezes.
             qualityVetoCount += 1;
+            // O envio do fallback fixo, por esta tentativa: usado no 2º veto (abaixo) e, se o
+            // modelo transferir sem reescrever, logo antes da transferência.
+            const enviarFallbackDoVeto = async () => {
+              qualityFallbackAttempted = true;
+              const { quem } = await expectativaDeAtendimento(pool, tenantId, clock());
+              // Cadeia SEM classificador semântico e SEM vocabulário interno (o texto fixo não
+              // pode ser vetado pelo gate que causou o problema), sem casos. stop, lgpd e
+              // pacing continuam valendo: opt-out é irrevogável.
+              const fallback = await comTrilha(
+                runBeforeSend({
+                  attempt: proximaTentativa(),
+                  ...beforeSendArgs,
+                  body: mensagemDeFallbackDoVeto(quem),
+                  fallback: true,
+                  classifyPromiseSemantic: undefined,
+                  enforceInternalVocabulary: false,
+                  casesEnabled: false,
+                  hasOpenCase: false,
+                  openedCaseThisTurn: false,
+                }),
+              );
+              const entregue =
+                fallback.status === 'sent' &&
+                (fallback.outcome.kind === 'sent' ||
+                  fallback.outcome.kind === 'already_sent' ||
+                  fallback.outcome.kind === 'queued');
+              if (fallback.status === 'sent') outcomes.push(fallback.outcome);
+              if (entregue) avisoAoPaciente.tentou = true;
+              return { fallback, entregue };
+            };
             if (qualityVetoCount < MAX_VETOS_DE_QUALIDADE || qualityFallbackAttempted) {
+              if (!qualityFallbackAttempted) {
+                avisoFixoPendente = async () => {
+                  if (qualityFallbackAttempted) return;
+                  const { fallback, entregue } = await enviarFallbackDoVeto();
+                  if (entregue) {
+                    runLog.warn('aviso fixo enviado pelo código antes da transferência: o aviso do modelo foi vetado');
+                  } else {
+                    runLog.warn('aviso fixo antes da transferência não entregue', {
+                      gate: fallback.status === 'vetoed' ? fallback.gate : 'canal',
+                      code: fallback.status === 'vetoed' ? fallback.code : fallback.outcome.kind,
+                    });
+                  }
+                };
+              }
               return {
                 ok: false,
                 error: {
@@ -1548,32 +1604,9 @@ export async function runAgentTurn(
                 },
               };
             }
-            qualityFallbackAttempted = true;
-            const { quem } = await expectativaDeAtendimento(pool, tenantId, clock());
-            // Cadeia SEM classificador semântico e SEM vocabulário interno (o texto fixo não
-            // pode ser vetado pelo gate que causou o problema), sem casos. stop, lgpd e
-            // pacing continuam valendo: opt-out é irrevogável.
-            const fallback = await comTrilha(
-              runBeforeSend({
-                attempt: proximaTentativa(),
-                ...beforeSendArgs,
-                body: mensagemDeFallbackDoVeto(quem),
-                fallback: true,
-                classifyPromiseSemantic: undefined,
-                enforceInternalVocabulary: false,
-                casesEnabled: false,
-                hasOpenCase: false,
-                openedCaseThisTurn: false,
-              }),
-            );
-            const entregue =
-              fallback.status === 'sent' &&
-              (fallback.outcome.kind === 'sent' ||
-                fallback.outcome.kind === 'already_sent' ||
-                fallback.outcome.kind === 'queued');
-            if (fallback.status === 'sent') outcomes.push(fallback.outcome);
+            avisoFixoPendente = undefined;
+            const { fallback, entregue } = await enviarFallbackDoVeto();
             if (entregue) {
-              avisoAoPaciente.tentou = true;
               return {
                 ok: true,
                 status: 'aviso_automatico_enviado',
@@ -1631,9 +1664,11 @@ export async function runAgentTurn(
               // O aviso só vale quando ENTREGUE (human-handoff.ts): envio vetado não libera
               // a transferência, senão o paciente fica sem mensagem e sem equipe avisada.
               avisoAoPaciente.tentou = true;
+              avisoFixoPendente = undefined; // o paciente recebeu algo depois do veto
               return { ok: true, status: 'enviada', message_id: outcome.messageId };
             case 'queued':
               avisoAoPaciente.tentou = true; // aceita pelo canal: sairá quando a sessão voltar
+              avisoFixoPendente = undefined;
               return {
                 ok: true,
                 status: 'aceita_aguardando_canal',
@@ -1846,6 +1881,7 @@ export async function runAgentTurn(
               log: runLog,
               aviso: avisoAoPaciente,
               envios: enviosEmAndamento,
+              antesDeTransferir: enviarAvisoFixoPendente,
               ...(deps.knobs.esperaEnvioNoHandoffMs !== undefined ? { esperaMaximaMs: deps.knobs.esperaEnvioNoHandoffMs } : {}),
             },
             raw,
@@ -2249,7 +2285,12 @@ export async function runAgentTurn(
       const res = await applyRequestHumanHandoff(
         pool,
         { tenantId, leadId, conversationId: input.conversationId },
-        { conversationSummary: buildHandoffSummary(previous), log: runLog, aviso: avisoAoPaciente },
+        {
+          conversationSummary: buildHandoffSummary(previous),
+          log: runLog,
+          aviso: avisoAoPaciente,
+          antesDeTransferir: enviarAvisoFixoPendente,
+        },
         avisoAoPaciente.pedido ?? {},
       );
       if (res.ok) {

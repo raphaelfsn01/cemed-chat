@@ -407,6 +407,13 @@ export async function applyRequestHumanHandoff(
     /** send_message do mesmo turno ainda em andamento — o handoff espera por eles. */
     envios?: EnviosEmAndamento;
     esperaMaximaMs?: number;
+    /**
+     * Roda quando a transferência JÁ está decidida e imediatamente antes de gravá-la — a
+     * última chance de uma mensagem chegar ao paciente (depois, o gate stop barra tudo). O
+     * turno usa para enviar o aviso fixo quando o aviso do modelo foi vetado. Falha aqui
+     * nunca impede a transferência: chegar a um humano não depende de envio.
+     */
+    antesDeTransferir?: () => Promise<void>;
   },
   rawInput: unknown,
 ): Promise<RequestHumanHandoffResult> {
@@ -441,6 +448,16 @@ export async function applyRequestHumanHandoff(
   if (desfecho !== 'tempo_esgotado' && transferenciaPrecisaDeAviso(opts.aviso)) {
     const { frase } = await expectativaDeAtendimento(db, ids.tenantId, new Date());
     return { ok: false, error: { code: 'avise_antes', message: mensagemAviseAntes(frase) } };
+  }
+
+  if (opts.antesDeTransferir !== undefined) {
+    try {
+      await opts.antesDeTransferir();
+    } catch (err) {
+      opts.log.error('handoff: aviso fixo antes da transferência falhou — transferindo mesmo assim', {
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+    }
   }
 
   await performHumanHandoff(db, ids, {
