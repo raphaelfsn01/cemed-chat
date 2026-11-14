@@ -524,7 +524,7 @@ describe("resposta barrada pela janela de envio", () => {
     await pool.query(
       `insert into messages (organization_id, conversation_id, channel_session_id, contact_id,
          type, direction, status, body, sent_via, sent_at, created_at)
-       values ($1,$2,$3,$4,'text','outbound','sent','Bom dia, já te respondo.','user', now(), now() + interval '1 minute')`,
+       values ($1,$2,$3,$4,'text','outbound','sent','Bom dia, já te respondo.','user', now() + interval '1 minute', now())`,
       [ORG, CONV, SESSION, CONTACT],
     );
     const erro = await rodaTurno(montaHandler(modeloComPassos([[envio]])), { reschedule_of: EVENTO });
@@ -538,7 +538,20 @@ describe("resposta barrada pela janela de envio", () => {
     await pool.query(
       `insert into messages (organization_id, conversation_id, channel_session_id, contact_id,
          type, direction, status, body, sent_via, sent_at, created_at)
-       values ($1,$2,$3,$4,'text','outbound','failed','Tentativa que não saiu.','ai', now(), now() + interval '1 minute')`,
+       values ($1,$2,$3,$4,'text','outbound','failed','Tentativa que não saiu.','ai', now() + interval '1 minute', now())`,
+      [ORG, CONV, SESSION, CONTACT],
+    );
+    const erro = await rodaTurno(montaHandler(modeloComPassos([[envio]])), { reschedule_of: EVENTO });
+    expect(erro).toBeNull();
+    expect(enviados).toEqual([RESPOSTA]);
+  });
+
+  it("fromMe ANTIGA ingerida tarde (sent_at anterior à entrada) não conta como resposta", async () => {
+    await pool.query(
+      `insert into messages (organization_id, conversation_id, channel_session_id, contact_id,
+         type, direction, status, body, sent_via, sent_at, created_at)
+       values ($1,$2,$3,$4,'text','outbound','sent','Mensagem de ontem.','external_device',
+               now() - interval '1 day', now() + interval '1 minute')`,
       [ORG, CONV, SESSION, CONTACT],
     );
     const erro = await rodaTurno(montaHandler(modeloComPassos([[envio]])), { reschedule_of: EVENTO });

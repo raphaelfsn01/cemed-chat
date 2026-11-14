@@ -85,9 +85,17 @@ export async function reagendarTurnoPorJanela(
 /**
  * O turno re-agendado ainda tem o que responder? Entre o veto e a abertura da janela a
  * conversa pode ter sido respondida por outro caminho — um turno novo do próprio paciente
- * logo depois das 7h, um follow-up, ou alguém da equipe pela tela. Se a última palavra já é
- * nossa (saída não-falha depois da última entrada), rodar o turno seria responder em dobro.
+ * que rodou antes deste, um follow-up, ou alguém da equipe pela tela. Se a última palavra já
+ * é nossa (saída não-falha depois da última entrada), rodar o turno seria responder em dobro.
  * Só vale para job que carrega `reschedule_of`: turno normal nunca passa por aqui.
+ *
+ * Limite conhecido: a guarda só protege quando a outra resposta saiu ANTES deste turno. Se o
+ * paciente escreve segundos depois da abertura e este turno roda primeiro, o turno normal
+ * daquela mensagem não passa por aqui e pode responder de novo.
+ *
+ * A régua é a hora da mensagem (`sent_at`, com `created_at` de reserva), a mesma do resto do
+ * motor: uma `fromMe` antiga ingerida tarde (reconexão da sessão) tem `created_at` de agora
+ * e não pode contar como resposta. Reação e mensagem de sistema também não contam.
  */
 export async function conversaJaRespondida(
   pool: pg.Pool,
@@ -98,8 +106,9 @@ export async function conversaJaRespondida(
        select 1 from messages o
         where o.organization_id = $1 and o.conversation_id = $2
           and o.direction = 'outbound' and o.status <> 'failed'
-          and o.created_at > coalesce((
-            select max(i.created_at) from messages i
+          and o.type not in ('reaction', 'system')
+          and coalesce(o.sent_at, o.created_at) > coalesce((
+            select max(coalesce(i.sent_at, i.created_at)) from messages i
              where i.organization_id = $1 and i.conversation_id = $2 and i.direction = 'inbound'
           ), '-infinity'::timestamptz)
      ) as respondida`,
