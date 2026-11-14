@@ -11,10 +11,11 @@ permissions:
   contents: read
 
 # Push novo no MESMO PR cancela a execução anterior — ela mede um commit que já
-# não é a ponta da branch. Na `main` nada é cancelado: cada merge tem o seu
-# resultado registrado.
+# não é a ponta da branch. Na `main` o grupo é o SHA do commit: cada merge tem o
+# seu grupo, então nada é cancelado nem fica em fila. (Com o grupo por branch,
+# três merges seguidos faziam o GitHub descartar a execução pendente do meio.)
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

@@ -72,6 +72,9 @@ describe("o repositório de verdade", () => {
     const citadas = [...semComentario.matchAll(/[\w-]+\.spec\.ts/g)].map((m) => m[0]);
     // Só a responsiva é citada pelo nome: ela roda com `--project` próprios.
     expect([...new Set(citadas)]).toEqual(["responsivo.spec.ts"]);
+    // E a lista `responsivo` do JSON tem que ser exatamente essa: o workflow não a
+    // lê. Uma spec acrescentada ali passaria no `check` e nunca rodaria.
+    expect(lerSuites().responsivo).toEqual(["responsivo.spec.ts"]);
     expect(semComentario).toContain("scripts/ci/e2e-suites.ts parte1");
     expect(semComentario).toContain("scripts/ci/e2e-suites.ts parte2");
   });

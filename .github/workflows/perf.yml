@@ -9,8 +9,10 @@ on:
 permissions:
   contents: read
 
+# Mesmo desenho do ci.yml: PR cancela a execução anterior; na `main` o grupo é o
+# SHA do commit, então nenhum merge perde o seu resultado.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -54,6 +56,9 @@ jobs:
   # Só em PR: na `main` o app já é construído pelo publish-image.yml. Não é check
   # obrigatório; vira obrigatório na branch protection quando se decidir.
   docker-build:
+    # Nome explícito: sem ele o check sai como `docker-build (app, Dockerfile)`,
+    # com todos os valores da matriz, e não bate com o que a doc cita.
+    name: docker-build (${{ matrix.image }})
     if: github.event_name == 'pull_request'
     strategy:
       fail-fast: false

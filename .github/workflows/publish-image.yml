@@ -17,7 +17,10 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 # Dois merges seguidos não disputam a `:latest`: o segundo ESPERA o primeiro
-# terminar (nada é cancelado — imagem pela metade publicada seria pior).
+# terminar, e a execução em andamento nunca é cancelada (imagem pela metade
+# publicada seria pior). Limite do GitHub: só UMA execução fica pendente por
+# grupo. Com três merges seguidos, a do meio é descartada e aquele commit fica
+# sem imagem própria; a `:latest` final continua sendo a do último merge.
 concurrency:
   group: publish-image-${{ github.ref }}
   cancel-in-progress: false

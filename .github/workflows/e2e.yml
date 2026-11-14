@@ -27,9 +27,10 @@ permissions:
   contents: read
 
 # Push novo no mesmo PR cancela a execução anterior (o responsivo leva ~20 min
-# medindo um commit que já não é a ponta da branch). Na `main` nada é cancelado.
+# medindo um commit que já não é a ponta da branch). Fora de PR o grupo é o SHA:
+# cada commit tem o seu, nada é cancelado nem fica em fila.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
