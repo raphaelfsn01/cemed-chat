@@ -407,6 +407,15 @@ export async function applyRequestHumanHandoff(
     /** send_message do mesmo turno ainda em andamento — o handoff espera por eles. */
     envios?: EnviosEmAndamento;
     esperaMaximaMs?: number;
+    /**
+     * Roda quando a transferência JÁ está decidida e imediatamente antes de gravá-la — a
+     * última chance de uma mensagem chegar ao paciente (depois, o gate stop barra tudo). O
+     * turno usa para enviar o aviso fixo quando um envio do modelo foi vetado. Nunca
+     * segura a transferência: exceção é engolida, a espera tem o mesmo teto do envio
+     * (`esperaMaximaMs`), e não roda quando um envio em andamento já estourou o teto — ele
+     * ainda segura o lock do canal, e o aviso fixo ficaria na fila atrás dele (PR #38).
+     */
+    antesDeTransferir?: () => Promise<void>;
   },
   rawInput: unknown,
 ): Promise<RequestHumanHandoffResult> {
@@ -441,6 +450,28 @@ export async function applyRequestHumanHandoff(
   if (desfecho !== 'tempo_esgotado' && transferenciaPrecisaDeAviso(opts.aviso)) {
     const { frase } = await expectativaDeAtendimento(db, ids.tenantId, new Date());
     return { ok: false, error: { code: 'avise_antes', message: mensagemAviseAntes(frase) } };
+  }
+
+  if (opts.antesDeTransferir !== undefined && desfecho !== 'tempo_esgotado') {
+    const teto = opts.esperaMaximaMs ?? ESPERA_MAXIMA_DO_ENVIO_MS;
+    let relogio: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const estourou = await Promise.race([
+        opts.antesDeTransferir().then(() => false),
+        new Promise<boolean>((resolve) => {
+          relogio = setTimeout(() => resolve(true), teto);
+        }),
+      ]);
+      if (estourou) {
+        opts.log.warn('handoff: aviso fixo não terminou no tempo máximo — transferindo mesmo assim');
+      }
+    } catch (err) {
+      opts.log.error('handoff: aviso fixo antes da transferência falhou — transferindo mesmo assim', {
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+    } finally {
+      if (relogio !== undefined) clearTimeout(relogio);
+    }
   }
 
   await performHumanHandoff(db, ids, {

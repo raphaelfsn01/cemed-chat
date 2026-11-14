@@ -603,3 +603,100 @@ describe("veto de qualidade: reescreve uma vez, depois o código envia o fallbac
     expect(JSON.stringify(resultadosDeTool), diag).not.toContain("Reescreva UMA vez");
   });
 });
+
+/**
+ * Caso real de 14/11 11h27 BRT: o agente mandou "Obrigada, Andrea!" (entregue), depois o
+ * aviso de transferência foi vetado (promessa) e o handoff veio no MESMO passo. Como já
+ * havia um envio entregue no turno, a trava "avise antes" não segurou: a conversa foi para
+ * a equipe e a última mensagem do paciente ficou sendo o "Obrigada". O 1º veto de qualidade
+ * manda reescrever; se o modelo transfere em vez disso, quem avisa é o código.
+ */
+describe("aviso de transferência vetado DEPOIS de um envio entregue no turno", () => {
+  beforeEach(() => {
+    rttMs = 0;
+  });
+  const OUTRA = "Certo, já anotei aqui.";
+
+  it("aviso vetado + handoff no MESMO passo → o código envia o aviso fixo e só então transfere", async () => {
+    const erro = await rodaTurno(
+      montaHandler(modeloComPassos([[envia(REESCRITA)], [envia(PRECO_1), HANDOFF]])),
+    );
+    expect(erro).toBeNull();
+    const diag = JSON.stringify({ ordemDasConsultas, resultadosDeTool, vetos: await vetosGravados() }, null, 2);
+    expect(enviados, diag).toHaveLength(2);
+    expect(enviados[0]!.body, diag).toBe(REESCRITA);
+    expect(enviados[1]!.body.startsWith(FALLBACK_INICIO), diag).toBe(true);
+    const estado = await estadoDoContato();
+    expect(estado.force_human, diag).toBe(true);
+    expect(estado.silenciado, diag).toBe(true);
+  });
+
+  it("aviso vetado e handoff em passos SEPARADOS → mesmo desfecho", async () => {
+    const erro = await rodaTurno(
+      montaHandler(modeloComPassos([[envia(REESCRITA)], [envia(PRECO_1)], [HANDOFF]])),
+    );
+    expect(erro).toBeNull();
+    const diag = JSON.stringify({ resultadosDeTool, vetos: await vetosGravados() }, null, 2);
+    expect(enviados, diag).toHaveLength(2);
+    expect(enviados[1]!.body.startsWith(FALLBACK_INICIO), diag).toBe(true);
+    expect((await estadoDoContato()).force_human, diag).toBe(true);
+  });
+
+  it("o modelo reescreveu e a reescrita foi entregue → transfere SEM aviso fixo", async () => {
+    const erro = await rodaTurno(
+      montaHandler(modeloComPassos([[envia(REESCRITA)], [envia(PRECO_1)], [envia(OUTRA)], [HANDOFF]])),
+    );
+    expect(erro).toBeNull();
+    const diag = JSON.stringify({ resultadosDeTool, vetos: await vetosGravados() }, null, 2);
+    expect(enviados.map((e) => e.body), diag).toEqual([REESCRITA, OUTRA]);
+    expect((await estadoDoContato()).force_human, diag).toBe(true);
+  });
+
+  it("sem veto nenhum → transfere sem aviso fixo (controle)", async () => {
+    const erro = await rodaTurno(montaHandler(modeloComPassos([[envia(REESCRITA)], [HANDOFF]])));
+    expect(erro).toBeNull();
+    expect(enviados.map((e) => e.body)).toEqual([REESCRITA]);
+    expect((await estadoDoContato()).force_human).toBe(true);
+  });
+
+  it("veto e depois [envio que TRAVA, handoff]: a transferência não espera o aviso fixo nem o envio travado", async () => {
+    const ESPERA = 600;
+    let liberaEnvio!: () => void;
+    const travado = new Promise<void>((r) => {
+      liberaEnvio = r;
+    });
+    let chegouNoCanalEm = 0;
+    const handler = montaHandler(modeloComPassos([[envia(PRECO_1)], [envia(REESCRITA), HANDOFF]]), {
+      esperaEnvioNoHandoffMs: ESPERA,
+      enviar: async (i) => {
+        chegouNoCanalEm = Date.now();
+        await travado;
+        enviados.push(i);
+        return { kind: "sent" as const, idempotencyKey: "k", messageId: "m1" };
+      },
+    });
+
+    const turno = rodaTurno(handler);
+    await esperaForceHumanLigado();
+    // Transferiu pelo tempo máximo, com o envio ainda preso no canal — e sem tentar o aviso
+    // fixo, que ficaria na fila do lock atrás dele.
+    expect(Date.now() - chegouNoCanalEm).toBeLessThan(ESPERA + 3000);
+    expect(enviados).toHaveLength(0);
+
+    liberaEnvio();
+    expect(await turno).toBeNull();
+    // Só a reescrita (que destravou) chegou: nada de aviso fixo em dobro.
+    expect(enviados.map((e) => e.body)).toEqual([REESCRITA]);
+  });
+
+  it("veto como ÚNICO envio do turno: 1ª chamada recusada, na 2ª o código avisa e transfere", async () => {
+    const erro = await rodaTurno(montaHandler(modeloComPassos([[envia(PRECO_1)], [HANDOFF], [HANDOFF]])));
+    expect(erro).toBeNull();
+    const diag = JSON.stringify({ resultadosDeTool, vetos: await vetosGravados() }, null, 2);
+    expect(JSON.stringify(resultadosDeTool), diag).toContain("avise_antes");
+    expect(enviados, diag).toHaveLength(1);
+    expect(enviados[0]!.body.startsWith(FALLBACK_INICIO), diag).toBe(true);
+    expect((await estadoDoContato()).force_human, diag).toBe(true);
+  });
+});
+
