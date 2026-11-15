@@ -54,6 +54,12 @@ export function vetoReason(gate: string, code: string): string {
   if (gate === "stop" && code === "handoff_ativo") {
     return "Não enviei: a conversa está com a equipe humana.";
   }
+  // Limites clínicos (M7): um gate, dois motivos — a equipe precisa saber qual.
+  if (gate === "clinical_limits") {
+    return code === "medical_advice"
+      ? "Não enviei: a mensagem dava orientação médica, que só o profissional pode dar"
+      : "Não enviei: a mensagem informava preço, e quem informa valores é a equipe";
+  }
   const porGate: Record<string, string> = {
     stop: "Não enviei: o contato pediu para parar de receber mensagens",
     window: "Não enviei: fora da janela de horário permitida",

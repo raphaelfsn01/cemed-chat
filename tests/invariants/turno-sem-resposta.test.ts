@@ -628,3 +628,57 @@ describe("saudação repetida na primeira resposta", () => {
   });
 });
 
+/**
+ * M7 da auditoria: preço e orientação médica não saem, mesmo quando o modelo os escreve.
+ * O preço abaixo fica ACIMA do piso da tabela de promessa desta org (R$ 100,00), então
+ * o gate de promessa passa e quem barra é o de limites clínicos.
+ */
+describe("limites clínicos na fala do agente", () => {
+  const PRECO_NA_TABELA = "A consulta particular custa R$ 250,00.";
+  const RECUSA_DA_SPEC =
+    "Os valores variam conforme o procedimento e a forma de atendimento. " +
+    "Vou passar sua conversa para a nossa equipe, que te informa certinho.";
+
+  it("preço na resposta → vetado; a reescrita sem valor é o que chega ao paciente", async () => {
+    const erro = await rodaTurno(
+      montaHandler(
+        modeloComPassos([
+          [{ toolName: "send_message", input: { body: PRECO_NA_TABELA } }],
+          [{ toolName: "send_message", input: { body: RECUSA_DA_SPEC } }],
+        ]),
+      ),
+    );
+    expect(erro).toBeNull();
+    expect(enviados).toEqual([RECUSA_DA_SPEC]);
+    const vetos = await entradasDeVeto();
+    expect(vetos).toHaveLength(1);
+    expect(vetos[0]).toMatchObject({ gate: "clinical_limits", code: "price_disclosed" });
+    expect(vetos[0]!.detail).toMatchObject({ clinical_kinds: "preco", attempt: 1 });
+  });
+
+  it("orientação médica duas vezes → só o aviso fixo do código sai, nada do texto do modelo", async () => {
+    const erro = await rodaTurno(
+      montaHandler(
+        modeloComPassos([
+          [{ toolName: "send_message", input: { body: "Provavelmente é uma virose, tome uma dipirona." } }],
+          [{ toolName: "send_message", input: { body: "Pode tomar 500 mg de paracetamol à noite." } }],
+        ]),
+      ),
+    );
+    expect(erro).toBeNull();
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0]).toMatch(/^Entendi\. Vou passar sua conversa agora para uma pessoa da nossa equipe\./);
+    const vetos = await entradasDeVeto();
+    expect(vetos.map((v) => v.code)).toEqual(["medical_advice", "medical_advice"]);
+    expect(await avisosDoContato("turn_no_reply")).toEqual([]);
+
+    // O texto vetado não fica em nenhum registro durável.
+    const { rows } = await pool.query<{ bruto: string }>(
+      `select coalesce(string_agg(trace::text, ' '), '') as bruto from before_send_traces
+        where organization_id = $1 and contact_id = $2`,
+      [ORG, CONTACT],
+    );
+    expect(rows[0]!.bruto).not.toMatch(/virose|dipirona|paracetamol/);
+  });
+});
+

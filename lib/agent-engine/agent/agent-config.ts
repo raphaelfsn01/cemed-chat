@@ -43,9 +43,12 @@ export interface PublishedAgentConfig {
   ragSimilarityThreshold: number;
   /**
    * Gate determinístico de emergência médica (`ai_agents.config.medical_emergency_gate`).
-   * DESARMADO por default: este é um produto genérico, e "acidente"/"desmaiou" fora do
-   * contexto de saúde são palavras comuns — armar para todo mundo transformaria conversa
-   * banal em escalação irreversível (`force_human`). Quem opera clínica liga.
+   * LIGADO por default desde 15/11/2026 (M7 da auditoria, decisão do Raphael): esta é a
+   * instância única da CEMED, uma clínica, e a spec (§10.1) manda a triagem de urgência
+   * rodar "antes de tudo". Antes vinha desarmado por ser produto genérico, e o detector
+   * ficou desligado em produção. Desliga só com `enabled: false` explícito. O custo do
+   * falso positivo (`force_human`) é aceito: o filtro de passado/terceiro em
+   * `medical-emergency.ts` segura o caso mais comum ("meu pai teve um AVC").
    * As mensagens vivem em código (`medical-emergency.ts`); aqui só o override de redação.
    */
   emergencyGate: {
@@ -152,7 +155,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     ragTopK,
     ragSimilarityThreshold,
     emergencyGate: {
-      enabled: emg.enabled === true,
+      enabled: emg.enabled !== false,
       clinicalMessage: textoOuNull(emg.clinical_message),
       selfHarmMessage: textoOuNull(emg.self_harm_message),
     },
