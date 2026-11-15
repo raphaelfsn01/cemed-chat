@@ -49,6 +49,8 @@ export async function agendarAvisoDeTransferencia(
     conversationId: string;
     jobId: string;
     at: Date;
+    /** Quando a transferência aconteceu: a régua de "a equipe já respondeu" na abertura. */
+    desde: Date;
     payload: Record<string, unknown>;
   },
 ): Promise<boolean> {
@@ -61,12 +63,17 @@ export async function agendarAvisoDeTransferencia(
     [input.tenantId, input.leadId, input.conversationId],
   );
   if (rowCount !== null && rowCount > 0) return false;
-  const { reschedule_of: _reagendamento, aviso_de_transferencia: _avisoAnterior, ...origem } = input.payload;
+  const {
+    reschedule_of: _reagendamento,
+    aviso_de_transferencia: _avisoAnterior,
+    aviso_desde: _desdeAnterior,
+    ...origem
+  } = input.payload;
   await scheduleCronJob(pool, input.tenantId, {
     leadId: input.leadId,
     spec: { kind: 'at', at: input.at },
     jobKind: 'inbound_turn',
-    payload: { ...origem, aviso_de_transferencia: input.jobId },
+    payload: { ...origem, aviso_de_transferencia: input.jobId, aviso_desde: input.desde.toISOString() },
     staggerWindowMs: 0,
   });
   return true;
@@ -82,4 +89,45 @@ export async function contatoComAEquipe(
     [input.tenantId, input.leadId],
   );
   return rows[0]?.force_human === true;
+}
+
+/**
+ * Por que o aviso agendado NÃO deve sair, ou `null` se deve. Lido na abertura, da fonte.
+ * Revisão do PR-1b: a régua é a TRANSFERÊNCIA (`desde`), não a última mensagem do paciente —
+ * a equipe pode ter respondido e o paciente respondido de volta, e aí o atendimento humano já
+ * está em andamento. Sem `desde` (payload antigo), só a régua da última mensagem vale.
+ */
+export async function motivoParaDispensarAviso(
+  pool: pg.Pool,
+  input: { tenantId: string; conversationId: string; desde: Date | null },
+  opts: { detectaOptOut: (texto: string) => boolean },
+): Promise<'encerrada' | 'respondida' | 'opt_out' | null> {
+  const { rows } = await pool.query<{ status: string; respondida_desde: boolean }>(
+    `select c.status,
+            ($3::timestamptz is not null and exists (
+              select 1 from messages o
+               where o.organization_id = $1 and o.conversation_id = $2
+                 and o.direction = 'outbound' and o.status <> 'failed'
+                 and o.type not in ('reaction', 'system')
+                 and coalesce(o.sent_at, o.created_at) > $3::timestamptz
+            )) as respondida_desde
+       from conversations c
+      where c.organization_id = $1 and c.id = $2`,
+    [input.tenantId, input.conversationId, input.desde?.toISOString() ?? null],
+  );
+  const conversa = rows[0];
+  if (conversa === undefined || ['closed', 'archived', 'resolved'].includes(conversa.status)) return 'encerrada';
+  if (conversa.respondida_desde) return 'respondida';
+  if (input.desde !== null) {
+    // Opt-out ambíguo escrito depois da transferência: com o contato na equipe, nenhum turno
+    // rodou para vê-lo. O texto só é lido aqui, nunca gravado nem logado.
+    const entradas = await pool.query<{ body: string | null }>(
+      `select body from messages
+        where organization_id = $1 and conversation_id = $2 and direction = 'inbound'
+          and coalesce(sent_at, created_at) > $3::timestamptz`,
+      [input.tenantId, input.conversationId, input.desde.toISOString()],
+    );
+    if (entradas.rows.some((r) => r.body !== null && opts.detectaOptOut(r.body))) return 'opt_out';
+  }
+  return null;
 }

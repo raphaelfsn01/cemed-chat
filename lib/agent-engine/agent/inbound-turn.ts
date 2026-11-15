@@ -108,7 +108,12 @@ import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } fro
 import { logToolCallSummary, wrapToolsWithCallLog } from './tool-call-log';
 import { alertarTurnoSemResposta, turnoFicouMudo } from './turn-no-reply';
 import { conversaJaRespondida, deveReagendarPorJanela, reagendarTurnoPorJanela } from './window-reschedule';
-import { agendarAvisoDeTransferencia, contatoComAEquipe, mensagemDeTransferenciaFeita } from './aviso-de-transferencia';
+import {
+  agendarAvisoDeTransferencia,
+  contatoComAEquipe,
+  mensagemDeTransferenciaFeita,
+  motivoParaDispensarAviso,
+} from './aviso-de-transferencia';
 import {
   loadChannelProvider,
   runBeforeSend,
@@ -998,7 +1003,9 @@ export async function runAgentTurn(
     (agentConfig !== null && matchesHandoffKeyword(inboundSignal, agentConfig.handoffKeywords))
   ) {
     let reabreEm: Date | undefined;
-    if (job.kind === 'inbound_turn') {
+    // "Quero falar com um atendente, para de me mandar mensagem": transfere, mas não manda
+    // nada — na dúvida é STOP (F4-07).
+    if (job.kind === 'inbound_turn' && !detectAmbiguousOptOut(inboundSignal)) {
       try {
         const { quem } = await expectativaDeAtendimento(pool, tenantId, clock());
         const aviso = await runBeforeSend({
@@ -1040,6 +1047,7 @@ export async function runAgentTurn(
         conversationId: input.conversationId,
         jobId: job.id,
         at: reabreEm,
+        desde: clock(),
         payload: job.payload,
       });
     }
@@ -1248,6 +1256,22 @@ export async function runAgentTurn(
   // barrar, `comTrilha` guarda a abertura e o fecho do turno agenda o aviso para ela.
   const entreguesAteAgora = (): number =>
     outcomes.filter((o) => o.kind === 'sent' || o.kind === 'already_sent' || o.kind === 'queued').length;
+  // Transferiu com nada entregue porque a janela barrou → o aviso vai para a abertura. Chamado
+  // LOGO depois da transferência (revisão do PR-1b): no fecho do turno ele se perdia se algo
+  // lançasse no meio, e o retry pula o turno (o contato já está com a equipe).
+  const agendarSeTransferiuCalado = async (): Promise<void> => {
+    if (job.kind !== 'inbound_turn' || entreguesAteAgora() > 0) return;
+    if (janelaReabreEm === undefined || optedOutThisTurn) return;
+    await agendarAvisoNaAbertura(pool, runLog, {
+      tenantId,
+      leadId,
+      conversationId: input.conversationId,
+      jobId: job.id,
+      at: janelaReabreEm,
+      desde: clock(),
+      payload: job.payload,
+    });
+  };
   const avisoAntesDaTransferencia = async (): Promise<void> => {
     if (avisoFixoPendente !== undefined) {
       await enviarAvisoFixoPendente();
@@ -1999,6 +2023,7 @@ export async function runAgentTurn(
             return res;
           }
           avisoAoPaciente.transferiu = true;
+          await agendarSeTransferiuCalado();
           return { ok: true, status: res.status, message: res.message };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
@@ -2400,6 +2425,7 @@ export async function runAgentTurn(
       );
       if (res.ok) {
         avisoAoPaciente.transferiu = true;
+        await agendarSeTransferiuCalado();
         runLog.warn('handoff concluído pelo runtime: o modelo avisou o paciente mas não refez a transferência');
       } else {
         noteRunError(new Error(`handoff pendente não concluído pelo runtime (${res.error.code})`));
@@ -2605,24 +2631,6 @@ export async function runAgentTurn(
   const entregues = outcomes.filter(
     (o) => o.kind === 'sent' || o.kind === 'already_sent' || o.kind === 'queued',
   ).length;
-  // PR-1b: transferiu sem nada chegar ao paciente porque a janela barrou o aviso → o aviso
-  // vai para a abertura. (O turno em si não volta: a conversa já é da equipe.)
-  if (
-    job.kind === 'inbound_turn' &&
-    avisoAoPaciente.transferiu &&
-    entregues === 0 &&
-    janelaReabreEm !== undefined &&
-    !optedOutThisTurn
-  ) {
-    await agendarAvisoNaAbertura(pool, runLog, {
-      tenantId,
-      leadId,
-      conversationId: input.conversationId,
-      jobId: job.id,
-      at: janelaReabreEm,
-      payload: job.payload,
-    });
-  }
   // Resposta barrada pela janela de envio: o turno volta na abertura em vez de sumir. Se o
   // agendamento falhar, cai no aviso de turno mudo abaixo — a equipe fica sabendo.
   let voltaNaJanela = false;
@@ -2707,27 +2715,45 @@ async function agendarAvisoNaAbertura(
 }
 
 /**
- * O aviso de transferência agendado (aviso-de-transferencia.ts), na abertura da janela.
- * Devolve `false` quando o contato NÃO está mais com a equipe (alguém devolveu ao automático
- * durante a noite): aí o handler segue para o turno normal, que responde a mensagem.
+ * O aviso de transferência agendado (aviso-de-transferencia.ts), na abertura da janela. Nunca
+ * chama o modelo e nunca cai no turno normal (revisão do PR-1b: se a equipe devolveu a conversa
+ * ao automático, o turno normal respondia de novo uma mensagem velha ou re-transferia).
  */
 async function enviarAvisoDeTransferenciaAgendado(
   deps: InboundTurnDeps,
   job: JobRow,
   pool: pg.Pool,
-  payload: { conversation_id: string; channel_session_id: string },
-): Promise<boolean> {
+  payload: { conversation_id: string; channel_session_id: string; aviso_desde?: unknown },
+): Promise<void> {
   const tenantId = job.organization_id;
   const leadId = job.contact_id;
   if (leadId === null) throw new Error('aviso de transferência sem contact_id');
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
   if (!(await contatoComAEquipe(pool, { tenantId, leadId }))) {
-    runLog.info('aviso de transferência dispensado: a conversa voltou ao automático — segue o turno normal');
-    return false;
+    runLog.info('aviso de transferência dispensado: a conversa voltou ao automático');
+    return;
   }
   if (await conversaJaRespondida(pool, { tenantId, conversationId: payload.conversation_id })) {
     runLog.info('aviso de transferência dispensado: a equipe já respondeu');
-    return true;
+    return;
+  }
+  const desde =
+    typeof payload.aviso_desde === 'string' && !Number.isNaN(Date.parse(payload.aviso_desde))
+      ? new Date(payload.aviso_desde)
+      : null;
+  const motivo = await motivoParaDispensarAviso(
+    pool,
+    { tenantId, conversationId: payload.conversation_id, desde },
+    { detectaOptOut: detectAmbiguousOptOut },
+  );
+  if (motivo !== null) {
+    const textos = {
+      encerrada: 'aviso de transferência dispensado: a conversa foi encerrada',
+      respondida: 'aviso de transferência dispensado: a equipe já respondeu',
+      opt_out: 'aviso de transferência dispensado: o paciente pediu para não receber mensagens',
+    } as const;
+    runLog.info(textos[motivo]);
+    return;
   }
   const clock = deps.clock ?? ((): Date => new Date());
   // Opt-out e LGPD lidos agora, da fonte (como o follow-up): o aviso passa pela cadeia inteira.
@@ -2764,15 +2790,19 @@ async function enviarAvisoDeTransferenciaAgendado(
         conversationId: payload.conversation_id,
         jobId: job.id,
         at: res.nextAllowedAt,
+        desde: desde ?? clock(),
         payload: job.payload,
       });
     } else {
       runLog.info('aviso de transferência vetado pela cadeia', { gate: res.gate, code: res.code });
     }
-    return true;
+    return;
+  }
+  // Canal recusou de verdade: a fila tenta de novo (o ledger troca a chave do envio falho).
+  if (res.outcome.kind === 'failed' || res.outcome.kind === 'unavailable') {
+    throw new Error(`aviso de transferência não enviado (${res.outcome.kind}) — re-tentado pela fila`);
   }
   runLog.info('aviso de transferência enviado ao paciente', { kind: res.outcome.kind });
-  return true;
 }
 
 /**
@@ -2783,12 +2813,9 @@ async function enviarAvisoDeTransferenciaAgendado(
 export function createInboundTurnHandler(deps: InboundTurnDeps) {
   return async (job: JobRow, pool: pg.Pool, ctx: { workerId: string }): Promise<void> => {
     const payload = inboundTurnPayloadSchema.parse(job.payload);
-    // Aviso de transferência agendado para a abertura da janela (PR-1b): só o aviso, sem
-    // modelo — a não ser que a conversa tenha voltado ao automático nesse meio-tempo.
-    if (
-      typeof payload.aviso_de_transferencia === 'string' &&
-      (await enviarAvisoDeTransferenciaAgendado(deps, job, pool, payload))
-    ) {
+    // Aviso de transferência agendado para a abertura da janela (PR-1b): só o aviso, sem modelo.
+    if (typeof payload.aviso_de_transferencia === 'string') {
+      await enviarAvisoDeTransferenciaAgendado(deps, job, pool, payload);
       return;
     }
     // Turno que voltou da janela de envio (window-reschedule.ts): se a conversa já foi

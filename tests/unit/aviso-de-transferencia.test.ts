@@ -56,6 +56,19 @@ describe("gate stop e o aviso de transferência", () => {
   });
 });
 
+describe("gate spinning e os textos fixos do código", () => {
+  const spinning = BEFORE_SEND_GATES.find((g) => g.name === "spinning")!;
+  const repetido = [
+    { normalizedHash: "h", normalizedText: "aviso" },
+    { normalizedHash: "h", normalizedText: "aviso" },
+  ] as never;
+
+  it("texto fixo do código (aviso/fallback) não é vetado por repetição", () => {
+    const v = spinning.evaluate(ctx({ body: "aviso", codeFixedText: true, spinning: { knobs: SPINNING_DEFAULTS, window: repetido } }));
+    expect(v).toEqual({ pass: true, skipped: "fixed_text" });
+  });
+});
+
 describe("texto do aviso na abertura", () => {
   it("com gente da equipe disponível: diz que a equipe continua, sem prazo nem hora", () => {
     const t = mensagemDeTransferenciaFeita({ disponiveis: 1, total: 2 });

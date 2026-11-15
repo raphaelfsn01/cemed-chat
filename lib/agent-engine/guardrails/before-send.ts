@@ -99,6 +99,13 @@ export interface GateContext {
    */
   handoffNotice?: boolean;
   /**
+   * A candidata é TEXTO FIXO do código (aviso de transferência, fallback de veto), igual para
+   * todo paciente por construção. Fura só o `spinning`: a 3ª cópia igual do aviso no dia não
+   * é disparo em massa, e vetá-la fazia a transferência sair calada (revisão do PR-1b).
+   * Vem de `RunBeforeSendArgs.fallback`. Ausente = false.
+   */
+  codeFixedText?: boolean;
+  /**
    * Canal desta tentativa. Nenhum gate pergunta QUEM é o provider (invariante 1
    * de `docs/doctrine/restricao-de-canal.md`) — só o entrega a `capabilitiesOf`
    * para perguntar o que o canal permite.
@@ -276,7 +283,10 @@ export type GateVerdict =
   // `skipped: 'first_reply'`: o `spinning` desarmado na 1ª resposta a quem escreveu
   // (GateContext.firstReplyToInbound). Código próprio para a auditoria distinguir esta
   // isenção da emergência, que usa 'not_applicable'.
-  | { pass: true; waitMs?: number; amendBody?: string; skipped?: 'not_applicable' | 'first_reply' }
+  //
+  // `skipped: 'fixed_text'`: o `spinning` desarmado para texto fixo do código
+  // (GateContext.codeFixedText).
+  | { pass: true; waitMs?: number; amendBody?: string; skipped?: 'not_applicable' | 'first_reply' | 'fixed_text' }
   | { pass: false; code: string; reason: string; nextAllowedAt?: Date; detail?: Record<string, string | number> };
 
 export interface Gate {
@@ -606,6 +616,8 @@ const spinningGate: Gate = {
     if (ctx.emergencyOverride === true) return { pass: true, skipped: 'not_applicable' };
     // 1ª resposta a quem escreveu: 1:1 por definição, não blast (ver GateContext).
     if (ctx.firstReplyToInbound === true) return { pass: true, skipped: 'first_reply' };
+    // Texto fixo do código (aviso de transferência, fallback): igual por construção.
+    if (ctx.codeFixedText === true) return { pass: true, skipped: 'fixed_text' };
     const decision = decideSpinning({
       candidate: ctx.body,
       window: ctx.spinning.window,
@@ -875,6 +887,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       optedOut,
       handoffActive: stopFlags.forceHuman,
       handoffNotice: args.handoffNotice ?? false,
+      codeFixedText: args.fallback === true,
       provider,
       messagingWindow: { lastInboundAt, ...(args.isTemplate === true ? { isTemplate: true } : {}) },
       pacing: { knobs: pacingCfg.knobs, state: pacingState, crmDailyLimit: args.crmDailyLimit, rng: args.rng },

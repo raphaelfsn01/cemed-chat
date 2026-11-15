@@ -61,6 +61,10 @@ type Modules = {
 let m: Modules;
 
 let enviados: string[] = [];
+/** Mensagens de log do turno: os testes de dispensa afirmam o MOTIVO, não só o silêncio. */
+let logs: string[] = [];
+/** Desfecho que o canal falso devolve (o padrão é `sent`). */
+let desfechoDoCanal: "sent" | "failed" = "sent";
 
 const CHECKPOINT = JSON.stringify({
   commitments: [],
@@ -109,6 +113,9 @@ const DENTRO_DA_JANELA = new Date("2026-07-30T15:00:00Z");
 const FORA_DA_JANELA = new Date("2026-07-30T08:00:00Z");
 
 function montaHandler(doGenerate: unknown, agora: Date = DENTRO_DA_JANELA) {
+  const registra = (msg: string) => {
+    logs.push(msg);
+  };
   return m.createInboundTurnHandler({
     crmCfg: { supabase: {} as never },
     llmCfg: { anthropicApiKey: "fake" } as never,
@@ -127,12 +134,13 @@ function montaHandler(doGenerate: unknown, agora: Date = DENTRO_DA_JANELA) {
         noProgressBlock: 5,
       },
     },
-    log: m.createLogger(),
+    log: { info: registra, warn: registra, error: registra },
     registry: m.createFakeRegistry(doGenerate as never),
     channel: () =>
       ({
         channel: "captura",
         send: async (i: { body: string }) => {
+          if (desfechoDoCanal === "failed") return { kind: "failed" as const, reason: "canal_falso" };
           enviados.push(i.body);
           return { kind: "sent" as const, idempotencyKey: "k", messageId: "m1" };
         },
@@ -242,6 +250,8 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   enviados = [];
+  logs = [];
+  desfechoDoCanal = "sent";
   await pool.query(
     `update contacts set force_human = false, is_blocked = false where organization_id = $1 and id = $2`,
     [ORG, CONTACT],
@@ -309,7 +319,40 @@ const ABERTURA = new Date("2026-07-30T10:00:00Z");
 
 beforeEach(async () => {
   await mensagemDoPaciente("Oi");
+  await pool.query(`update messages set sent_at = now() where organization_id = $1 and id = $2`, [ORG, MSG]);
+  await pool.query(`update conversations set status = 'ai_handling' where organization_id = $1 and id = $2`, [ORG, CONV]);
+  await pool.query(
+    `delete from messages where organization_id = $1 and conversation_id = $2 and direction = 'inbound' and id <> $3`,
+    [ORG, CONV, MSG],
+  );
 });
+
+/**
+ * Revisão do PR-1b: os avisos são texto fixo, iguais para todo paciente, e o anti-repetição
+ * (3ª cópia igual nas últimas 20 do número) os vetava — a transferência voltava a sair calada.
+ * Semeia 2 cópias de cada variante dos dois avisos.
+ */
+async function semeiaCopiasDosAvisos(): Promise<void> {
+  const { hashNormalized, normalizeCopy } = await import("@/lib/agent-engine/spinning/engine");
+  const { mensagemDeFallbackDoVeto } = await import("@/lib/agent-engine/agent/human-handoff");
+  const { mensagemDeTransferenciaFeita } = await import("@/lib/agent-engine/agent/aviso-de-transferencia");
+  const textos = [
+    mensagemDeFallbackDoVeto(null),
+    mensagemDeFallbackDoVeto({ disponiveis: 1, total: 1 }),
+    mensagemDeTransferenciaFeita(null),
+    mensagemDeTransferenciaFeita({ disponiveis: 1, total: 1 }),
+  ];
+  for (const texto of textos) {
+    const normalizado = normalizeCopy(texto);
+    for (let i = 0; i < 2; i++) {
+      await pool.query(
+        `insert into outbound_copies (organization_id, channel_session_id, normalized_text, normalized_hash)
+         values ($1,$2,$3,$4)`,
+        [ORG, SESSION, normalizado, hashNormalized(normalizado)],
+      );
+    }
+  }
+}
 
 describe("transferência DENTRO da janela: o aviso sai antes", () => {
   it("paciente pede atendente → o aviso fixo sai e só então a conversa vai para a equipe", async () => {
@@ -319,6 +362,21 @@ describe("transferência DENTRO da janela: o aviso sai antes", () => {
     expect(enviados[0]).toMatch(AVISO_NA_HORA);
     expect(await forceHuman()).toBe(true);
     expect((await cronsDoContato()).filter((c) => "aviso_de_transferencia" in c.payload)).toEqual([]);
+  });
+
+  it("o aviso já saiu 2× no número hoje → o 3º pedido de atendente também recebe", async () => {
+    await semeiaCopiasDosAvisos();
+    await mensagemDoPaciente(PEDE_ATENDENTE);
+    expect(await rodaTurno(montaHandler(modeloComPassos([])))).toBeNull();
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0]).toMatch(AVISO_NA_HORA);
+  });
+
+  it("pedido de atendente junto com opt-out ambíguo → transfere sem mandar nada", async () => {
+    await mensagemDoPaciente("Quero falar com um atendente, para de me mandar mensagem");
+    expect(await rodaTurno(montaHandler(modeloComPassos([])))).toBeNull();
+    expect(enviados).toEqual([]);
+    expect(await forceHuman()).toBe(true);
   });
 
   it("modelo transfere sem ter mandado nada → o código manda o aviso fixo antes de concluir", async () => {
@@ -355,6 +413,24 @@ describe("transferência FORA da janela: transfere já, avisa na abertura", () =
     expect(crons).toHaveLength(1);
     expect(typeof crons[0]!.payload.aviso_de_transferencia).toBe("string");
     expect(crons[0]!.next_run_at.getTime()).toBeGreaterThanOrEqual(ABERTURA.getTime());
+  });
+
+  it("o turno falha DEPOIS da transferência → o aviso já ficou agendado (o retry pula o turno)", async () => {
+    const envio = { toolName: "send_message", input: { body: RESPOSTA } };
+    const handoff = { toolName: "request_human_handoff", input: { reason: "pediu_humano" } };
+    const roteiro = modeloComPassos([[envio], [handoff], [handoff]]);
+    let chamadas = 0;
+    const modelo = async (...args: unknown[]) => {
+      chamadas += 1;
+      if (chamadas === 4) throw new Error("provedor de LLM fora");
+      return (roteiro as (...a: unknown[]) => Promise<unknown>)(...args);
+    };
+    const erro = await rodaTurno(montaHandler(modelo, FORA_DA_JANELA));
+    expect(erro).not.toBeNull();
+    expect(await forceHuman()).toBe(true);
+    const avisos = (await cronsDoContato()).filter((c) => "aviso_de_transferencia" in c.payload && c.enabled);
+    expect(avisos).toHaveLength(1);
+    expect(typeof avisos[0]!.payload.aviso_desde).toBe("string");
   });
 
   it("duas transferências na mesma noite → um só aviso por conversa", async () => {
@@ -404,6 +480,7 @@ describe("o aviso agendado, na abertura da janela", () => {
     );
     expect(await rodaTurno(montaHandler(modeloComPassos([])), AVISO)).toBeNull();
     expect(enviados).toEqual([]);
+    expect(logs).toContain("aviso de transferência dispensado: a equipe já respondeu");
   });
 
   it("contato pediu para sair (opt-out) → nada sai", async () => {
@@ -411,11 +488,85 @@ describe("o aviso agendado, na abertura da janela", () => {
     await pool.query(`update contacts set is_blocked = true where organization_id = $1 and id = $2`, [ORG, CONTACT]);
     expect(await rodaTurno(montaHandler(modeloComPassos([])), AVISO)).toBeNull();
     expect(enviados).toEqual([]);
+    const { rows } = await pool.query<{ vetoed_code: string }>(
+      `select vetoed_code from before_send_traces where organization_id = $1 and contact_id = $2`,
+      [ORG, CONTACT],
+    );
+    expect(rows.map((r) => r.vetoed_code)).toEqual(["contato_bloqueado"]);
   });
 
-  it("a equipe devolveu ao automático antes da abertura → o agente responde normalmente, sem o aviso", async () => {
-    const envio = { toolName: "send_message", input: { body: RESPOSTA } };
-    expect(await rodaTurno(montaHandler(modeloComPassos([[envio]])), AVISO)).toBeNull();
-    expect(enviados).toEqual([RESPOSTA]);
+  it("a equipe respondeu depois da transferência e o paciente respondeu depois dela → dispensado", async () => {
+    // A última palavra é do paciente, mas o atendimento humano já está em andamento.
+    await transferido();
+    const desde = new Date(Date.now() - 60 * 60 * 1000);
+    await pool.query(
+      `insert into messages (organization_id, conversation_id, channel_session_id, contact_id,
+         type, direction, status, body, sent_via, sent_at)
+       values ($1,$2,$3,$4,'text','outbound','sent','Oi, sou da equipe.','crm', $5::timestamptz + interval '1 minute')`,
+      [ORG, CONV, SESSION, CONTACT, desde.toISOString()],
+    );
+    await pool.query(`update messages set sent_at = $3::timestamptz + interval '2 minutes' where organization_id = $1 and id = $2`, [
+      ORG,
+      MSG,
+      desde.toISOString(),
+    ]);
+    expect(
+      await rodaTurno(montaHandler(modeloComPassos([])), { ...AVISO, aviso_desde: desde.toISOString() }),
+    ).toBeNull();
+    expect(enviados).toEqual([]);
+    expect(logs).toContain("aviso de transferência dispensado: a equipe já respondeu");
+  });
+
+  it("conversa encerrada durante a noite → dispensado", async () => {
+    await transferido();
+    await pool.query(`update conversations set status = 'closed' where organization_id = $1 and id = $2`, [ORG, CONV]);
+    expect(await rodaTurno(montaHandler(modeloComPassos([])), AVISO)).toBeNull();
+    expect(enviados).toEqual([]);
+    expect(logs).toContain("aviso de transferência dispensado: a conversa foi encerrada");
+  });
+
+  it("paciente escreveu um opt-out ambíguo depois da transferência → dispensado", async () => {
+    await transferido();
+    const desde = new Date(Date.now() - 60 * 60 * 1000);
+    await pool.query(
+      `insert into messages (organization_id, conversation_id, channel_session_id, contact_id,
+         type, direction, status, body, sent_via, sent_at)
+       values ($1,$2,$3,$4,'text','inbound','delivered','não quero mais receber mensagens','external_device', now())`,
+      [ORG, CONV, SESSION, CONTACT],
+    );
+    expect(
+      await rodaTurno(montaHandler(modeloComPassos([])), { ...AVISO, aviso_desde: desde.toISOString() }),
+    ).toBeNull();
+    expect(enviados).toEqual([]);
+    expect(logs).toContain("aviso de transferência dispensado: o paciente pediu para não receber mensagens");
+  });
+
+  it("o canal falha ao enviar o aviso → o job falha para a fila tentar de novo", async () => {
+    await transferido();
+    desfechoDoCanal = "failed";
+    const erro = await rodaTurno(montaHandler(modeloComPassos([])), AVISO);
+    expect(erro).not.toBeNull();
+  });
+
+  it("o mesmo aviso já saiu 2× no número hoje → sai de novo (texto fixo não é disparo em massa)", async () => {
+    await transferido();
+    await semeiaCopiasDosAvisos();
+    expect(await rodaTurno(montaHandler(modeloComPassos([])), AVISO)).toBeNull();
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0]).toMatch(AVISO_NA_ABERTURA);
+  });
+
+  it("a equipe devolveu ao automático antes da abertura → o aviso é descartado (e o modelo não roda)", async () => {
+    // Revisão do PR-1b: deixar cair no turno normal respondia de novo uma mensagem velha, ou
+    // re-transferia uma conversa que a equipe tinha acabado de devolver.
+    const erro = await rodaTurno(
+      montaHandler(async () => {
+        throw new Error("o aviso descartado não pode chamar o modelo");
+      }),
+      AVISO,
+    );
+    expect(erro).toBeNull();
+    expect(enviados).toEqual([]);
+    expect(logs).toContain("aviso de transferência dispensado: a conversa voltou ao automático");
   });
 });
