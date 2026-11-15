@@ -109,6 +109,12 @@ import { logToolCallSummary, wrapToolsWithCallLog } from './tool-call-log';
 import { alertarTurnoSemResposta, turnoFicouMudo } from './turn-no-reply';
 import { conversaJaRespondida, deveReagendarPorJanela, reagendarTurnoPorJanela } from './window-reschedule';
 import {
+  agendarAvisoDeTransferencia,
+  contatoComAEquipe,
+  mensagemDeTransferenciaFeita,
+  motivoParaDispensarAviso,
+} from './aviso-de-transferencia';
+import {
   loadChannelProvider,
   runBeforeSend,
   type BeforeSendResult,
@@ -987,10 +993,45 @@ export async function runAgentTurn(
   // de atendimento humano na última mensagem do lead. Handoff é cidadão de 1ª classe (exigência
   // Meta fiscalizada, blueprint 5.5) — dispara ANTES do modelo: o bot silencia sem gastar LLM,
   // sem enviar. A ação (CRM force_human + cache + cancela crons + inbox) é idempotente.
+  //
+  // PR-1b: antes, transferia SEM responder nada. Agora, no turno de entrada, o código manda o
+  // aviso fixo ANTES (depois do handoff o gate `stop` barraria). Fora da janela o aviso é
+  // vetado: a transferência acontece mesmo assim e o aviso fica agendado para a abertura.
+  // Falha no aviso nunca impede a transferência — quem pediu gente tem de chegar à equipe.
   if (
     detectHumanHandoffRequest(inboundSignal) ||
     (agentConfig !== null && matchesHandoffKeyword(inboundSignal, agentConfig.handoffKeywords))
   ) {
+    let reabreEm: Date | undefined;
+    // "Quero falar com um atendente, para de me mandar mensagem": transfere, mas não manda
+    // nada — na dúvida é STOP (F4-07).
+    if (job.kind === 'inbound_turn' && !detectAmbiguousOptOut(inboundSignal)) {
+      try {
+        const { quem } = await expectativaDeAtendimento(pool, tenantId, clock());
+        const aviso = await runBeforeSend({
+          pool,
+          log: runLog,
+          tenantId,
+          leadId,
+          jobId: job.id,
+          channelSessionId: input.channelSessionId,
+          body: mensagemDeFallbackDoVeto(quem),
+          fallback: true,
+          optedOutThisTurn,
+          crmDailyLimit: null,
+          now: clock(),
+          sleep: deps.sleep,
+          lgpd,
+          send: (finalBody) =>
+            channel.send({ tenantId, leadId, jobId: job.id, seq: 1, conversationId: input.conversationId, body: finalBody }),
+        });
+        if (aviso.status === 'vetoed' && aviso.code === 'outside_window') reabreEm = aviso.nextAllowedAt;
+      } catch (err) {
+        runLog.warn('aviso antes da transferência pedida falhou (transfere mesmo assim)', {
+          error: err instanceof Error ? err.name : 'unknown',
+        });
+      }
+    }
     await performHumanHandoff(
       pool,
       { tenantId, leadId, conversationId: input.conversationId },
@@ -999,7 +1040,18 @@ export async function runAgentTurn(
     runLog.info('handoff humano acionado por pedido explícito do lead (detecção determinística)', {
       kind: job.kind,
     });
-    return; // bot silencia: sem modelo, sem envio neste turno
+    if (reabreEm !== undefined && !optedOutThisTurn) {
+      await agendarAvisoNaAbertura(pool, runLog, {
+        tenantId,
+        leadId,
+        conversationId: input.conversationId,
+        jobId: job.id,
+        at: reabreEm,
+        desde: clock(),
+        payload: job.payload,
+      });
+    }
+    return; // sem modelo neste turno
   }
 
   // F4-07: STOP AMBÍGUO ("para de me mandar isso", "não quero mais receber", "me tira da
@@ -1198,6 +1250,65 @@ export async function runAgentTurn(
       if (res.code === 'outside_window' && res.nextAllowedAt !== undefined) janelaReabreEm = res.nextAllowedAt;
     }
     return res;
+  };
+  // PR-1b: a transferência nunca sai calada quando nada chegou ao paciente no turno. Com
+  // aviso de qualidade pendente, é ele; senão, o aviso fixo de transferência. Se a janela o
+  // barrar, `comTrilha` guarda a abertura e o fecho do turno agenda o aviso para ela.
+  const entreguesAteAgora = (): number =>
+    outcomes.filter((o) => o.kind === 'sent' || o.kind === 'already_sent' || o.kind === 'queued').length;
+  // Transferiu com nada entregue porque a janela barrou → o aviso vai para a abertura. Chamado
+  // LOGO depois da transferência (revisão do PR-1b): no fecho do turno ele se perdia se algo
+  // lançasse no meio, e o retry pula o turno (o contato já está com a equipe).
+  const agendarSeTransferiuCalado = async (): Promise<void> => {
+    if (job.kind !== 'inbound_turn' || entreguesAteAgora() > 0) return;
+    if (janelaReabreEm === undefined || optedOutThisTurn) return;
+    await agendarAvisoNaAbertura(pool, runLog, {
+      tenantId,
+      leadId,
+      conversationId: input.conversationId,
+      jobId: job.id,
+      at: janelaReabreEm,
+      desde: clock(),
+      payload: job.payload,
+    });
+  };
+  const avisoAntesDaTransferencia = async (): Promise<void> => {
+    if (avisoFixoPendente !== undefined) {
+      await enviarAvisoFixoPendente();
+      return;
+    }
+    if (entreguesAteAgora() > 0) return;
+    const { quem } = await expectativaDeAtendimento(pool, tenantId, clock());
+    const res = await comTrilha(
+      runBeforeSend({
+        attempt: proximaTentativa(),
+        pool,
+        log: runLog,
+        tenantId,
+        leadId,
+        jobId: job.id,
+        channelSessionId: input.channelSessionId,
+        body: mensagemDeFallbackDoVeto(quem),
+        fallback: true,
+        optedOutThisTurn,
+        crmDailyLimit: null,
+        now: clock(),
+        sleep: deps.sleep,
+        lgpd,
+        send: (finalBody: string) => {
+          seq += 1;
+          return channel.send({
+            tenantId,
+            leadId,
+            jobId: job.id,
+            seq,
+            conversationId: input.conversationId,
+            body: finalBody,
+          });
+        },
+      }),
+    );
+    if (res.status === 'sent') outcomes.push(res.outcome);
   };
   // Citações acumuladas por buscas de conhecimento DESTE turno — anexadas à
   // próxima outbound enviada (shape de lib/ai/citations/types, que a UI já lê).
@@ -1898,7 +2009,7 @@ export async function runAgentTurn(
               log: runLog,
               aviso: avisoAoPaciente,
               envios: enviosEmAndamento,
-              antesDeTransferir: enviarAvisoFixoPendente,
+              antesDeTransferir: avisoAntesDaTransferencia,
               ...(deps.knobs.esperaEnvioNoHandoffMs !== undefined ? { esperaMaximaMs: deps.knobs.esperaEnvioNoHandoffMs } : {}),
             },
             raw,
@@ -1912,6 +2023,7 @@ export async function runAgentTurn(
             return res;
           }
           avisoAoPaciente.transferiu = true;
+          await agendarSeTransferiuCalado();
           return { ok: true, status: res.status, message: res.message };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
@@ -2307,12 +2419,13 @@ export async function runAgentTurn(
           conversationSummary: buildHandoffSummary(previous),
           log: runLog,
           aviso: avisoAoPaciente,
-          antesDeTransferir: enviarAvisoFixoPendente,
+          antesDeTransferir: avisoAntesDaTransferencia,
         },
         avisoAoPaciente.pedido ?? {},
       );
       if (res.ok) {
         avisoAoPaciente.transferiu = true;
+        await agendarSeTransferiuCalado();
         runLog.warn('handoff concluído pelo runtime: o modelo avisou o paciente mas não refez a transferência');
       } else {
         noteRunError(new Error(`handoff pendente não concluído pelo runtime (${res.error.code})`));
@@ -2582,6 +2695,116 @@ export async function runAgentTurn(
   });
 }
 
+/** Agenda o aviso de transferência; falha só loga (a transferência já está feita). */
+async function agendarAvisoNaAbertura(
+  pool: pg.Pool,
+  runLog: Logger,
+  input: Parameters<typeof agendarAvisoDeTransferencia>[1],
+): Promise<void> {
+  try {
+    const criado = await agendarAvisoDeTransferencia(pool, input);
+    runLog.info('transferência fora da janela — aviso ao paciente agendado para a abertura', {
+      next_run_at: input.at.toISOString(),
+      cron_created: criado,
+    });
+  } catch (err) {
+    runLog.error('falha ao agendar o aviso de transferência', {
+      error: err instanceof Error ? err.name : 'unknown',
+    });
+  }
+}
+
+/**
+ * O aviso de transferência agendado (aviso-de-transferencia.ts), na abertura da janela. Nunca
+ * chama o modelo e nunca cai no turno normal (revisão do PR-1b: se a equipe devolveu a conversa
+ * ao automático, o turno normal respondia de novo uma mensagem velha ou re-transferia).
+ */
+async function enviarAvisoDeTransferenciaAgendado(
+  deps: InboundTurnDeps,
+  job: JobRow,
+  pool: pg.Pool,
+  payload: { conversation_id: string; channel_session_id: string; aviso_desde?: unknown },
+): Promise<void> {
+  const tenantId = job.organization_id;
+  const leadId = job.contact_id;
+  if (leadId === null) throw new Error('aviso de transferência sem contact_id');
+  const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
+  if (!(await contatoComAEquipe(pool, { tenantId, leadId }))) {
+    runLog.info('aviso de transferência dispensado: a conversa voltou ao automático');
+    return;
+  }
+  if (await conversaJaRespondida(pool, { tenantId, conversationId: payload.conversation_id })) {
+    runLog.info('aviso de transferência dispensado: a equipe já respondeu');
+    return;
+  }
+  const desde =
+    typeof payload.aviso_desde === 'string' && !Number.isNaN(Date.parse(payload.aviso_desde))
+      ? new Date(payload.aviso_desde)
+      : null;
+  const motivo = await motivoParaDispensarAviso(
+    pool,
+    { tenantId, conversationId: payload.conversation_id, desde },
+    { detectaOptOut: detectAmbiguousOptOut },
+  );
+  if (motivo !== null) {
+    const textos = {
+      encerrada: 'aviso de transferência dispensado: a conversa foi encerrada',
+      respondida: 'aviso de transferência dispensado: a equipe já respondeu',
+      opt_out: 'aviso de transferência dispensado: o paciente pediu para não receber mensagens',
+    } as const;
+    runLog.info(textos[motivo]);
+    return;
+  }
+  const clock = deps.clock ?? ((): Date => new Date());
+  // Opt-out e LGPD lidos agora, da fonte (como o follow-up): o aviso passa pela cadeia inteira.
+  const context = await getLeadContext(pool, deps.crmCfg, { tenantId, leadId }, {
+    historyLimit: 1,
+    maxTokens: deps.knobs.maxContextTokens,
+  });
+  if (!context.ok) throw new Error(`aviso de transferência: get_lead_context falhou (${context.error.code})`);
+  const channel = (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(pool);
+  const { quem } = await expectativaDeAtendimento(pool, tenantId, clock());
+  const res = await runBeforeSend({
+    pool,
+    log: runLog,
+    tenantId,
+    leadId,
+    jobId: job.id,
+    channelSessionId: payload.channel_session_id,
+    body: mensagemDeTransferenciaFeita(quem),
+    fallback: true,
+    handoffNotice: true,
+    optedOutThisTurn: context.context.contact.is_blocked,
+    crmDailyLimit: null,
+    now: clock(),
+    sleep: deps.sleep,
+    lgpd: context.lgpd,
+    send: (finalBody) =>
+      channel.send({ tenantId, leadId, jobId: job.id, seq: 1, conversationId: payload.conversation_id, body: finalBody }),
+  });
+  if (res.status === 'vetoed') {
+    if (res.code === 'outside_window' && res.nextAllowedAt !== undefined) {
+      await agendarAvisoNaAbertura(pool, runLog, {
+        tenantId,
+        leadId,
+        conversationId: payload.conversation_id,
+        jobId: job.id,
+        at: res.nextAllowedAt,
+        desde: desde ?? clock(),
+        payload: job.payload,
+      });
+    } else {
+      runLog.info('aviso de transferência vetado pela cadeia', { gate: res.gate, code: res.code });
+    }
+    return;
+  }
+  // Canal recusou de verdade: a fila tenta de novo (o ledger troca a chave do envio falho).
+  if (res.outcome.kind === 'failed' || res.outcome.kind === 'unavailable') {
+    throw new Error(`aviso de transferência não enviado (${res.outcome.kind}) — re-tentado pela fila`);
+  }
+  runLog.info('aviso de transferência enviado ao paciente', { kind: res.outcome.kind });
+}
+
 /**
  * Handler de `inbound_turn` para o registry do daemon (main.ts): o lead mandou uma
  * mensagem. Ids de envio vêm do payload do drain (fonte confiável — F2-05); a
@@ -2590,6 +2813,11 @@ export async function runAgentTurn(
 export function createInboundTurnHandler(deps: InboundTurnDeps) {
   return async (job: JobRow, pool: pg.Pool, ctx: { workerId: string }): Promise<void> => {
     const payload = inboundTurnPayloadSchema.parse(job.payload);
+    // Aviso de transferência agendado para a abertura da janela (PR-1b): só o aviso, sem modelo.
+    if (typeof payload.aviso_de_transferencia === 'string') {
+      await enviarAvisoDeTransferenciaAgendado(deps, job, pool, payload);
+      return;
+    }
     // Turno que voltou da janela de envio (window-reschedule.ts): se a conversa já foi
     // respondida nesse meio-tempo, não há o que fazer — rodar seria responder em dobro.
     if (

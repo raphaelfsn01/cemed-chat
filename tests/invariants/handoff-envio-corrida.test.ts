@@ -445,10 +445,12 @@ describe("a espera do handoff pelo envio — bordas", () => {
     expect(erro).toBeNull();
 
     const diag = JSON.stringify({ ordemDasConsultas, resultadosDeTool, vetos: await vetosGravados() }, null, 2);
-    // Nada saiu — e o veto foi o do pacing, não o do stop (a espera não mascara nem cria vetos).
+    // Nada saiu — e os vetos foram do pacing, não do stop (a espera não mascara vetos). São
+    // dois desde o PR-1b: o envio do modelo e o aviso fixo de transferência que o código tenta
+    // antes de transferir; os dois barrados pela janela (o aviso fica agendado para a abertura).
     expect(enviados, diag).toHaveLength(0);
     const vetos = await vetosGravados();
-    expect(vetos.map((v) => v.vetoed_gate), diag).toEqual(["pacing"]);
+    expect(vetos.map((v) => v.vetoed_gate), diag).toEqual(["pacing", "pacing"]);
 
     // O handoff NÃO ficou preso pelo envio que falhou.
     const estado = await estadoDoContato();
@@ -611,24 +613,24 @@ describe("veto de qualidade: reescreve uma vez, depois o código envia o fallbac
   const apagaEnviosAnteriores = () =>
     pool.query(`delete from send_ledger where organization_id = $1 and contact_id = $2`, [ORG, CONTACT]);
 
-  it("fallback vetado (spinning): nada é enviado e o handoff segue com jaRecusou=true", async () => {
-    // Limitação ACEITA: o fallback é texto fixo e passa pelo spinning; a 3ª cópia na janela é
-    // vetada (mass_identical). Semeia as duas variantes do fallback 2× cada. O contato JÁ
-    // recebeu mensagem nossa antes: na 1ª saída a um contato o spinning não vale
-    // (GateContext.firstReplyToInbound) — esse caso é o teste seguinte.
+  it("fallback repetido no número: SAI mesmo assim (texto fixo do código não passa pelo spinning)", async () => {
+    // Era limitação aceita até o PR-1b: o fallback é texto fixo, a 3ª cópia na janela era
+    // vetada (mass_identical) e a transferência saía calada. Agora `fallback: true` fura só o
+    // spinning (GateContext.codeFixedText). Semeia as duas variantes 2× cada, e o contato JÁ
+    // recebeu mensagem nossa antes (a isenção da 1ª resposta não se aplica).
     await apagaEnviosAnteriores();
     await semeiaEnvioAnterior();
     await semeiaFallbackRepetido();
-    // O modelo NÃO chama o handoff: é o runtime que o conclui (jaRecusou=true).
-    const erro = await rodaTurno(montaHandler(modeloComPassos([[envia(PRECO_1)], [envia(PRECO_2)]])));
+    const erro = await rodaTurno(
+      montaHandler(modeloComPassos([[envia(PRECO_1)], [envia(PRECO_2)], [HANDOFF]])),
+    );
     await apagaEnviosAnteriores();
     expect(erro).toBeNull();
     const diag = JSON.stringify({ resultadosDeTool, vetos: await vetosGravados() }, null, 2);
-    expect(enviados, diag).toHaveLength(0);
-    expect((await vetosGravados()).map((v) => v.vetoed_code), diag).toContain("mass_identical");
-    const estado = await estadoDoContato();
-    expect(estado.force_human, diag).toBe(true);
-    expect(estado.silenciado, diag).toBe(true);
+    expect(enviados, diag).toHaveLength(1);
+    expect(enviados[0]!.body.startsWith(FALLBACK_INICIO), diag).toBe(true);
+    expect((await vetosGravados()).map((v) => v.vetoed_code), diag).not.toContain("mass_identical");
+    expect((await estadoDoContato()).force_human, diag).toBe(true);
   });
 
   it("contato que nunca recebeu mensagem nossa: o fallback repetido SAI (1ª resposta não passa pelo spinning)", async () => {
