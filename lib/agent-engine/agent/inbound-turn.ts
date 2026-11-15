@@ -916,10 +916,15 @@ export async function runAgentTurn(
   // `(is_blocked or force_human)` — escalar antes faria o guardrail vetar a própria
   // mensagem do SAMU.
   //
-  // Desarmado por default (`ai_agents.config.medical_emergency_gate.enabled`): produto
-  // genérico, e falso positivo aqui é caro (force_human não volta pelo agente).
+  // Ligado por default (só `ai_agents.config.medical_emergency_gate.enabled = false`
+  // desliga): instância única da clínica, decisão de 15/11/2026 — ver `emergencyGate` em
+  // `agent-config.ts`. Prova no turno real: `tests/invariants/emergencia-no-turno.test.ts`.
+  //
+  // Só no turno de ENTRADA (revisão de 15/11): o follow-up lê a mesma última mensagem
+  // recebida, que pode ser o relato antigo — depois de a equipe devolver a conversa, ele
+  // mandaria o SAMU de novo e voltaria a transferir. Mesmo critério do `routingSignal`.
   const emergency =
-    agentConfig !== null && agentConfig.emergencyGate.enabled
+    job.kind === 'inbound_turn' && agentConfig !== null && agentConfig.emergencyGate.enabled
       ? detectMedicalEmergency(inboundSignal)
       : null;
   if (emergency !== null && agentConfig !== null) {
@@ -1448,6 +1453,10 @@ export async function runAgentTurn(
             // não é dele, e a única saída seria o silêncio. O follow-up determinístico
             // idem (ver GateContext.internalVocabularyEnforced).
             enforceInternalVocabulary: true,
+            // Limites clínicos (M7): preço e orientação médica na fala do MODELO. Armado
+            // aqui pelo mesmo motivo do vocabulário interno — só aqui há quem reescreva. O
+            // veto é de qualidade: reescreve uma vez; insistindo, sai o aviso fixo.
+            enforceClinicalLimits: true,
             // Resposta a quem acabou de escrever: a 1ª saída ao contato fica fora do
             // anti-repetição (a saudação é igual para todos). Follow-up não passa por aqui.
             replyToInbound: job.kind === 'inbound_turn',
@@ -1573,6 +1582,7 @@ export async function runAgentTurn(
                   fallback: true,
                   classifyPromiseSemantic: undefined,
                   enforceInternalVocabulary: false,
+                  enforceClinicalLimits: false,
                   casesEnabled: false,
                   hasOpenCase: false,
                   openedCaseThisTurn: false,
@@ -1606,7 +1616,8 @@ export async function runAgentTurn(
                 ok: false,
                 error: {
                   code: chain.code,
-                  message: qualityVetoCount < MAX_VETOS_DE_QUALIDADE ? mensagemDeReescrita(chain.message) : chain.message,
+                  message:
+                    qualityVetoCount < MAX_VETOS_DE_QUALIDADE ? mensagemDeReescrita(chain.message, chain.code) : chain.message,
                 },
               };
             }

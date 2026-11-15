@@ -54,6 +54,7 @@ import { decidePromise } from './promise/engine';
 import { loadPromiseTable } from './promise/table';
 import type { PromiseTable } from './promise/table';
 import { renderSemanticPromiseVeto } from './promise/semantic';
+import { detectarLimiteClinico, RAZAO_VETO_ORIENTACAO, RAZAO_VETO_PRECO } from './limites-clinicos';
 import type { PromiseClassification } from './promise/semantic';
 import {
   bodyContainsDisclosure,
@@ -203,6 +204,18 @@ export interface GateContext {
    * fiação nos dois sentidos: presente no `send_message`, ausente no follow-up.
    */
   internalVocabularyEnforced?: boolean;
+  /**
+   * Arma o `clinicalLimitsGate` (M7 da auditoria): preço e orientação médica na fala do
+   * agente, os dois "nunca" da spec da clínica (§4.3 e §8.2).
+   *
+   * Mesmo desenho do `internalVocabularyEnforced`, e pelo mesmo motivo: só faz sentido
+   * onde há MODELO para reescrever. O `send_message` do agente arma; o follow-up
+   * determinístico, o `send_template`, a orientação de emergência e o aviso fixo do código
+   * não armam — lá o texto é fixo ou de humano, e um veto seria silêncio sem saída.
+   * Ausente = no-op. A fiação nos dois sentidos é cobrada por
+   * `tests/unit/gate-limites-clinicos.test.ts`.
+   */
+  clinicalLimitsEnforced?: boolean;
   /**
    * EMERGÊNCIA MÉDICA (spec da clínica §10.1): esta candidata é a orientação de urgência
    * (192/SAMU, CVV 188), disparada pelo gate determinístico ANTES do modelo.
@@ -372,6 +385,38 @@ export const semanticPromiseGate: Gate = {
       reason: renderSemanticPromiseVeto(ctx.semanticPromise.suspectPhrase),
       // detail é LOGADO: só o rótulo da camada, nunca a frase (trecho da candidata — sem PII).
       detail: { promise_layer: 'semantic' },
+    };
+  },
+};
+
+/**
+ * Gate de LIMITES CLÍNICOS (M7 da auditoria) — preço e orientação médica na fala do agente.
+ * Até aqui as duas regras duras da spec da clínica (§4.3 "nunca informa preço"; §8.2 "não
+ * dá diagnóstico, não recomenda remédio, dose ou conduta") só existiam no prompt, e o gate
+ * de promessa só barrava preço ABAIXO da tabela. Detecção determinística em
+ * `limites-clinicos.ts`; a calibração (falas da spec que não podem barrar) está nos testes.
+ *
+ * O veto é de QUALIDADE (`CODIGOS_DE_VETO_DE_QUALIDADE`): o modelo reescreve uma vez com a
+ * saída literal da spec na razão; se insistir, o código manda o aviso fixo e transfere.
+ * Orientação médica vence quando os dois aparecem (risco maior). `detail` leva só rótulos
+ * nossos — nunca o trecho, que é texto do modelo.
+ *
+ * Posição 6.2 de `BEFORE_SEND_GATES`: logo após as duas camadas de promessa comercial (o
+ * preço abaixo da tabela continua sendo `promise_out_of_table`, a mensagem mais precisa
+ * para esse caso) e antes de `case_promise`.
+ */
+export const clinicalLimitsGate: Gate = {
+  name: 'clinical_limits',
+  evaluate: (ctx) => {
+    if (ctx.clinicalLimitsEnforced !== true) return { pass: true };
+    const achado = detectarLimiteClinico(ctx.body);
+    if (!achado.achou) return { pass: true };
+    const orientacao = achado.tipos[0] === 'orientacao_medica';
+    return {
+      pass: false,
+      code: orientacao ? 'medical_advice' : 'price_disclosed',
+      reason: orientacao ? RAZAO_VETO_ORIENTACAO : RAZAO_VETO_PRECO,
+      detail: { clinical_kinds: achado.tipos.join(','), clinical_rules: achado.regras.join(',') },
     };
   },
 };
@@ -570,7 +615,7 @@ const spinningGate: Gate = {
  *
  * O que esta versão NÃO cobre, de propósito: comportamento condicional DENTRO de um gate
  * (hoje, `emergencyOverride` desarmando `pacing`/`spinning`). A cadeia continua com os
- * mesmos 10 gates na mesma ordem, e o trace já registra a diferença por envio — o gate
+ * mesmos gates na mesma ordem, e o trace já registra a diferença por envio — o gate
  * desarmado sai como `skipped`, não como `pass`. Bumpar aqui por mudança interna diria
  * "a ordem mudou" a quem lê, que é justamente o que esta constante significa. Quem pina
  * aquele comportamento é `tests/unit/gate-emergencia-override.test.ts`.
@@ -592,8 +637,11 @@ const spinningGate: Gate = {
  * nasce DESARMADO por default (ver `GateContext.internalVocabularyEnforced`): só o
  * caminho do agente o arma, então, como a v5, a v6 não muda o destino de nenhum envio
  * que já existia — muda o TRACE, e passa a medir o vazamento onde há modelo para ensinar.
+ * v7 = insere `clinicalLimitsGate` entre `semantic_promise` e `case_promise` — preço e
+ * orientação médica na fala do agente (M7 da auditoria). Armado só no `send_message`; nos
+ * demais caminhos registra `pass`, então só a fala do modelo muda de destino.
  */
-export const BEFORE_SEND_CHAIN_VERSION = 6;
+export const BEFORE_SEND_CHAIN_VERSION = 7;
 
 /**
  * Ordem FINAL da cadeia (F4-08/F4-09; edge-contract §before_send / blueprint órgão 5) — DADO
@@ -605,6 +653,8 @@ export const BEFORE_SEND_CHAIN_VERSION = 6;
  *   (4) spinning — template idêntico em massa (F2-12);
  *   (5) promise — validação determinística de preço/desconto/parcelamento (F4-01);
  *   (6) semantic_promise — promessa em texto livre que a regex não pega (F4-02);
+ *   (6.2) clinical_limits — preço e orientação médica na fala do agente (M7; spec da clínica
+ *         §4.3 e §8.2);
  *   (6.5) case_promise — anti-alucinação de casos humanos (spec 15 §10.2, Wave 4);
  *   (6.7) internal_vocabulary — vazamento de vocabulário interno ao cliente (doutrina
  *         `separacao-fala-e-operacao.md`); antes do disclosure porque ele pode emendar o corpo;
@@ -619,6 +669,7 @@ export const BEFORE_SEND_GATES: readonly Gate[] = [
   spinningGate,
   promiseGate,
   semanticPromiseGate,
+  clinicalLimitsGate,
   casePromiseGate,
   internalVocabularyGate,
   disclosureGate,
@@ -730,6 +781,11 @@ export interface RunBeforeSendArgs {
    */
   enforceInternalVocabulary?: boolean;
   /**
+   * Arma o `clinicalLimitsGate` (preço e orientação médica). Ausente = no-op — ver
+   * `GateContext.clinicalLimitsEnforced` para onde arma e por quê.
+   */
+  enforceClinicalLimits?: boolean;
+  /**
    * Marca esta chamada como a orientação de EMERGÊNCIA MÉDICA (§10.1 da spec da
    * clínica). Fura `pacing` e `spinning`; NÃO fura `stop` nem `lgpd`. Ver
    * `GateContext.emergencyOverride` para o porquê de cada lado dessa linha.
@@ -823,6 +879,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       hasOpenCase: args.hasOpenCase ?? false,
       openedCaseThisTurn: args.openedCaseThisTurn ?? false,
       internalVocabularyEnforced: args.enforceInternalVocabulary ?? false,
+      clinicalLimitsEnforced: args.enforceClinicalLimits ?? false,
       emergencyOverride: args.emergencyOverride ?? false,
       firstReplyToInbound: args.replyToInbound === true && isFirstOutbound,
     };

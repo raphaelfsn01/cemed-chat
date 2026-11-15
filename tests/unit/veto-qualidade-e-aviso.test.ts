@@ -39,8 +39,13 @@ function dbFalso() {
 }
 
 describe("quais vetos contam como qualidade", () => {
-  it("só promise_semantic e promise_out_of_table", () => {
-    expect([...CODIGOS_DE_VETO_DE_QUALIDADE].sort()).toEqual(["promise_out_of_table", "promise_semantic"]);
+  it("promessa (promise_semantic, promise_out_of_table) e limites clínicos (price_disclosed, medical_advice)", () => {
+    expect([...CODIGOS_DE_VETO_DE_QUALIDADE].sort()).toEqual([
+      "medical_advice",
+      "price_disclosed",
+      "promise_out_of_table",
+      "promise_semantic",
+    ]);
   });
 
   it("vetos de parada e os com fail-safe próprio NÃO contam", () => {
