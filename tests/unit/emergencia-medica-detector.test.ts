@@ -83,6 +83,32 @@ describe("detectMedicalEmergency", () => {
       "vocês fazem eletrocardiograma?",
       "bom dia, gostaria de saber o horário de vocês",
       "",
+      // Revisão do M7 (15/11): com o detector LIGADO por padrão, estas frases comuns de
+      // WhatsApp disparavam o SAMU e passavam a conversa para a equipe.
+      "Apaguei a mensagem sem querer",
+      "Apaguei sem querer o áudio",
+      "A mensagem apaguei, pode reenviar?",
+      "Não consigo acordar cedo, tem horário à tarde?",
+      "O telefone de vocês não responde",
+      "O site não está respondendo",
+      "Ela desmaiou ontem?",
+      "Minha mãe está com consulta marcada, ela teve convulsão ano passado",
+      // 2ª rodada da revisão: "ela" é quase sempre a recepcionista; quem escreve está acordado.
+      "Mandei pra Andrea e ela não responde",
+      "Liguei pra clínica e ela não responde",
+      "Ele não responde minhas mensagens",
+      "A pessoa não responde mais",
+      "Não consigo acordar muito cedo",
+      "Não consigo acordar 6h",
+      "Meu pai está com dor nas costas e teve desmaio ano passado",
+      "Minha mãe tá com dor no joelho, mas desmaiou semana passada",
+      // 3ª rodada da revisão
+      "Minha mãe não responde no WhatsApp, posso agendar por mim?",
+      "Meu marido não responde aqui, vou marcar eu mesma",
+      "O paciente não responde no telefone",
+      "Meu filho não responde quando chamo pelo nome, quero agendar avaliação",
+      "A bebê não responde direito ao nome, quero marcar consulta",
+      "Ele não acorda cedo, tem horário à tarde?",
     ];
     for (const msg of negativos) {
       it(`ignora: "${msg}"`, () => {
@@ -99,6 +125,25 @@ describe("detectMedicalEmergency", () => {
       ).toBe("clinical");
       expect(detectMedicalEmergency("meu filho não consigo acordar, urgente")).not.toBeNull();
     });
+
+    // Revisão do M7: emergência de TERCEIRO no presente era anulada pelo "meu/minha".
+    for (const msg of [
+      "Meu pai está com dor no peito",
+      "Meu filho desmaiou agora",
+      "Minha mãe está com falta de ar",
+      "meu marido teve convulsão agora",
+      "meu pai não responde",
+      "meu pai não está respondendo, socorro",
+      // sintoma em curso há dias continua sendo emergência em curso
+      "Estou há 2 dias com dor no peito",
+      "Há 2 dias sinto falta de ar",
+      "Desde ontem com falta de ar",
+      "Ontem comecei a sentir dor no peito e agora tá pior",
+    ]) {
+      it(`dispara para terceiro no presente: "${msg}"`, () => {
+        expect(detectMedicalEmergency(msg)).toBe("clinical");
+      });
+    }
   });
 
   describe("mensagens de conduta", () => {

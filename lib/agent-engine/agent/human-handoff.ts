@@ -358,12 +358,27 @@ const REESCRITA_POR_CODIGO: Readonly<Record<string, { rotulo: string; como: stri
 };
 const REESCRITA_DE_PROMESSA = { rotulo: 'promessa', como: 'sem prometer nada' };
 
-/** O veto devolvido ao modelo no 1º veto de qualidade: ensina a reescrever, não a transferir. */
+/**
+ * O veto devolvido ao modelo no 1º veto de qualidade: ensina a reescrever.
+ *
+ * Promessa: não transferir por causa do aviso (teste real de 30/10 — o modelo transferia
+ * e o paciente ficava sem resposta). Limites clínicos: a spec MANDA transferir quem pergunta
+ * preço ou traz tema clínico (§4.3, §11.1), e a própria fala sugerida diz "vou passar sua
+ * conversa"; proibir a transferência faria o agente anunciar algo que não acontece. A regra
+ * que resta é a que protege o paciente: a reescrita sai ANTES da transferência.
+ */
 export function mensagemDeReescrita(motivoDoVeto: string, codigo?: string): string {
-  const { rotulo, como } = (codigo !== undefined ? REESCRITA_POR_CODIGO[codigo] : undefined) ?? REESCRITA_DE_PROMESSA;
+  const clinico = codigo !== undefined ? REESCRITA_POR_CODIGO[codigo] : undefined;
+  if (clinico !== undefined) {
+    return (
+      `Mensagem vetada (${clinico.rotulo}). Reescreva UMA vez, ${clinico.como}, e envie a reescrita ` +
+      'com send_message ANTES de transferir; depois disso, transfira se a conversa pedir. ' +
+      `Motivo: ${motivoDoVeto}`
+    );
+  }
   return (
-    `Mensagem vetada (${rotulo}). Reescreva UMA vez, ${como}; não transfira por causa ` +
-    'deste aviso; transfira só se a reescrita também for vetada. ' +
+    `Mensagem vetada (${REESCRITA_DE_PROMESSA.rotulo}). Reescreva UMA vez, ${REESCRITA_DE_PROMESSA.como}; ` +
+    'não transfira por causa deste aviso; transfira só se a reescrita também for vetada. ' +
     `Motivo: ${motivoDoVeto}`
   );
 }

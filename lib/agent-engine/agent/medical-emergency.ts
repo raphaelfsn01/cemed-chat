@@ -45,11 +45,18 @@ const CLINICAL_PATTERNS: readonly RegExp[] = [
   // desmaio / perda de consciencia
   /\bdesmai(?:ei|ou|ando|o)\b/,
   /\bperdi\s+a\s+consciencia\b/,
-  /\bapaguei\b/,
+  // "apaguei" saiu (revisão de 15/11, com o detector LIGADO por padrão): no WhatsApp é
+  // quase sempre "apaguei a mensagem". "desmaiei" e "perdi a consciência" cobrem o caso.
+  //
   // irresponsividade — pessoa que não acorda/não responde é inconsciência até prova
-  // em contrário. Faltava, e o teste de 1ª pessoa no presente pegou.
-  /\bnao\s+(?:consigo\s+)?acord(?:a|ar)\b/,
-  /\bnao\s+(?:esta\s+)?respond(?:e|endo)\b/,
+  // em contrário. Faltava, e o teste de 1ª pessoa no presente pegou. Com o detector
+  // ligado, as duas formas pedem contexto de PESSOA (revisão de 15/11): "não consigo
+  // acordar cedo", "o telefone de vocês não responde" e "ela [a recepcionista] não
+  // responde" disparavam o SAMU. Quem diz "não consigo acordar" está acordado — só vale
+  // quando o objeto é outra pessoa ("meu filho, não consigo acordar").
+  /\bnao\s+(?:esta\s+)?acord(?:a|ando)\b(?!\s+(?:cedo|tarde|de\s+manha|a\s+tempo|antes|para|pra|as\b|no\s+horario|sozinh))/,
+  /\bnao\s+consigo\s+acord(?:ar|a-lo|a-la)\s*(?:[,.!?]|$|(?:ele|ela|o|a|meu|minha)\b)/,
+  /\b(?:pai|mae|filh[oa]|marido|espos[ao]|avo|vo|irma[oa]?|bebe|crianca|paciente)\s+(?:\w+\s+)?nao\s+(?:esta\s+)?respond(?:e|endo)\s*(?=[,.!?]|$|a\s+nada|mais\s+nada)/,
   /\bdesacordad[oa]\b/,
   /\bdesmaiad[oa]\b/,
   // sangramento intenso
@@ -108,6 +115,10 @@ const PAST_OR_THIRD_PARTY: readonly RegExp[] = [
   /\b(?:quero|preciso|gostaria\s+de)\s+(?:marcar|agendar|remarcar)\b/,
   /\b(?:exame|consulta)\s+(?:admissional|demissional|periodic[oa]|ocupacional)\b/,
   /\bacidente\s+de\s+trabalho\b/,
+  // passado recente: "ela desmaiou ontem?" é relato, não emergência em curso. Só com
+  // verbo no passado: "desde ontem com falta de ar" e "estou há 2 dias com dor no peito"
+  // são sintoma EM CURSO (revisão de 15/11).
+  /\b(?:desmaiou|desmaiei|teve|tive|caiu|cai|passou\s+mal|passei\s+mal|convulsionou)\s+(?:\w+\s+){0,2}?ontem\b/,
 ];
 
 /**
@@ -122,6 +133,16 @@ const PRESENT_MARKERS: readonly RegExp[] = [
   /\bemergencia\b/,
   /\bnao\s+(?:consigo|aguento)\b/,
   /\bme\s+ajuda\b/,
+  // TERCEIRO no presente (revisão de 15/11): "meu pai está com dor no peito" era anulado
+  // pelo "meu pai". "Está com" só conta junto de sintoma — "está com consulta marcada"
+  // não é presente de emergência.
+  // O sintoma tem de ser o DE EMERGÊNCIA, colado ao "está com": "está com dor nas costas"
+  // não pode vencer um "desmaiou ano passado" (revisão de 15/11).
+  /\b(?:esta|ta)\s+(?:com|sentindo|tendo)\s+(?:muita\s+|uma?\s+)?(?:dor\s+(?:muito\s+)?(?:forte\s+)?(?:no|na|em)\s+(?:meu\s+|seu\s+)?peito|falta\s+de\s+ar|sangramento|sangrando|convuls|dificuldade\s+(?:para|pra|de)\s+respirar)/,
+  /\b(?:teve|desmaiou|caiu|convulsionou|apagou|passou\s+mal)\b[^.!?]{0,25}\bagora\b/,
+  // "não responde" só como fim de oração ("meu pai não responde, socorro"): "não
+  // responde no WhatsApp" e "não responde ao nome" são outra coisa (revisão de 15/11).
+  /\bnao\s+(?:esta\s+)?respond(?:e|endo)\s*(?=[,.!?]|$|a\s+nada|mais\s+nada)/,
 ];
 
 /**

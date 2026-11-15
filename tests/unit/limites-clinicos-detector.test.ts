@@ -57,6 +57,37 @@ const FALA_LEGITIMA: readonly string[] = [
   "Você gostaria de marcar com a Cardiologia?",
   "Temos Cardiologia, Neurologia, Psiquiatria, Psicologia, Urologia, Geriatria, Nutrição e Clínico Geral.",
 
+  // Falsos positivos achados na revisão (15/11): telefone, ano, andar, dia da semana.
+  "Para saber o valor, ligue 22 99946-6060",
+  "Para saber o valor ligue 22 99946-6060",
+  "Sobre o valor chame no 22999466060",
+  "Sobre o valor, chame a equipe no 22 3333 4444",
+  "O valor eu não sei, mas abrimos às 8",
+  "O valor é com a equipe, 2a a 6a",
+  "Fica em frente ao número 150",
+  "Ficam em 2 andares",
+  "A partir de 2025 atendemos também à tarde",
+  "É normal ficar ansioso antes do exame",
+  "É normal ter dúvidas sobre o exame!",
+  "Os sintomas de ansiedade são avaliados pelo psiquiatra",
+  "Você está com o pedido de ultrassom de tireoide?",
+  "Você tem alguma alergia a contraste?",
+  // 2ª rodada da revisão: horário e contagem perto de "valor".
+  "O valor é informado pela equipe das 8 às 17",
+  "O valor da consulta com 2 profissionais diferentes varia",
+  "Os valores dos 3 pacotes são com a equipe",
+  "O valor da consulta não inclui os 2 retornos",
+  "Abrimos a partir das 8,30 da manhã",
+  "Atendemos das 7,30 às 17,30",
+  "Fica em 2 quarteirões da praça",
+  "Fica em 152 na Rua Mayer",
+  "A partir de 1º de dezembro a equipe atende também por e-mail",
+  // aviso de segurança não é orientação
+  "Não recomendo tomar remédio sem orientação médica.",
+  "Não tome nenhum remédio sem orientação médica.",
+  "Nunca tome antibiótico por conta própria.",
+  "Não use pomada sem orientação.",
+
   // Fala comum de atendimento.
   "Olá! Que bom te ver por aqui.",
   "Use o link do WhatsApp para falar com a equipe.",
@@ -77,6 +108,19 @@ const PRECO: readonly string[] = [
   "O retorno é sem custo.",
   "Dá pra parcelar em até 3x no cartão.",
   "Temos 10% de desconto no particular.",
+  // Formatos que escapavam (revisão de 15/11).
+  "Valor: 150",
+  "Consulta: 150,00",
+  "O valor é de 150/consulta",
+  "O valor é 150 - pagamento no pix",
+  "A consulta é 150,00 no particular.",
+  // 3ª rodada da revisão: número seguido de palavra qualquer continua sendo preço
+  "O valor é 150 pra consulta",
+  "Custa 150 para particular",
+  "A consulta custa 150 particular",
+  "O valor é 150 mas pode variar",
+  "O valor fica 150 tá?",
+  "O valor é 150 aproximadamente",
 ];
 
 const ORIENTACAO_MEDICA: readonly string[] = [
@@ -101,6 +145,28 @@ const ORIENTACAO_MEDICA: readonly string[] = [
   // escolher especialista pela queixa (§8.2)
   "Para essa dor de cabeça, o ideal é o neurologista.",
   "Pelo que você descreveu, recomendo o cardiologista.",
+  // A negação só vale em RECUSA ("não posso dizer se..."); estas escapavam (revisão de 15/11).
+  "Não sou médica mas pode tomar dipirona",
+  "Não posso afirmar mas provavelmente é virose",
+  "Não se preocupe que provavelmente é só uma virose",
+  "Não se preocupe: provavelmente é virose",
+  "Não precisa se preocupar — provavelmente é virose",
+  "Não deixe de tomar dipirona",
+  "Nunca deixe de usar a pomada",
+  "Provavelmente, é uma virose",
+  "Pelos sintomas, é virose",
+  "Para dor de cabeça, procure um neurologista",
+  // recusa seguida de orientação na mesma oração (2ª rodada da revisão)
+  "Não sei te dizer o que é exatamente e provavelmente é virose",
+  "Não posso receitar então tome uma dipirona",
+  "Não consigo te atender agora e o ideal é procurar o cardiologista",
+  "Não vou mentir pra você e provavelmente é uma virose",
+  // "não ... além de" afirma (3ª rodada da revisão)
+  "Não deve ser nada além de uma virose",
+  "Não pode ser outra coisa além de virose",
+  "Não tome nada além de dipirona",
+  "Não use nada além da pomada",
+  "Não recomendo outra coisa além de dipirona",
 ];
 
 describe("detector de limites clínicos — calibração", () => {
@@ -133,6 +199,14 @@ describe("detector de limites clínicos — calibração", () => {
     const r = detectarLimiteClinico("Tome 500 mg de dipirona. A consulta custa R$ 200.");
     for (const regra of r.regras) expect(regra).toMatch(/^[a-z_]+$/);
     expect(r.regras.join(" ")).not.toMatch(/dipirona|500|200/);
+  });
+
+  it("texto longo não trava o detector (custo linear)", () => {
+    const longo = "1,".repeat(30000) + " reais";
+    const inicio = performance.now();
+    detectarLimiteClinico(longo);
+    detectarLimiteClinico("valor " + "a".repeat(60000));
+    expect(performance.now() - inicio).toBeLessThan(500);
   });
 
   it("acento e caixa não escondem nada", () => {

@@ -46,6 +46,7 @@ const VERSAO = "e3e3aaaa-0000-4000-8000-000000000008";
 
 type Modules = {
   createInboundTurnHandler: typeof InboundTurn.createInboundTurnHandler;
+  runAgentTurn: typeof InboundTurn.runAgentTurn;
   queue: typeof Queue;
   createLogger: typeof ObsLogger.createLogger;
   createFakeRegistry: typeof Providers.createFakeRegistry;
@@ -72,8 +73,8 @@ function supabaseFora(): never {
   return { from: () => consulta } as never;
 }
 
-function montaHandler() {
-  return m.createInboundTurnHandler({
+function deps(): Parameters<typeof InboundTurn.createInboundTurnHandler>[0] {
+  return {
     crmCfg: { supabase: supabaseFora() },
     llmCfg: { anthropicApiKey: "fake" } as never,
     knobs: {
@@ -117,7 +118,11 @@ function montaHandler() {
       }) as never,
     clock: () => AGORA,
     sleep: async () => {},
-  });
+  };
+}
+
+function montaHandler() {
+  return m.createInboundTurnHandler(deps());
 }
 
 async function rodaTurno(mensagem: string): Promise<Error | null> {
@@ -167,6 +172,7 @@ async function avisosDeHandoff(): Promise<Array<{ title: string; severity: strin
 beforeAll(async () => {
   m = {
     createInboundTurnHandler: (await import("@/lib/agent-engine/agent/inbound-turn")).createInboundTurnHandler,
+    runAgentTurn: (await import("@/lib/agent-engine/agent/inbound-turn")).runAgentTurn,
     queue: await import("@/lib/agent-engine/queue/queue"),
     createLogger: (await import("@/lib/agent-engine/obs/logger")).createLogger,
     createFakeRegistry: (await import("@/lib/agent-engine/edge/llm/providers")).createFakeRegistry,
@@ -282,6 +288,35 @@ describe("emergência médica no turno real — ligada por padrão", () => {
     );
     const erro = await rodaTurno("Estou com uma dor no peito muito forte agora");
     expect(erro).toBeNull();
+    expect(enviados).toEqual([]);
+    expect(modeloChamado).toBeGreaterThan(0);
+    expect(await forceHuman()).toBe(false);
+  });
+
+  it("follow-up depois da devolução NÃO repete a orientação: a última entrada antiga não é emergência nova", async () => {
+    // Revisão do M7: a equipe devolve a conversa, o follow-up roda e a ÚLTIMA mensagem
+    // recebida ainda é o relato antigo de dor no peito. Só um turno de ENTRADA responde
+    // a emergência; o follow-up segue para o modelo.
+    await pool.query(`update messages set body = $3 where organization_id = $1 and id = $2`, [
+      ORG,
+      MSG,
+      "Estou com uma dor no peito muito forte agora",
+    ]);
+    await pool.query("update job_queue set status = 'done' where status = 'pending'");
+    const { job } = await m.queue.enqueueJob(pool, ORG, {
+      kind: "followup_turn",
+      leadId: CONTACT,
+      payload: { conversation_id: CONV, contact_id: CONTACT, reason: "retomada" },
+      maxAttempts: 1,
+    });
+    const [claimed] = await m.queue.claimJobs(pool, { workerId: "emg", maxConcurrency: 1 });
+    expect(claimed?.id).toBe(job.id);
+    await m.runAgentTurn(deps(), claimed!, pool, { workerId: "emg" }, {
+      channelSessionId: SESSION,
+      conversationId: CONV,
+      buildOpening: () => "retomada da conversa",
+    });
+    await m.queue.completeJob(pool, claimed!.id, "emg");
     expect(enviados).toEqual([]);
     expect(modeloChamado).toBeGreaterThan(0);
     expect(await forceHuman()).toBe(false);

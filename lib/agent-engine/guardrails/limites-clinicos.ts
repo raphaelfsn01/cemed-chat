@@ -47,7 +47,7 @@ function normalizar(texto: string): string {
   return texto
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/gu, '')
+    .replace(/\p{M}/gu, '')
     .replace(/\s+/g, ' ');
 }
 
@@ -56,18 +56,34 @@ function frases(texto: string): string[] {
   return texto.split(/[.!?;\n]+/).filter((f) => f.trim() !== '');
 }
 
+/** O que separa a negação do achado: pontuação de pausa ou uma adversativa. */
+const QUEBRA_DE_TRECHO = /[,:;\p{Pd}]| mas | porem | entretanto | so que | e | entao | agora | porque | pois /gu;
+
 /**
- * A ocorrência está negada se, no trecho da frase ANTES dela e depois da última vírgula,
- * houver "não/nunca/nem". "Não consigo dizer se você tem virose" é recusa; "Não se
- * preocupe, provavelmente é virose" é diagnóstico (a vírgula separa a negação).
+ * Negação que vale é RECUSA do assistente: "não consigo dizer se é virose", "não posso
+ * indicar remédio". Qualquer outro "não" antes do achado não o anula — "não se preocupe
+ * que provavelmente é virose" e "não deixe de tomar dipirona" são orientação (revisão de
+ * 15/11: a versão anterior aceitava qualquer "não" e deixava essas passarem).
+ */
+const RECUSA =
+  /\b(?:nao|nem)\s+(?:\w+\s+){0,2}?(?:consigo|posso|podemos|conseguimos|sei|da pra|da para|tenho como|temos como|e possivel|recomendo|indico|indicamos|receitamos|prescrevemos)\b/;
+
+/**
+ * A recusa só cobre a própria oração: "e", "então", "agora" a encerram ("não posso receitar
+ * então tome uma dipirona" é orientação). E o "não" colado ao achado o nega por inteiro —
+ * "não tome remédio sem orientação" é aviso de segurança, não receita (revisão de 15/11).
  */
 function negada(frase: string, inicio: number): boolean {
   const antes = frase.slice(0, inicio);
-  const ultimoTrecho = antes.slice(antes.lastIndexOf(',') + 1);
-  return /\b(?:nao|nunca|nem)\b/.test(ultimoTrecho);
+  // "não ... além de / senão / a não ser" AFIRMA: "não deve ser nada além de uma virose".
+  if (/\b(?:alem d|senao\b|a nao ser|exceto\b|so\s+(?:o|a|um|uma)\b)/.test(frase.slice(inicio))) return false;
+  if (/\b(?:nao|nunca|nem)\s+$/.test(antes)) return true;
+  let corte = 0;
+  for (const q of antes.matchAll(QUEBRA_DE_TRECHO)) corte = (q.index ?? 0) + q[0].length;
+  return RECUSA.test(antes.slice(corte));
 }
 
-/** Casa em alguma frase sem negação antes da ocorrência. */
+/** Casa em alguma frase sem recusa antes da ocorrência. */
 function casaSemNegacao(texto: string, re: RegExp): boolean {
   const global = new RegExp(re.source, 'g');
   for (const frase of frases(texto)) {
@@ -81,25 +97,60 @@ function casaSemNegacao(texto: string, re: RegExp): boolean {
 // ─── PREÇO (§4.3) ────────────────────────────────────────────────────────────
 
 /**
- * Número que NÃO é dinheiro: hora, duração, data, telefone, contagem de coisa.
- * Aplicado logo depois do número inteiro (o `(?![.,]?\d)` impede casar só um pedaço
- * de "24h" ou de "99946-6060").
+ * Um número inteiro (até 5 dígitos, ou milhar com ponto), nunca pedaço de outro: o
+ * lookbehind impede começar no meio, e o `(?![.,]?\d)` impede parar no meio — sem isso a
+ * regex recuava para casar só o "2" de "24h". Telefone (5+ dígitos seguidos) não cabe.
  */
+const NUMERO = '(?<![\\d(.,])(?:\\d{1,3}(?:\\.\\d{3})+(?:,\\d{2})?|\\d{1,5}(?:[.,]\\d+)?)(?![.,]?\\d)';
+
+/** Número que NÃO é dinheiro: hora, duração, data, telefone, ordinal, contagem de coisa. */
 const NAO_E_DINHEIRO =
-  '(?![.,]?\\d)(?!\\s*(?:h\\b|hs\\b|hrs?\\b|horas?\\b|min|dias?\\b|anos?\\b|mes(?:es)?\\b|semanas?\\b|' +
-  '%|x\\b|vez(?:es)?\\b|[:/)\\-]|de\\s+(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|' +
-  'outubro|novembro|dezembro)\\b|km\\b|metros?\\b|sess(?:ao|oes)\\b|consultas?\\b|exames?\\b|' +
-  'especialidades\\b|colaboradores\\b|funcionarios\\b|pessoas\\b))';
+  '(?![aoªº°](?![a-z]))(?!\\s+\\d)(?!\\s*(?:[:)]|[/-]\\s*\\d|h\\b|hs\\b|hrs?\\b|horas?\\b|min|dias?\\b|anos?\\b|' +
+  'mes(?:es)?\\b|semanas?\\b|%|x\\b|vez(?:es)?\\b|de\\s+(?:janeiro|fevereiro|marco|abril|maio|junho|julho|' +
+  'agosto|setembro|outubro|novembro|dezembro)\\b|km\\b|metros?\\b|andar(?:es)?\\b|salas?\\b|unidades?\\b|' +
+  'vagas?\\b|sess(?:ao|oes)\\b|consultas?\\b|exames?\\b|especialidades\\b|colaboradores\\b|funcionarios\\b|' +
+  // contagem perto de "valor" ("os 2 retornos", "com 2 profissionais", "dos 3 pacotes").
+  // Lista NEGRA de propósito: uma lista de palavras PERMITIDAS depois do preço não fecha
+  // ("150 pra consulta", "150 particular" escapavam — revisão de 15/11).
+  'pessoas\\b|profissionais\\b|medic[oa]s\\b|pacotes?\\b|retornos\\b|procedimentos\\b|opcoes\\b|' +
+  'tipos\\b|planos\\b|convenios\\b|itens\\b))';
+
+/** "das 8 às 17": dois números de até 2 dígitos ligados por "às/a/até" são horário. */
+const HORARIO_NAO = '(?!\\d{1,2}\\s+(?:as|a|ate)\\s+\\d{1,2}(?!\\d))';
 
 const REGRAS_PRECO: ReadonlyArray<readonly [string, RegExp]> = [
   ['moeda', /r\$\s*\d/],
-  ['reais', /\b\d[\d.,]*\s*(?:reais|real|contos?|pilas?)\b/],
+  // `(?<![\d.,])`: só começa no início do número — sem isso o custo era quadrático
+  // ("1,1,1,..." de 60 mil caracteres levava 7,5 s).
+  ['reais', /(?<![\d.,])\d[\d.,]*\s*(?:reais|real|contos?|pilas?)\b/],
+  // Valor com centavos ("150,00", "1.500,00"): formato de preço por si só.
+  // Hora com vírgula ("das 7,30 às 17,30", "8,30 da manhã") não é preço.
   [
+    'centavos',
+    /(?<![\d.,])(?<!\b(?:as|das|ate)\s)(?:\d{1,3}(?:\.\d{3})+|\d{1,5}),\d{2}(?![\d,])(?!\s*(?:%|km|kg|m\b|graus|h\b|horas|da\s+(?:manha|tarde|noite)|as\s+\d))/,
+  ],
+  [
+    // Palavra de preço e o número na MESMA oração: a janela para na vírgula ("o valor,
+    // ligue 22 99946..." não é preço). Os dois pontos ficam dentro ("Valor: 150").
     'valor_numero',
     new RegExp(
-      '\\b(?:valor(?:es)?|precos?|custa(?:m)?|custo|sai\\s+(?:por|a)|fica(?:m)?\\s+(?:em|por)|' +
-        'cobra(?:mos|m)?|a\\s+partir\\s+de|investimento|mensalidade|por\\s+(?:apenas|so))\\b' +
-        '[^.!?;:\\n\\d(]{0,30}(?<![\\d(])\\d+(?:[.,]\\d+)*' +
+      '\\b(?:valor(?:es)?|precos?|custa(?:m)?|custo|cobra(?:mos|m)?|investimento|mensalidade)\\b' +
+        '[^.!?;,\\n\\d(]{0,30}' +
+        HORARIO_NAO +
+        NUMERO +
+        NAO_E_DINHEIRO,
+    ),
+  ],
+  [
+    // Locuções fracas ("fica por", "a partir de") só contam com o número LOGO depois —
+    // "a partir de 2025" não é preço. "Fica em" saiu: é endereço ("fica em 152 na Rua
+    // Mayer", "fica em 2 quarteirões"); "fica em 200 reais" a regra `reais` já pega.
+    'locucao_numero',
+    new RegExp(
+      '\\b(?:sai(?:m)?\\s+(?:por|a)|fica(?:m)?\\s+por|a\\s+partir\\s+de|por\\s+(?:apenas|so))\\s+(?:r\\$\\s*)?' +
+        '(?!(?:19|20)\\d\\d(?!\\d))' +
+        HORARIO_NAO +
+        NUMERO +
         NAO_E_DINHEIRO,
     ),
   ],
@@ -122,11 +173,16 @@ const DOENCAS =
   'distensao|entorse|fratura|lombalgia|ciatico|hemorroida|varizes|insonia|apneia|arritmia|taquicardia|' +
   'infarto|avc|derrame|epilepsia|demencia|alzheimer|parkinson|cancer|tumor|nodulo|cisto|alopecia|calvicie)';
 
+/**
+ * Abertura de diagnóstico. Fora de propósito (revisão de 15/11): "você tem", "você está
+ * com", "os sintomas de" — casavam pergunta e catálogo legítimos ("você tem alergia a
+ * contraste?", "os sintomas de ansiedade são avaliados pelo psiquiatra").
+ */
 const ABERTURA_DE_DIAGNOSTICO =
   '(?:provavelmente|possivelmente|talvez seja|deve ser|parece (?:ser|uma?|com)|pode ser|e provavel|' +
-  'isso (?:e|indica|parece|sugere)|voce (?:tem|esta com|pode estar com|deve estar com|esta tendo)|' +
-  '(?:seus|esses|estes|os) sintomas|sintomas? (?:de|tipicos? de|compativeis com|indicam)|sinais? de|' +
-  'quadro de|caracteristic\\w* de)';
+  'isso (?:e|indica|parece|sugere)|voce (?:pode|deve) estar com|voce esta tendo|' +
+  '(?:seus|esses|estes) sintomas|pelos sintomas|sintomas? (?:tipicos? de|compativeis com|indicam)|' +
+  'sinais? de|quadro de|caracteristic\\w* de)';
 
 const REMEDIOS =
   '(?:remedios?|medicamentos?|medicac(?:ao|oes)|comprimidos?|antibioticos?|anti-?inflamatorios?|' +
@@ -143,9 +199,10 @@ const ESPECIALISTAS =
   'nutricionista|endocrinologista|ortopedista|dermatologista|gastro\\w*|cardiologia|neurologia|' +
   'psiquiatria|psicologia|urologia|geriatria|nutricao|especialista)';
 
-/** [rótulo, regex, respeita negação?] */
+/** [rótulo, regex, respeita recusa?] */
 const REGRAS_ORIENTACAO: ReadonlyArray<readonly [string, RegExp, boolean]> = [
-  ['diagnostico', new RegExp(`\\b${ABERTURA_DE_DIAGNOSTICO}\\b[^,]{0,30}?\\b${DOENCAS}\\b`), true],
+  // "Provavelmente, é virose": a vírgula logo após a abertura não separa o diagnóstico.
+  ['diagnostico', new RegExp(`\\b${ABERTURA_DE_DIAGNOSTICO}\\b(?:\\s*,)?[^,]{0,30}?\\b${DOENCAS}\\b`), true],
   ['remedio', new RegExp(`\\b${VERBO_DE_USO}\\b[^,]{0,40}?\\b${REMEDIOS}\\b`), true],
   ['dose', /\b\d+(?:[.,]\d+)?\s*(?:mg|mcg|ml|gotas|comprimidos?|capsulas?|ui)\b/, false],
   ['posologia', /\bde\s+\d+\s+em\s+\d+\s+h(?:oras|s)?\b|\b\d+\s+vez(?:es)?\s+(?:ao|por)\s+dia\b/, false],
@@ -155,14 +212,16 @@ const REGRAS_ORIENTACAO: ReadonlyArray<readonly [string, RegExp, boolean]> = [
     true,
   ],
   [
+    // "É normal ficar ansioso antes do exame" é acolhimento; "é normal doer/ter febre" é
+    // prognóstico de sintoma.
     'prognostico',
-    /\bnao\s+(?:e|parece)\s+(?:nada\s+)?grave\b|\be\s+normal\s+(?:sentir|ter|doer|sangrar|inchar|ficar)\b|\b(?:isso|a dor|o sintoma|os sintomas)\s+(?:vai|vao|deve|devem|costuma|costumam)\s+passar\b|\bvai\s+passar\s+(?:sozinh|logo|em)/,
+    /\bnao\s+(?:e|parece)\s+(?:nada\s+)?grave\b|\be\s+normal\s+(?:sentir|doer|sangrar|inchar)\b|\be\s+normal\s+ter\s+(?:dor|febre|sangramento|inchaco|tontura|enjoo|nausea|formigamento)\b|\b(?:isso|a dor|o sintoma|os sintomas)\s+(?:vai|vao|deve|devem|costuma|costumam)\s+passar\b|\bvai\s+passar\s+(?:sozinh|logo|em)/,
     false,
   ],
   [
     'especialista',
     new RegExp(
-      `\\b(?:o (?:mais )?(?:ideal|indicado|recomendado|certo)|recomendo|sugiro|indico|o melhor)\\b[^.!?;\\n]{0,25}?\\b${ESPECIALISTAS}\\b`,
+      `\\b(?:o (?:mais )?(?:ideal|indicado|recomendado|certo)|recomendo|sugiro|indico|o melhor|procur(?:e|ar))\\b[^.!?;\\n]{0,25}?\\b${ESPECIALISTAS}\\b`,
     ),
     true,
   ],
@@ -173,8 +232,8 @@ export function detectarLimiteClinico(body: string): AchadoLimiteClinico {
   const regras: string[] = [];
   const tipos: LimiteClinico[] = [];
 
-  const orientacao = REGRAS_ORIENTACAO.filter(([, re, respeitaNegacao]) =>
-    respeitaNegacao ? casaSemNegacao(texto, re) : re.test(texto),
+  const orientacao = REGRAS_ORIENTACAO.filter(([, re, respeitaRecusa]) =>
+    respeitaRecusa ? casaSemNegacao(texto, re) : re.test(texto),
   ).map(([rotulo]) => rotulo);
   if (orientacao.length > 0) {
     tipos.push('orientacao_medica');
@@ -190,16 +249,17 @@ export function detectarLimiteClinico(body: string): AchadoLimiteClinico {
   return { achou: tipos.length > 0, tipos, regras };
 }
 
-/** Razão devolvida ao modelo no veto de preço: a saída literal da spec §4.3. */
+/** Razão devolvida ao modelo no veto de preço: a fala da spec §4.3, inteira. */
 export const RAZAO_VETO_PRECO =
   'a clínica nunca informa preço, valor, faixa de preço nem "a partir de" — quem informa é a ' +
   'equipe. Tire todo valor da mensagem e diga, por exemplo: "Os valores variam conforme o ' +
   'procedimento e a forma de atendimento. Vou passar sua conversa para a nossa equipe, que te ' +
-  'informa certinho."';
+  'informa certinho. Pode me confirmar seu nome?"';
 
-/** Razão devolvida ao modelo no veto de orientação médica: a saída literal da spec §8.3. */
+/** Razão devolvida ao modelo no veto de orientação médica: a fala da spec §8.3, inteira. */
 export const RAZAO_VETO_ORIENTACAO =
   'o assistente não dá diagnóstico, não interpreta sintoma ou exame, não recomenda remédio, dose ' +
   'ou conduta e não escolhe especialista pela queixa. Tire a orientação e diga, por exemplo: ' +
   '"Essa é uma avaliação que só o profissional pode fazer, então não consigo te orientar por ' +
-  'aqui. O que dá pra fazer é encaminhar você para a nossa equipe marcar uma consulta."';
+  'aqui. O que dá pra fazer é encaminhar você para a nossa equipe marcar uma consulta — quer que ' +
+  'eu faça isso?"';

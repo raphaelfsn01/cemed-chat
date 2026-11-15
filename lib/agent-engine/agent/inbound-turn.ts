@@ -919,8 +919,12 @@ export async function runAgentTurn(
   // Ligado por default (só `ai_agents.config.medical_emergency_gate.enabled = false`
   // desliga): instância única da clínica, decisão de 15/11/2026 — ver `emergencyGate` em
   // `agent-config.ts`. Prova no turno real: `tests/invariants/emergencia-no-turno.test.ts`.
+  //
+  // Só no turno de ENTRADA (revisão de 15/11): o follow-up lê a mesma última mensagem
+  // recebida, que pode ser o relato antigo — depois de a equipe devolver a conversa, ele
+  // mandaria o SAMU de novo e voltaria a transferir. Mesmo critério do `routingSignal`.
   const emergency =
-    agentConfig !== null && agentConfig.emergencyGate.enabled
+    job.kind === 'inbound_turn' && agentConfig !== null && agentConfig.emergencyGate.enabled
       ? detectMedicalEmergency(inboundSignal)
       : null;
   if (emergency !== null && agentConfig !== null) {

@@ -58,7 +58,7 @@ describe("clinicalLimitsGate — decisão", () => {
     if (v.pass) throw new Error("inalcançável");
     expect(v.code).toBe("price_disclosed");
     expect(v.reason).toContain("Os valores variam conforme o procedimento");
-    expect(v.detail).toEqual({ clinical_kinds: "preco", clinical_rules: "moeda,valor_numero" });
+    expect(v.detail).toEqual({ clinical_kinds: "preco", clinical_rules: "moeda,centavos,valor_numero" });
   });
 
   it("armado: orientação médica vira veto medical_advice, com a saída da spec (§8.3) na razão", () => {
@@ -100,14 +100,36 @@ describe("os vetos clínicos seguem o caminho da qualidade: reescrever uma vez, 
     expect(CODIGOS_DE_VETO_DE_QUALIDADE.has("medical_advice")).toBe(true);
   });
 
-  it("a instrução de reescrita fala do limite certo, não de promessa", () => {
+  it("a instrução de reescrita fala do limite certo e não proíbe a transferência da spec", () => {
+    // A spec (§4.3, §11.1) manda transferir quem pergunta preço ou traz tema clínico. A
+    // regra é só ENVIAR a reescrita antes — transferir calado deixaria o paciente sem nada.
+    for (const code of ["price_disclosed", "medical_advice"]) {
+      const m = mensagemDeReescrita("m", code);
+      expect(m).toContain("envie a reescrita com send_message ANTES de transferir");
+      expect(m).not.toContain("não transfira por causa deste aviso");
+      expect(m).not.toContain("promessa");
+    }
     expect(mensagemDeReescrita("m", "price_disclosed")).toContain("Reescreva UMA vez, sem nenhum valor");
     expect(mensagemDeReescrita("m", "medical_advice")).toContain(
       "Reescreva UMA vez, sem diagnóstico, remédio ou conduta",
     );
-    expect(mensagemDeReescrita("m", "price_disclosed")).not.toContain("promessa");
     // sem código: o texto de promessa de antes, para quem já o chamava assim
     expect(mensagemDeReescrita("m")).toContain("Reescreva UMA vez, sem prometer nada");
+    expect(mensagemDeReescrita("m")).toContain("não transfira por causa deste aviso");
+  });
+
+  it("as razões trazem a fala da spec INTEIRA (§4.3 e §8.3), e ela passa no próprio detector", async () => {
+    const { RAZAO_VETO_PRECO, RAZAO_VETO_ORIENTACAO, detectarLimiteClinico } = await import(
+      "@/lib/agent-engine/guardrails/limites-clinicos"
+    );
+    const fala43 =
+      "Os valores variam conforme o procedimento e a forma de atendimento. Vou passar sua conversa para a nossa equipe, que te informa certinho. Pode me confirmar seu nome?";
+    const fala83 =
+      "Essa é uma avaliação que só o profissional pode fazer, então não consigo te orientar por aqui. O que dá pra fazer é encaminhar você para a nossa equipe marcar uma consulta — quer que eu faça isso?";
+    expect(RAZAO_VETO_PRECO).toContain(fala43);
+    expect(RAZAO_VETO_ORIENTACAO).toContain(fala83);
+    expect(detectarLimiteClinico(fala43).achou).toBe(false);
+    expect(detectarLimiteClinico(fala83).achou).toBe(false);
   });
 });
 
@@ -154,7 +176,7 @@ describe("a cadeia REAL barra preço — e só quando armada", () => {
       gate: "clinical_limits",
       verdict: "veto",
       code: "price_disclosed",
-      detail: { clinical_kinds: "preco", clinical_rules: "moeda,valor_numero", body_len: PRECO.length },
+      detail: { clinical_kinds: "preco", clinical_rules: "moeda,centavos,valor_numero", body_len: PRECO.length },
     });
   });
 
