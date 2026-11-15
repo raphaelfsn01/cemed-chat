@@ -92,6 +92,13 @@ export interface GateContext {
    */
   handoffActive: boolean;
   /**
+   * Esta candidata é o AVISO DE TRANSFERÊNCIA agendado para a abertura da janela (PR-1b,
+   * `agent/aviso-de-transferencia.ts`): texto fixo do código que diz ao paciente que a
+   * conversa foi para a equipe. Dispensa SÓ o veto `handoff_ativo` — é justamente a
+   * transferência que ele anuncia. O opt-out (`optedOut`) continua vetando. Ausente = false.
+   */
+  handoffNotice?: boolean;
+  /**
    * Canal desta tentativa. Nenhum gate pergunta QUEM é o provider (invariante 1
    * de `docs/doctrine/restricao-de-canal.md`) — só o entrega a `capabilitiesOf`
    * para perguntar o que o canal permite.
@@ -294,7 +301,7 @@ const stopGate: Gate = {
           'possível enviar nada a ele; encerre o turno sem tentar de novo.',
       };
     }
-    if (ctx.handoffActive) {
+    if (ctx.handoffActive && ctx.handoffNotice !== true) {
       return {
         pass: false,
         code: 'handoff_ativo',
@@ -786,6 +793,11 @@ export interface RunBeforeSendArgs {
    */
   enforceClinicalLimits?: boolean;
   /**
+   * Marca a chamada como o aviso de transferência agendado — ver
+   * `GateContext.handoffNotice`. Só o handler do aviso passa isto.
+   */
+  handoffNotice?: boolean;
+  /**
    * Marca esta chamada como a orientação de EMERGÊNCIA MÉDICA (§10.1 da spec da
    * clínica). Fura `pacing` e `spinning`; NÃO fura `stop` nem `lgpd`. Ver
    * `GateContext.emergencyOverride` para o porquê de cada lado dessa linha.
@@ -862,6 +874,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       body: args.body,
       optedOut,
       handoffActive: stopFlags.forceHuman,
+      handoffNotice: args.handoffNotice ?? false,
       provider,
       messagingWindow: { lastInboundAt, ...(args.isTemplate === true ? { isTemplate: true } : {}) },
       pacing: { knobs: pacingCfg.knobs, state: pacingState, crmDailyLimit: args.crmDailyLimit, rng: args.rng },

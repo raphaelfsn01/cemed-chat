@@ -445,10 +445,12 @@ describe("a espera do handoff pelo envio — bordas", () => {
     expect(erro).toBeNull();
 
     const diag = JSON.stringify({ ordemDasConsultas, resultadosDeTool, vetos: await vetosGravados() }, null, 2);
-    // Nada saiu — e o veto foi o do pacing, não o do stop (a espera não mascara nem cria vetos).
+    // Nada saiu — e os vetos foram do pacing, não do stop (a espera não mascara vetos). São
+    // dois desde o PR-1b: o envio do modelo e o aviso fixo de transferência que o código tenta
+    // antes de transferir; os dois barrados pela janela (o aviso fica agendado para a abertura).
     expect(enviados, diag).toHaveLength(0);
     const vetos = await vetosGravados();
-    expect(vetos.map((v) => v.vetoed_gate), diag).toEqual(["pacing"]);
+    expect(vetos.map((v) => v.vetoed_gate), diag).toEqual(["pacing", "pacing"]);
 
     // O handoff NÃO ficou preso pelo envio que falhou.
     const estado = await estadoDoContato();
