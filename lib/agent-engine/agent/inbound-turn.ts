@@ -106,7 +106,7 @@ import {
 import { readSkillReference, skillHasReferences } from './skill-references';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
 import { logToolCallSummary, wrapToolsWithCallLog } from './tool-call-log';
-import { alertarTurnoSemResposta, turnoFicouMudo } from './turn-no-reply';
+import { alertarTurnoInterrompido, alertarTurnoSemResposta, turnoFicouMudo } from './turn-no-reply';
 import { conversaJaRespondida, deveReagendarPorJanela, reagendarTurnoPorJanela } from './window-reschedule';
 import {
   agendarAvisoDeTransferencia,
@@ -2346,7 +2346,15 @@ export async function runAgentTurn(
 
   // O modelo decide tools livremente dentro do teto de steps (knob AGENT_MAX_STEPS).
   // finally: o resumo sai também quando o run lança — é o caso que mais interessa diagnosticar.
-  let turn: Awaited<ReturnType<typeof runModelCall>>;
+  //
+  // `turn` fica null quando o modelo falha DEPOIS de o turno já ter falado com o paciente
+  // (mensagem entregue ou conversa transferida). Caso real, 25/11: as 3 mensagens saíram e a
+  // chamada seguinte voltou 502 "Provider returned an empty response" (o Gemini não tinha
+  // mais nada a dizer). Lançar aqui fazia a fila refazer o turno INTEIRO, e o modelo, de novo,
+  // tomou outra decisão — transferiu com o motivo de outra conversa. Mesma regra do
+  // checkpoint (fechar-checkpoint.ts): depois que a resposta saiu, refazer custa mais do que
+  // concluir. Antes disso, a falha volta à fila: é o único jeito de o paciente ser respondido.
+  let turn: Awaited<ReturnType<typeof runModelCall>> | null = null;
   try {
     turn = await runModelCall(
       pool,
@@ -2369,6 +2377,26 @@ export async function runAgentTurn(
       },
       { registry: deps.registry, log: runLog },
     );
+  } catch (err) {
+    // Erro de tool anotado (runError) mantém a regra antiga: a fila refaz, com o ledger
+    // segurando duplicata de envio. Só a falha do PRÓPRIO modelo é absorvida aqui.
+    if (runError !== null || (entreguesAteAgora() === 0 && !avisoAoPaciente.transferiu)) throw err;
+    runLog.warn('modelo falhou depois de o turno já ter falado com o paciente — turno concluído sem refazer', {
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 200),
+      entregues: entreguesAteAgora(),
+      transferiu: avisoAoPaciente.transferiu,
+    });
+    // Transferido, a equipe já tem a conversa. Senão, o que saiu pode ter sido só o começo
+    // da resposta: a equipe é avisada na Central. Falha ao avisar nunca derruba o turno.
+    if (!avisoAoPaciente.transferiu) {
+      try {
+        await alertarTurnoInterrompido(pool, { tenantId, leadId });
+      } catch (alertErr) {
+        runLog.error('falha ao abrir aviso de atendimento interrompido (segue)', {
+          error: alertErr instanceof Error ? alertErr.name : 'unknown',
+        });
+      }
+    }
   } finally {
     logToolCallSummary(runLog, toolsCalled, vetosPorGate);
   }
@@ -2401,10 +2429,9 @@ export async function runAgentTurn(
   // (é onde a fita inteira é re-serializada num prompt) — o conteúdo durável já foi para
   // lead_notes pelo flush (F3-07), então o stub não perde nada recuperável. Opera SÓ no
   // sufixo por-lead, nunca no prefixo estável (regra de cache 15).
+  const fitaDoRun = turn?.result.response.messages ?? null;
   const responseMessages =
-    deps.knobs.prune !== undefined
-      ? pruneToolResults(turn.result.response.messages, deps.knobs.prune)
-      : turn.result.response.messages;
+    fitaDoRun !== null && deps.knobs.prune !== undefined ? pruneToolResults(fitaDoRun, deps.knobs.prune) : fitaDoRun;
 
   // Transferência recusada por falta de aviso e NÃO refeita pelo modelo: o runtime conclui
   // (ver transferenciaPendente). O aviso do modelo já saiu a esta altura — ou, se foi vetado,
@@ -2439,7 +2466,9 @@ export async function runAgentTurn(
   // Até 2 tentativas AQUI; esgotou, o turno conclui sem checkpoint novo — ver
   // fechar-checkpoint.ts. Antes, JSON inválido lançava e a fila refazia o turno
   // INTEIRO com a resposta já enviada, travando a próxima mensagem do contato.
-  const fechamento = await fecharCheckpoint({
+  // Sem a fita do run (o modelo falhou depois de falar com o paciente) não há o que
+  // resumir: segue o mesmo caminho do checkpoint esgotado.
+  const fechamento = responseMessages === null ? null : await fecharCheckpoint({
     chamar: async () => {
       const closing = await runModelCall(
         pool,
@@ -2691,7 +2720,7 @@ export async function runAgentTurn(
   runLog.info('turno do agente concluído', {
     kind: job.kind,
     messages_sent: outcomes.length,
-    model: turn.model,
+    model: turn?.model ?? agentConfig?.model ?? null,
   });
 }
 

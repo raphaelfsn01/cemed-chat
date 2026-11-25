@@ -415,7 +415,10 @@ describe("transferência FORA da janela: transfere já, avisa na abertura", () =
     expect(crons[0]!.next_run_at.getTime()).toBeGreaterThanOrEqual(ABERTURA.getTime());
   });
 
-  it("o turno falha DEPOIS da transferência → o aviso já ficou agendado (o retry pula o turno)", async () => {
+  // Desde 25/11 a falha do modelo depois da transferência não derruba mais o turno (ver
+  // falha-do-modelo-depois-do-envio.test.ts): ele conclui sem voltar à fila. O que este
+  // teste guarda continua valendo — a transferência e o aviso já agendado sobrevivem à falha.
+  it("o modelo falha DEPOIS da transferência → o turno conclui e o aviso já ficou agendado", async () => {
     const envio = { toolName: "send_message", input: { body: RESPOSTA } };
     const handoff = { toolName: "request_human_handoff", input: { reason: "pediu_humano" } };
     const roteiro = modeloComPassos([[envio], [handoff], [handoff]]);
@@ -426,7 +429,8 @@ describe("transferência FORA da janela: transfere já, avisa na abertura", () =
       return (roteiro as (...a: unknown[]) => Promise<unknown>)(...args);
     };
     const erro = await rodaTurno(montaHandler(modelo, FORA_DA_JANELA));
-    expect(erro).not.toBeNull();
+    expect(chamadas).toBe(4);
+    expect(erro).toBeNull();
     expect(await forceHuman()).toBe(true);
     const avisos = (await cronsDoContato()).filter((c) => "aviso_de_transferencia" in c.payload && c.enabled);
     expect(avisos).toHaveLength(1);

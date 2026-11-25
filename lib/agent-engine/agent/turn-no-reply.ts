@@ -51,6 +51,35 @@ export function resumoDosVetos(vetosPorGate: Readonly<Record<string, number>>): 
  * tem um `turn_no_reply` aberto não ganha outro — quem resolve o primeiro vê a conversa
  * inteira. Devolve quantos itens foram criados (0 = já havia um aberto).
  */
+/**
+ * O modelo falhou no meio do turno DEPOIS de o paciente já ter recebido mensagem, e o turno
+ * foi concluído sem refazer (ver inbound-turn.ts). O que saiu pode ter sido só o começo da
+ * resposta ("um momento, vou verificar"), então a equipe precisa olhar. Usa o mesmo `kind`
+ * do turno mudo (o vocabulário do banco tem CHECK) e o mesmo dedup por episódio aberto.
+ */
+export async function alertarTurnoInterrompido(
+  db: pg.Pool,
+  input: { tenantId: string; leadId: string },
+): Promise<number> {
+  const { rowCount } = await db.query(
+    `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
+     select $1, 'turn_no_reply', 'warn', $2, $3, 'contact', $4
+     where not exists (
+       select 1 from agent_inbox_items
+       where organization_id = $1 and kind = 'turn_no_reply'
+         and ref_kind = 'contact' and ref_id = $4 and status = 'open'
+     )`,
+    [
+      input.tenantId,
+      'Atendimento do assistente interrompido',
+      'O assistente respondeu ao paciente, mas o provedor do modelo falhou antes de ele terminar o ' +
+        'atendimento. Abra a conversa e confira se a resposta ficou completa.',
+      input.leadId,
+    ],
+  );
+  return rowCount ?? 0;
+}
+
 export async function alertarTurnoSemResposta(
   db: pg.Pool,
   input: { tenantId: string; leadId: string; vetosPorGate: Readonly<Record<string, number>> },
