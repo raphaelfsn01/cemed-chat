@@ -37,6 +37,8 @@ interface Captura {
   updates: Escrita[];
   inserts: Escrita[];
   rpc: Array<{ fn: string; args: Record<string, unknown> }>;
+  /** Filtros `.eq(...)` aplicados DEPOIS de um `.update(...)`, por tabela. */
+  filtrosDeUpdate: Array<{ tabela: string; coluna: string; valor: unknown }>;
 }
 
 interface CenarioBanco {
@@ -50,6 +52,8 @@ interface CenarioBanco {
   checkpointAnterior?: Record<string, unknown> | null;
   negocios?: Array<Record<string, unknown>>;
   erroDoEmitEvent?: { message: string } | null;
+  /** Erro devolvido pelo UPDATE em agent_inbox_items (fechar o alerta). */
+  erroAoFecharAlerta?: { message: string } | null;
 }
 
 /**
@@ -63,9 +67,15 @@ function fazerSupabase(cenario: CenarioBanco, cap: Captura) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: any = {
       select: () => chain,
-      eq: () => chain,
+      eq: (coluna: string, valor: unknown) => {
+        if (ehUpdate) cap.filtrosDeUpdate.push({ tabela, coluna, valor });
+        return chain;
+      },
       is: () => chain,
-      in: () => chain,
+      in: (coluna: string, valor: unknown) => {
+        if (ehUpdate) cap.filtrosDeUpdate.push({ tabela, coluna, valor });
+        return chain;
+      },
       order: () => chain,
       limit: () => chain,
       update: (valores: Record<string, unknown>) => {
@@ -94,6 +104,9 @@ function fazerSupabase(cenario: CenarioBanco, cap: Captura) {
         return Promise.resolve({ data: null, error: null });
       },
       then: (res: (v: unknown) => unknown) => {
+        if (ehUpdate && tabela === "agent_inbox_items" && cenario.erroAoFecharAlerta) {
+          return Promise.resolve({ data: null, error: cenario.erroAoFecharAlerta }).then(res);
+        }
         const listas: Record<string, unknown[]> = {
           agent_cases: cenario.chamados ?? [],
           agent_case_events: cenario.eventosDeChamado ?? [],
@@ -166,7 +179,7 @@ function cenarioComAtendimentoHumano(over: Partial<CenarioBanco> = {}): CenarioB
 }
 
 function novaCaptura(): Captura {
-  return { updates: [], inserts: [], rpc: [] };
+  return { updates: [], inserts: [], rpc: [], filtrosDeUpdate: [] };
 }
 
 async function retomar(cenario: CenarioBanco, cap: Captura, actor: Actor = USUARIO) {
@@ -183,6 +196,56 @@ async function retomar(cenario: CenarioBanco, cap: Captura, actor: Actor = USUAR
 }
 
 describe("devolver o atendimento ao agente", () => {
+  it("fecha o alerta de transferência aberto do contato — senão a próxima transferência some", async () => {
+    // Caso real (25/11/2026): o alerta `handoff` de 14/11 ficou aberto, e as transferências
+    // de 15/11 e de 25/11 não criaram alerta nenhum — o insert do handoff deduplica por
+    // alerta ABERTO do contato. A devolução é o fim do episódio; o alerta tem de fechar junto.
+    const cap = novaCaptura();
+    const res = await retomar(cenarioComAtendimentoHumano(), cap);
+
+    expect(res.ok).toBe(true);
+    const noAlerta = cap.updates.filter((u) => u.tabela === "agent_inbox_items");
+    expect(noAlerta).toEqual([{ tabela: "agent_inbox_items", valores: { status: "resolved" } }]);
+    // Filtro EXATO (não arrayContaining): é o mesmo predicado do dedup do insert em
+    // performHumanHandoff, e um filtro a mais estreitaria o fechamento em silêncio.
+    expect(cap.filtrosDeUpdate.filter((f) => f.tabela === "agent_inbox_items")).toEqual([
+      { tabela: "agent_inbox_items", coluna: "organization_id", valor: ORG },
+      { tabela: "agent_inbox_items", coluna: "kind", valor: "handoff" },
+      { tabela: "agent_inbox_items", coluna: "ref_kind", valor: "contact" },
+      { tabela: "agent_inbox_items", coluna: "ref_id", valor: CONTATO },
+      { tabela: "agent_inbox_items", coluna: "status", valor: ["open", "ack"] },
+    ]);
+  });
+
+  it("fecha o alerta ANTES de soltar force_human — sem janela para transferência engolida", async () => {
+    const cap = novaCaptura();
+    await retomar(cenarioComAtendimentoHumano(), cap);
+    const ordem = cap.updates.map((u) => u.tabela);
+    expect(ordem.indexOf("agent_inbox_items")).toBeGreaterThanOrEqual(0);
+    expect(ordem.indexOf("agent_inbox_items")).toBeLessThan(ordem.indexOf("contacts"));
+  });
+
+  it("falha ao fechar o alerta não desfaz a devolução", async () => {
+    const cap = novaCaptura();
+    const res = await retomar(
+      cenarioComAtendimentoHumano({ erroAoFecharAlerta: { message: "boom" } }),
+      cap,
+    );
+    expect(res.ok).toBe(true);
+    expect(cap.updates.filter((u) => u.tabela === "contacts")).toEqual([
+      { tabela: "contacts", valores: { force_human: false } },
+    ]);
+  });
+
+  it("conversa sem contato não mexe em alerta nenhum", async () => {
+    const cap = novaCaptura();
+    await retomar(
+      cenarioComAtendimentoHumano({ conversa: conversaPassadaAHumano({ contact_id: null }) }),
+      cap,
+    );
+    expect(cap.updates.filter((u) => u.tabela === "agent_inbox_items")).toEqual([]);
+  });
+
   it("limpa force_human do contato — a trava que ninguém soltava", async () => {
     const cap = novaCaptura();
     const res = await retomar(cenarioComAtendimentoHumano(), cap);

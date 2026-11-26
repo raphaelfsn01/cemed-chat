@@ -150,6 +150,36 @@ export async function devolverAtendimentoAoAgente(
   if (updErr) return { ok: false, erro: "assignment_conflict", detalhe: updErr.message };
   if (!atualizada) return { ok: false, erro: "assignment_conflict" };
 
+  // (2b) Fecha o alerta de transferência do episódio. O insert do handoff
+  // (`performHumanHandoff`, em lib/agent-engine/agent/human-handoff.ts) deduplica por
+  // alerta `handoff` ABERTO do contato — "um alerta por episódio". Se a devolução, que é
+  // o fim do episódio, não fecha o alerta, toda transferência seguinte do mesmo contato
+  // é engolida por ele (caso real de 25/11/2026: alerta de 14/11 aberto, transferências
+  // de 15/11 e 25/11 sem alerta nenhum). Falha aqui não desfaz a devolução — o paciente
+  // já voltou para o agente —, mas fica no log, porque o efeito é alerta perdido depois.
+  //
+  // ANTES de soltar `force_human` (passo 3), de propósito: enquanto a trava está ligada o
+  // agente não roda e não transfere. Na ordem inversa, uma transferência nova no intervalo
+  // seria deduplicada contra o alerta velho, que este passo fecharia logo depois — e a
+  // transferência ficaria sem alerta. `ack` fecha junto: não trava o dedup, mas ficaria
+  // pendurado na Central de um episódio que já acabou.
+  if (conv.contact_id !== null) {
+    const { error: alertaErr } = await supabase
+      .from("agent_inbox_items")
+      .update({ status: "resolved" })
+      .eq("organization_id", organizationId)
+      .eq("kind", "handoff")
+      .eq("ref_kind", "contact")
+      .eq("ref_id", conv.contact_id)
+      .in("status", ["open", "ack"]);
+    if (alertaErr) {
+      logger.error("[escalacao.retomada] alerta de transferência não foi fechado", {
+        conversation_id: input.conversationId,
+        error: alertaErr.message,
+      });
+    }
+  }
+
   // (3) A trava que ninguém soltava. Sem esta linha as outras duas não servem de
   // nada: os três guards (worker nativo, harness, before-send) leem daqui.
   if (conv.contact_id !== null) {
