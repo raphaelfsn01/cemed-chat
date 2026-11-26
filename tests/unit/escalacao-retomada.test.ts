@@ -37,6 +37,8 @@ interface Captura {
   updates: Escrita[];
   inserts: Escrita[];
   rpc: Array<{ fn: string; args: Record<string, unknown> }>;
+  /** Filtros `.eq(...)` aplicados DEPOIS de um `.update(...)`, por tabela. */
+  filtrosDeUpdate: Array<{ tabela: string; coluna: string; valor: unknown }>;
 }
 
 interface CenarioBanco {
@@ -63,7 +65,10 @@ function fazerSupabase(cenario: CenarioBanco, cap: Captura) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: any = {
       select: () => chain,
-      eq: () => chain,
+      eq: (coluna: string, valor: unknown) => {
+        if (ehUpdate) cap.filtrosDeUpdate.push({ tabela, coluna, valor });
+        return chain;
+      },
       is: () => chain,
       in: () => chain,
       order: () => chain,
@@ -166,7 +171,7 @@ function cenarioComAtendimentoHumano(over: Partial<CenarioBanco> = {}): CenarioB
 }
 
 function novaCaptura(): Captura {
-  return { updates: [], inserts: [], rpc: [] };
+  return { updates: [], inserts: [], rpc: [], filtrosDeUpdate: [] };
 }
 
 async function retomar(cenario: CenarioBanco, cap: Captura, actor: Actor = USUARIO) {
@@ -183,6 +188,37 @@ async function retomar(cenario: CenarioBanco, cap: Captura, actor: Actor = USUAR
 }
 
 describe("devolver o atendimento ao agente", () => {
+  it("fecha o alerta de transferência aberto do contato — senão a próxima transferência some", async () => {
+    // Caso real (25/11/2026): o alerta `handoff` de 14/11 ficou aberto, e as transferências
+    // de 15/11 e de 25/11 não criaram alerta nenhum — o insert do handoff deduplica por
+    // alerta ABERTO do contato. A devolução é o fim do episódio; o alerta tem de fechar junto.
+    const cap = novaCaptura();
+    const res = await retomar(cenarioComAtendimentoHumano(), cap);
+
+    expect(res.ok).toBe(true);
+    const noAlerta = cap.updates.filter((u) => u.tabela === "agent_inbox_items");
+    expect(noAlerta).toEqual([{ tabela: "agent_inbox_items", valores: { status: "resolved" } }]);
+    const filtros = cap.filtrosDeUpdate.filter((f) => f.tabela === "agent_inbox_items");
+    expect(filtros).toEqual(
+      expect.arrayContaining([
+        { tabela: "agent_inbox_items", coluna: "organization_id", valor: ORG },
+        { tabela: "agent_inbox_items", coluna: "kind", valor: "handoff" },
+        { tabela: "agent_inbox_items", coluna: "ref_kind", valor: "contact" },
+        { tabela: "agent_inbox_items", coluna: "ref_id", valor: CONTATO },
+        { tabela: "agent_inbox_items", coluna: "status", valor: "open" },
+      ]),
+    );
+  });
+
+  it("conversa sem contato não mexe em alerta nenhum", async () => {
+    const cap = novaCaptura();
+    await retomar(
+      cenarioComAtendimentoHumano({ conversa: conversaPassadaAHumano({ contact_id: null }) }),
+      cap,
+    );
+    expect(cap.updates.filter((u) => u.tabela === "agent_inbox_items")).toEqual([]);
+  });
+
   it("limpa force_human do contato — a trava que ninguém soltava", async () => {
     const cap = novaCaptura();
     const res = await retomar(cenarioComAtendimentoHumano(), cap);

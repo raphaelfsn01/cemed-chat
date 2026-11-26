@@ -167,6 +167,30 @@ export async function devolverAtendimentoAoAgente(
     }
   }
 
+  // (3b) Fecha o alerta de transferência do episódio. O insert do handoff
+  // (`performHumanHandoff`, em lib/agent-engine/agent/human-handoff.ts) deduplica por
+  // alerta `handoff` ABERTO do contato — "um alerta por episódio". Se a devolução, que é
+  // o fim do episódio, não fecha o alerta, toda transferência seguinte do mesmo contato
+  // é engolida por ele (caso real de 25/11/2026: alerta de 14/11 aberto, transferências
+  // de 15/11 e 25/11 sem alerta nenhum). Falha aqui não desfaz a devolução — o paciente
+  // já voltou para o agente —, mas fica no log, porque o efeito é alerta perdido depois.
+  if (conv.contact_id !== null) {
+    const { error: alertaErr } = await supabase
+      .from("agent_inbox_items")
+      .update({ status: "resolved" })
+      .eq("organization_id", organizationId)
+      .eq("kind", "handoff")
+      .eq("ref_kind", "contact")
+      .eq("ref_id", conv.contact_id)
+      .eq("status", "open");
+    if (alertaErr) {
+      logger.error("[escalacao.retomada] alerta de transferência não foi fechado", {
+        conversation_id: input.conversationId,
+        error: alertaErr.message,
+      });
+    }
+  }
+
   // (4) Sinal durável de fim do episódio. AWAITED, não fire-and-forget, pela
   // mesma razão que a rota original documentava: é o ÚNICO produtor do sinal que
   // retoma um follow-up pausado por passagem a humano (lib/followup/reactivity.ts).

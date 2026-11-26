@@ -38,6 +38,7 @@ import {
   GOV_STAGE,
   seedGov,
   sql,
+  writeCountAs,
 } from "./gov-helpers";
 
 /** Org vizinha: prova que as transições recusam alvo de outro tenant. */
@@ -361,5 +362,65 @@ describe("o agente registrando e encerrando um chamado", () => {
       }),
     ).toBe(false);
     expect(await estadoDoChamado(caseId)).toBe("awaiting_human");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3 — o alerta de transferência acompanha o episódio
+// ---------------------------------------------------------------------------
+
+describe("alerta de transferência: um por episódio, não um para sempre", () => {
+  // Caso real (25/11/2026): o alerta `handoff` de 14/11 nunca foi fechado, e as
+  // transferências seguintes do mesmo paciente não criaram alerta nenhum — o insert de
+  // `performHumanHandoff` deduplica por alerta ABERTO do contato. A devolução ao agente
+  // (lib/escalacao/retomada.ts, passo 3b) é o fim do episódio e fecha o alerta.
+  //
+  // A retomada fala supabase-js e não roda contra este pool; o UPDATE abaixo é o MESMO
+  // filtro do passo 3b, executado como `authenticated` com as claims de um atendente —
+  // que é como a rota da tela o executa. O que se mede aqui é o que o unitário não vê:
+  // RLS e grants deixam o atendente fechar o alerta, e o insert do handoff volta a criar.
+  const FECHAR_ALERTA = `update public.agent_inbox_items set status = 'resolved'
+     where organization_id = '${GOV_ORG}' and kind = 'handoff'
+       and ref_kind = 'contact' and ref_id = '${ESC_CONTATO}' and status = 'open'`;
+
+  async function alertas(): Promise<Array<{ status: string }>> {
+    const { rows } = await pool.query<{ status: string }>(
+      `select status from agent_inbox_items
+        where organization_id = $1 and kind = 'handoff' and ref_kind = 'contact' and ref_id = $2
+        order by created_at`,
+      [GOV_ORG, ESC_CONTATO],
+    );
+    return rows;
+  }
+
+  async function transferir(): Promise<void> {
+    await performHumanHandoff(
+      pool,
+      { tenantId: GOV_ORG, leadId: ESC_CONTATO, conversationId: ESC_CONVERSA },
+      { reason: "requested_human", conversationSummary: "resumo", log: logMudo },
+    );
+  }
+
+  beforeAll(async () => {
+    await pool.query(
+      `delete from agent_inbox_items
+        where organization_id = $1 and kind = 'handoff' and ref_kind = 'contact' and ref_id = $2`,
+      [GOV_ORG, ESC_CONTATO],
+    );
+  });
+
+  it("sem fechar o alerta, a segunda transferência some — o defeito", async () => {
+    await transferir();
+    await transferir();
+    expect(await alertas()).toEqual([{ status: "open" }]);
+  });
+
+  it("o atendente fecha o alerta pela própria sessão (RLS deixa)", () => {
+    expect(writeCountAs(GOV_AGENT_A, FECHAR_ALERTA)).toBe(1);
+  });
+
+  it("depois de fechado, a transferência seguinte cria alerta novo", async () => {
+    await transferir();
+    expect(await alertas()).toEqual([{ status: "resolved" }, { status: "open" }]);
   });
 });
