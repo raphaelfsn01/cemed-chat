@@ -52,6 +52,8 @@ interface CenarioBanco {
   checkpointAnterior?: Record<string, unknown> | null;
   negocios?: Array<Record<string, unknown>>;
   erroDoEmitEvent?: { message: string } | null;
+  /** Erro devolvido pelo UPDATE em agent_inbox_items (fechar o alerta). */
+  erroAoFecharAlerta?: { message: string } | null;
 }
 
 /**
@@ -70,7 +72,10 @@ function fazerSupabase(cenario: CenarioBanco, cap: Captura) {
         return chain;
       },
       is: () => chain,
-      in: () => chain,
+      in: (coluna: string, valor: unknown) => {
+        if (ehUpdate) cap.filtrosDeUpdate.push({ tabela, coluna, valor });
+        return chain;
+      },
       order: () => chain,
       limit: () => chain,
       update: (valores: Record<string, unknown>) => {
@@ -99,6 +104,9 @@ function fazerSupabase(cenario: CenarioBanco, cap: Captura) {
         return Promise.resolve({ data: null, error: null });
       },
       then: (res: (v: unknown) => unknown) => {
+        if (ehUpdate && tabela === "agent_inbox_items" && cenario.erroAoFecharAlerta) {
+          return Promise.resolve({ data: null, error: cenario.erroAoFecharAlerta }).then(res);
+        }
         const listas: Record<string, unknown[]> = {
           agent_cases: cenario.chamados ?? [],
           agent_case_events: cenario.eventosDeChamado ?? [],
@@ -198,16 +206,35 @@ describe("devolver o atendimento ao agente", () => {
     expect(res.ok).toBe(true);
     const noAlerta = cap.updates.filter((u) => u.tabela === "agent_inbox_items");
     expect(noAlerta).toEqual([{ tabela: "agent_inbox_items", valores: { status: "resolved" } }]);
-    const filtros = cap.filtrosDeUpdate.filter((f) => f.tabela === "agent_inbox_items");
-    expect(filtros).toEqual(
-      expect.arrayContaining([
-        { tabela: "agent_inbox_items", coluna: "organization_id", valor: ORG },
-        { tabela: "agent_inbox_items", coluna: "kind", valor: "handoff" },
-        { tabela: "agent_inbox_items", coluna: "ref_kind", valor: "contact" },
-        { tabela: "agent_inbox_items", coluna: "ref_id", valor: CONTATO },
-        { tabela: "agent_inbox_items", coluna: "status", valor: "open" },
-      ]),
+    // Filtro EXATO (não arrayContaining): é o mesmo predicado do dedup do insert em
+    // performHumanHandoff, e um filtro a mais estreitaria o fechamento em silêncio.
+    expect(cap.filtrosDeUpdate.filter((f) => f.tabela === "agent_inbox_items")).toEqual([
+      { tabela: "agent_inbox_items", coluna: "organization_id", valor: ORG },
+      { tabela: "agent_inbox_items", coluna: "kind", valor: "handoff" },
+      { tabela: "agent_inbox_items", coluna: "ref_kind", valor: "contact" },
+      { tabela: "agent_inbox_items", coluna: "ref_id", valor: CONTATO },
+      { tabela: "agent_inbox_items", coluna: "status", valor: ["open", "ack"] },
+    ]);
+  });
+
+  it("fecha o alerta ANTES de soltar force_human — sem janela para transferência engolida", async () => {
+    const cap = novaCaptura();
+    await retomar(cenarioComAtendimentoHumano(), cap);
+    const ordem = cap.updates.map((u) => u.tabela);
+    expect(ordem.indexOf("agent_inbox_items")).toBeGreaterThanOrEqual(0);
+    expect(ordem.indexOf("agent_inbox_items")).toBeLessThan(ordem.indexOf("contacts"));
+  });
+
+  it("falha ao fechar o alerta não desfaz a devolução", async () => {
+    const cap = novaCaptura();
+    const res = await retomar(
+      cenarioComAtendimentoHumano({ erroAoFecharAlerta: { message: "boom" } }),
+      cap,
     );
+    expect(res.ok).toBe(true);
+    expect(cap.updates.filter((u) => u.tabela === "contacts")).toEqual([
+      { tabela: "contacts", valores: { force_human: false } },
+    ]);
   });
 
   it("conversa sem contato não mexe em alerta nenhum", async () => {

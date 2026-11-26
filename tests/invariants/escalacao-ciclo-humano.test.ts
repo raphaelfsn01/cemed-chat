@@ -373,15 +373,15 @@ describe("alerta de transferência: um por episódio, não um para sempre", () =
   // Caso real (25/11/2026): o alerta `handoff` de 14/11 nunca foi fechado, e as
   // transferências seguintes do mesmo paciente não criaram alerta nenhum — o insert de
   // `performHumanHandoff` deduplica por alerta ABERTO do contato. A devolução ao agente
-  // (lib/escalacao/retomada.ts, passo 3b) é o fim do episódio e fecha o alerta.
+  // (lib/escalacao/retomada.ts, passo 2b) é o fim do episódio e fecha o alerta.
   //
   // A retomada fala supabase-js e não roda contra este pool; o UPDATE abaixo é o MESMO
-  // filtro do passo 3b, executado como `authenticated` com as claims de um atendente —
+  // filtro do passo 2b, executado como `authenticated` com as claims de um atendente —
   // que é como a rota da tela o executa. O que se mede aqui é o que o unitário não vê:
   // RLS e grants deixam o atendente fechar o alerta, e o insert do handoff volta a criar.
   const FECHAR_ALERTA = `update public.agent_inbox_items set status = 'resolved'
      where organization_id = '${GOV_ORG}' and kind = 'handoff'
-       and ref_kind = 'contact' and ref_id = '${ESC_CONTATO}' and status = 'open'`;
+       and ref_kind = 'contact' and ref_id = '${ESC_CONTATO}' and status in ('open', 'ack')`;
 
   async function alertas(): Promise<Array<{ status: string }>> {
     const { rows } = await pool.query<{ status: string }>(
